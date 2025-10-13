@@ -1,20 +1,58 @@
 import { Link, usePage } from '@inertiajs/react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import ApplicationLogo from '@/Components/ApplicationLogo';
 import Dropdown from '@/Components/Dropdown';
+import {FaHome, FaProjectDiagram, FaTasks, FaPaperclip, FaUser } from 'react-icons/fa';
+import { CiSettings, CiUser } from "react-icons/ci";
 
 export default function AuthenticatedLayout({ header, children }) {
     const user = usePage().props.auth.user;
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+    const [darkMode, setDarkMode] = useState(true);
+    const [selectedYear, setSelectedYear] = useState('2024-2025');
 
-    const navigation = [
-        { name: 'Dashboard', href: route('dashboard'), current: route().current('dashboard') },
-        { name: 'Projects', href: '#', current: false },
-        { name: 'Tasks', href: '#', current: false },
-        { name: 'Reports', href: '#', current: false },
-        { name: 'Settings', href: '#', current: false },
+    // Academic years list
+    const academicYears = [
+        { value: '2024-2025', label: '2024-2025' },
+        { value: '2023-2024', label: '2023-2024' },
+        { value: '2022-2023', label: '2022-2023' },
+        { value: '2021-2022', label: '2021-2022 (Archived)' },
     ];
+
+    // Navigation items
+    const navigation = [
+        { name: 'Dashboard',icon:<FaHome size={20}/> , href: route('dashboard'), current: route().current('dashboard') },
+        { name: 'Projects',icon:<FaProjectDiagram size={20}/>, href: '#', current: false },
+        { name: 'Tasks',icon:<FaTasks size={20}/>, href: '#', current: false },
+        { name: 'Reports',icon:<FaPaperclip size={20}/>, href: '#', current: false },
+        { name: 'Settings',icon:<CiSettings size={20}/>, href: '#', current: false },
+        { name: 'Profile',icon:<FaUser size={20}/>, href: route('profile.edit'), current: route().current('profile.edit') },
+    ];
+
+    // Dark mode toggle
+    const toggleDarkMode = () => {
+        setDarkMode(!darkMode);
+        if (!darkMode) {
+            document.documentElement.classList.add('dark');
+            localStorage.setItem('theme', 'dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+            localStorage.setItem('theme', 'light');
+        }
+    };
+
+    useEffect(() => {
+        // Check for saved theme preference or system preference
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
+            setDarkMode(true);
+            document.documentElement.classList.add('dark');
+        } else {
+            setDarkMode(false);
+            document.documentElement.classList.remove('dark');
+        }
+    }, []);
 
     return (
         <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -91,7 +129,7 @@ export default function AuthenticatedLayout({ header, children }) {
                                         title={!sidebarOpen ? item.name : ''}
                                     >
                                         <span className={`${!sidebarOpen && 'mx-auto'}`}>
-                                            {item.name.charAt(0)}
+                                            {item.icon}
                                         </span>
                                         {sidebarOpen && <span>{item.name}</span>}
                                     </Link>
@@ -122,7 +160,42 @@ export default function AuthenticatedLayout({ header, children }) {
                         <div className="flex flex-1 items-center">
                             {header}
                         </div>
-                        <div className="flex items-center gap-x-4 lg:gap-x-6">
+                        <div className="flex items-center gap-x-2 lg:gap-x-4">
+                            {/* Academic Year Selector */}
+                            <div className="relative">
+                                <select
+                                    value={selectedYear}
+                                    onChange={(e) => setSelectedYear(e.target.value)}
+                                    className="block w-full rounded-lg border-0 bg-gray-100 py-2 pl-3 pr-10 text-sm font-medium text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600 dark:bg-gray-700 dark:text-gray-100 dark:ring-gray-600"
+                                >
+                                    {academicYears.map((year) => (
+                                        <option key={year.value} value={year.value}>
+                                            {year.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Dark Mode Toggle */}
+                            <button
+                                onClick={() => toggleDarkMode(!darkMode)}
+                                className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+                                title={darkMode ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
+                            >
+                                {darkMode ? (
+                                    // Sun icon for light mode
+                                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+                                    </svg>
+                                ) : (
+                                    // Moon icon for dark mode
+                                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
+                                    </svg>
+                                )}
+                            </button>
+
+                            {/* User Profile Dropdown */}
                             <Dropdown>
                                 <Dropdown.Trigger>
                                     <button className="flex items-center gap-x-3 rounded-full p-1.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-700">
@@ -161,3 +234,5 @@ export default function AuthenticatedLayout({ header, children }) {
         </div>
     );
 }
+
+
