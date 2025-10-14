@@ -69,7 +69,7 @@ export default function AuthenticatedLayout({ header, children }) {
                 mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'
             }`}>
                 <div className="flex h-16 items-center justify-between border-b border-gray-200 px-4 dark:border-gray-700">
-                    <ApplicationLogo className="h-8 w-auto fill-current text-gray-800 dark:text-gray-200" />
+                    <ApplicationLogo className="w-auto fill-current text-gray-800 dark:text-gray-200" />
                     <button
                         onClick={() => setMobileMenuOpen(false)}
                         className="rounded-md p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-500 dark:hover:bg-gray-700"
@@ -90,6 +90,7 @@ export default function AuthenticatedLayout({ header, children }) {
                                     : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
                             }`}
                         >
+                            {item.icon && <span className="mr-3">{item.icon}</span>}
                             {item.name}
                         </Link>
                     ))}
@@ -103,7 +104,7 @@ export default function AuthenticatedLayout({ header, children }) {
                 <div className="flex grow flex-col gap-y-5 overflow-y-auto border-r border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
                     <div className="flex h-16 shrink-0 items-center justify-between border-b border-gray-200 px-4 dark:border-gray-700">
                         {sidebarOpen && (
-                            <ApplicationLogo className="h-8 w-auto fill-current text-gray-800 dark:text-gray-200" />
+                            <ApplicationLogo className="w-auto fill-current text-gray-800 dark:text-gray-200" />
                         )}
                         <button
                             onClick={() => setSidebarOpen(!sidebarOpen)}
