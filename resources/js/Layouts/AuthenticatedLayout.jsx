@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import ApplicationLogo from '@/Components/ApplicationLogo';
 import Dropdown from '@/Components/Dropdown';
 import {FaHome, FaProjectDiagram, FaTasks, FaPaperclip, FaUser } from 'react-icons/fa';
+import { IoDocumentsSharp } from "react-icons/io5";
 import { CiSettings, CiUser } from "react-icons/ci";
 
 export default function AuthenticatedLayout({ header, children }) {
@@ -23,6 +24,7 @@ export default function AuthenticatedLayout({ header, children }) {
     // Navigation items
     const navigation = [
         { name: 'Dashboard',icon:<FaHome size={20}/> , href: route('dashboard'), current: route().current('dashboard') },
+        { name: 'Documents',icon:<IoDocumentsSharp size={20}/>, href: route('documents'), current: route().current('documents') },
         { name: 'Projects',icon:<FaProjectDiagram size={20}/>, href: '#', current: false },
         { name: 'Tasks',icon:<FaTasks size={20}/>, href: '#', current: false },
         { name: 'Reports',icon:<FaPaperclip size={20}/>, href: '#', current: false },
