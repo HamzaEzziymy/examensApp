@@ -24,7 +24,7 @@ export default function AuthenticatedLayout({ header, children }) {
     // Navigation items
     const navigation = [
         { name: 'Dashboard',icon:<FaHome size={20}/> , href: route('dashboard'), current: route().current('dashboard') },
-        { name: 'Documents',icon:<IoDocumentsSharp size={20}/>, href: route('documents'), current: route().current('documents') },
+        { name: 'Documents',icon:<IoDocumentsSharp size={20}/>, href: route('proces-v'), current: route().current('*.documents.*') },
         { name: 'Projects',icon:<FaProjectDiagram size={20}/>, href: '#', current: false },
         { name: 'Tasks',icon:<FaTasks size={20}/>, href: '#', current: false },
         { name: 'Reports',icon:<FaPaperclip size={20}/>, href: '#', current: false },

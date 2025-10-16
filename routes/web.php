@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\DocumentController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -28,11 +29,11 @@ Route::middleware('auth')->group(function () {
 
 
 //docs routes
-//main documents page
-Route::get('/documents', function () {
-    return Inertia::render('Documents/Index');
-})->middleware(['auth', 'verified'])->name('documents');
-
+Route::middleware('auth')->group(function () {
+    Route::get('/documents/proces-v', [DocumentController::class, 'indexPv'])->name('proces-v');
+    Route::post('/documents/proces-v', [DocumentController::class, 'storePv'])->name('proces-v.store');
+    
+});
 
 
 
