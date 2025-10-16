@@ -30,13 +30,6 @@ function DisplayDocuments({ documents }) {
 
   };
 
-  const handleDownload = (url, nomDoc) => {
-    const link = document.createElement('a');
-    link.href = `/${url}`;
-    link.download = nomDoc;
-    link.click();
-  };
-
   // Pagination logic
   const totalPages = Math.ceil(documents.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
