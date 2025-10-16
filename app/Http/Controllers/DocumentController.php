@@ -8,30 +8,11 @@ use Inertia\Inertia;
 use Spatie\LaravelPdf\Facades\Pdf;
 class DocumentController extends Controller
 {
-    // Custom method to display "proces-verbal" documents
     public function indexPv()
     {
-        $documents = [
-            [
-                'id' => 1,
-                'nomDoc' => 'Procès-verbal de réunion - Projet A',
-                'descripDoc' => 'Compte rendu de la réunion du 15 octobre 2025 pour le Projet A.',
-                'url' => '/docs/proces-verbal-projet-a.pdf',
-            ],
-            [
-                'id' => 2,
-                'nomDoc' => 'Procès-verbal de réunion - Projet B',
-                'descripDoc' => 'Compte rendu de la réunion du 20 octobre 2025 pour le Projet B.',
-                'url' => '/docs/proces-verbal-projet-b.pdf',
-            ],
-            [
-                'id' => 3,
-                'nomDoc' => 'Procès-verbal de réunion - Projet C',
-                'descripDoc' => 'Compte rendu de la réunion du 25 octobre 2025 pour le Projet C.',
-                'url' => '/docs/proces-verbal-projet-c.pdf',
-            ],
-        ];
-        // dd( $documents);
+        // fetch dis by date desc created_at
+
+        $documents = Document::orderBy('created_at', 'desc')->get();
 
         return Inertia::render('Documents/Pvs/Index', [
             'documents' => $documents,
@@ -40,22 +21,43 @@ class DocumentController extends Controller
 
     public function storePv(Request $request)
     {
+        // date know with a second format
+        $now = now()->format('Y-m-d_H-i-s');
+        // dd($now);
         Pdf::view('pdfs.pv_absence', ['data' => $request->all()])
             ->format('a4')
-            ->save('aanvoice.pdf');
-            
-        dd($request->all());
+            ->save('storage/pvs_absence/'.$now.'pv_absence.pdf');
+        
+        
+        $docUrl = 'storage/pvs_absence/'.$now.'pv_absence.pdf';
+
+        // set a url request
+        $request->merge(['url' => $docUrl]);
         // Validate the incoming request data
-        // $validated = $request->validate([
-        //     'nomDoc' => 'required|string|max:255',
-        //     'descripDoc' => 'nullable|string',
-        //     'url' => 'required|url|max:255',
-        // ]);
+        $validated = $request->validate([
+            'nomDoc' => 'required|string|max:255',
+            'descripDoc' => 'nullable|string',
+            'url' => 'required|string|max:255',
+        ]);
 
         // // Create a new Document record
-        // Document::create($validated);
+        Document::create($validated);
 
-        // // Redirect back with a success message
-        // return redirect()->route('proces-v')->with('success', 'Document created successfully.');
+        // Redirect or return a response
+        return Redirect()->back();
+    }
+
+    public function destroyPv(Document $document)
+    {
+        // Delete the document record
+        $document->delete();
+
+        // Optionally, delete the associated file from storage
+        if (file_exists($document->url)) {
+            unlink($document->url);
+        }
+
+        // Redirect or return a response
+        return Redirect()->back();
     }
 }

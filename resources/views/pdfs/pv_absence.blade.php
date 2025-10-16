@@ -14,7 +14,6 @@
         body {
             font-family: Arial, sans-serif;
             padding: 20px;
-            background: #f5f5f5;
         }
 
         .container {
@@ -70,7 +69,10 @@
         }
 
         .info-table .value {
-            width: 35%;
+            text-transform: uppercase;
+            font-weight: 800;
+            text-align: center;
+            font-size: 18px;
         }
 
         .attendance-row td {
@@ -90,13 +92,15 @@
         }
 
         .main-table th,
-        .main-table td {
+        .main-table {
             border: 2px solid #000;
             padding: 8px;
             text-align: center;
             font-size: 12px;
         }
-
+        td{
+             border: 2px solid #000;
+        }
         .main-table th {
             background: #FFD966;
             font-weight: bold;
@@ -148,20 +152,30 @@
             margin-top: 10px;
             font-style: italic;
         }
+        .niveau {
+            text-transform: uppercase;
+            font-weight: 800;
+            font-size: 20px;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <div class="header">Service Examens 19/05/2025</div>
-        <div class="date">Fès : VENDREDI 19/09/2025</div>
+        <!-- logo -->
+        <img src="{{ public_path('/logo.png') }}" alt="Logo" style="top: 20px; left: 20px; width: 100%; height: 70px;">
+        <div class="header">Service Examens</div>
+        <!-- how to do a curent date -->
+
+
+        <div class="date">Fès le : {{ now()->format('d/m/Y') }}</div>
         
         <h1>PROCÈS VERBAL</h1>
-        <h2>{{ $data["niveau"] }}</h2>
+        <h2 class="niveau">{{ $data["niveau"] }}</h2>
 
         <table class="info-table">
             <tr>
                 <td class="label">SALLE</td>
-                <td class="value">{{ $data["salle"] }}</td>
+                <td class="value" >{{ $data["salle"] }}</td>
                 <td class="label">Durée de l'épreuve :</td>
                 <td class="value"></td>
             </tr>
@@ -179,10 +193,10 @@
 
         <div class="observations">
             - Observations sur le déroulement de l'épreuve (Incident,Fraude,etc...)
-            <br>..........................................................................................................................................................................................
-            <br>..........................................................................................................................................................................................
-            <br>..........................................................................................................................................................................................
-            <br>..........................................................................................................................................................................................
+            <br>........................................................................................................................................................................................................................................
+            <br>........................................................................................................................................................................................................................................
+            <br>........................................................................................................................................................................................................................................
+            <br>........................................................................................................................................................................................................................................
         </div>
 
         <table class="main-table">
@@ -191,25 +205,25 @@
                 <th class="absent-header">NOM, PRÉNOM ET SIGNATURE DES<br>SURVEILLANTS ENSEIGNANTS</th>
             </tr>
             <tr>
-                <td style="padding: 0;">
-                    <table style="width: 100%; border-collapse: collapse;">
-                        <tr style="border-bottom: 2px solid #000;">
-                            <th style="border-right: 2px solid #000; padding: 8px; width: 15%;">N° Place</th>
-                            <th style="padding: 8px;">Nom et Prénom</th>
-                        </tr>
-                    </table>
-                    <div class="student-list dotted-lines" style="padding: 10px;"></div>
+                <td>
+                    <div>
+                        <div style="border:solide 2px;background: #FFD966; font-weight: bold; padding: 10px; text-align: center; display: flex; justify-content: space-between;">
+                            <div class="place-col" style="display: inline-block; width: 25%; font-weight: bold;">N°</div>
+                            <div class="name-col" style="display: inline-block; width: 75%; font-weight: bold;">NOM ET PRÉNOM</div>
+                        </div>
+                        <div class="student-list dotted-lines" style="padding: 10px;"></div>
+                    </div>
                 </td>
-                <td style="padding: 0; vertical-align: top;">
+                <td>
                     <div class="signature-section dotted-lines" style="padding: 10px; border-bottom: 2px solid #000;"></div>
-                    <div class="signature-header admin-section">
+                    <div class="signature-header admin-section" style="border-bottom: 2px solid #000;">
                         NOM, PRÉNOM ET SIGNATURE<br>DES ADMINISTRATIFS
                     </div>
                     <div class="signature-section dotted-lines" style="padding: 10px; border-bottom: 2px solid #000;"></div>
-                    <div class="signature-header doctoral-section">
+                    <div class="signature-header doctoral-section" style="border-bottom: 2px solid #000; height: 40px;">
                         NOM ET PRÉNOM ET SIGNATURE DES DOCTORANTS
                     </div>
-                    <div class="signature-section dotted-lines" style="padding: 10px;"></div>
+                    <div class="signature-section dotted-lines" style="padding: 10px; border-bottom: 2px solid #000;"></div>
                 </td>
             </tr>
         </table>

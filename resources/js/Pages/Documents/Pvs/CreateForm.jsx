@@ -19,7 +19,7 @@ export default function CreateForm() {
     return (
         <div className="w-full bg-white dark:bg-gray-800 rounded-xl shadow-md p-4 m-2">
             <h2 className="text-xl font-semibold mb-4 text-gray-800 dark:text-white">
-                Generate Document
+                CREATION PROCÈS VERBAL
             </h2>
 
             <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -137,7 +137,7 @@ export default function CreateForm() {
                         disabled={processing}
                         className="px-6 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg shadow-md transition-all duration-300 disabled:opacity-50"
                     >
-                        {processing ? 'Generating...' : 'Generate'}
+                        {processing ? 'Generating...' : 'Generate Document'}
                     </button>
                 </div>
             </form>

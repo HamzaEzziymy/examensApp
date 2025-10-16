@@ -5,7 +5,7 @@ import { IoDocumentsSharp } from 'react-icons/io5';
 export default function Header() {
 
     const docs_navigation = [
-        { name: 'PROCÈS VERBAL',icon:<FaFileAlt size={20}/> , href: route('proces-v'), current: route().current('proces-v') },
+        { name: 'PV ABSENCE',icon:<FaFileAlt size={20}/> , href: route('proces-v'), current: route().current('proces-v') },
         // { name: 'Documents',icon:<IoDocumentsSharp size={20}/>, href: route('documents'), current: route().current('documents') },
         // { name: 'Projects',icon:<FaProjectDiagram size={20}/>, href: '#', current: false },
         // { name: 'Tasks',icon:<FaTasks size={20}/>, href: '#', current: false },
