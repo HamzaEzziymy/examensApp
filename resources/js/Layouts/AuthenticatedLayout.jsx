@@ -5,30 +5,15 @@ import Dropdown from '@/Components/Dropdown';
 import {FaHome, FaProjectDiagram, FaTasks, FaPaperclip, FaUser } from 'react-icons/fa';
 import { IoDocumentsSharp } from "react-icons/io5";
 import { CiSettings, CiUser } from "react-icons/ci";
+import Years_Sectors_Selecters from '@/Components/Years_Sectors_Selecters';
 
 export default function AuthenticatedLayout({ header, children }) {
     const user = usePage().props.auth.user;
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [darkMode, setDarkMode] = useState(true);
-    const [selectedYear, setSelectedYear] = useState('2024-2025');
-    const [selectedFilier, setSelectedFilier] = useState('Pharmacie');
 
-    // Academic years list
-    const academicYears = [
-        { value: '2024-2025', label: '2024-2025' },
-        { value: '2023-2024', label: '2023-2024' },
-        { value: '2022-2023', label: '2022-2023' },
-        { value: '2021-2022', label: '2021-2022 (Archived)' },
-    ];
-
-    // filiers
-    const filiers = [
-        { value: 'PHR', label: 'Pharmacie' },
-        { value: 'MED FR', label: 'Médecine FR' },
-        { value: 'MED ANG', label: 'Médecine ANG' },
-        { value: 'MED DEN', label: 'Médecine Dentaire' },
-    ];
+    
 
     // Navigation items
     const navigation = [
@@ -173,35 +158,7 @@ export default function AuthenticatedLayout({ header, children }) {
                             {header}
                         </div>
                         <div className="flex items-center gap-x-2 lg:gap-x-4">
-                            {/* Academic Year Selector */}
-                            <div className="relative">
-                                <select
-                                    value={selectedYear}
-                                    onChange={(e) => setSelectedYear(e.target.value)}
-                                    className="block w-full rounded-lg border-0 bg-gray-100 py-2 pl-3 pr-10 text-sm font-medium text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600 dark:bg-gray-700 dark:text-gray-100 dark:ring-gray-600"
-                                >
-                                    {academicYears.map((year) => (
-                                        <option key={year.value} value={year.value}>
-                                            {year.label}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-                            {/* fillier */}
-                            <div className="relative">
-                                <select
-                                    value={selectedFilier}
-                                    onChange={(e) => setSelectedFilier(e.target.value)}
-                                    className="block w-full rounded-lg border-0 bg-gray-100 py-2 pl-3 pr-10 text-sm font-medium text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600 dark:bg-gray-700 dark:text-gray-100 dark:ring-gray-600"
-                                >
-                                    {filiers.map((filier) => (
-                                        <option key={filier.value} value={filier.value}>
-                                            {filier.label}
-                                        </option>
-                                    ))}
-                                </select>
-                            </div>
-                            {/* Dark Mode Toggle */}
+                            <Years_Sectors_Selecters />
                             <button
                                 onClick={() => toggleDarkMode(!darkMode)}
                                 className="rounded-lg p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-gray-200"

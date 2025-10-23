@@ -30,6 +30,7 @@ function DisplayDocuments({ documents }) {
 
   };
 
+  // 
   // Pagination logic
   const totalPages = Math.ceil(documents.length / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
@@ -115,16 +116,16 @@ function DisplayDocuments({ documents }) {
                     key={doc.id}
                     className='border-b border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors'
                   >
-                    <td className='px-6 py-4 text-sm font-medium text-gray-900 dark:text-gray-100'>
+                    <td className='px-6 py-2 text-sm font-medium text-gray-900 dark:text-gray-100'>
                       {doc.nomDoc}
                     </td>
-                    <td className='px-6 py-4 text-sm text-gray-600 dark:text-gray-400'>
+                    <td className='px-6 py-2 text-sm text-gray-600 dark:text-gray-400'>
                       {doc.descripDoc}
                     </td>
-                    <td className='px-6 py-4 text-sm text-gray-600 dark:text-gray-400'>
+                    <td className='px-6 py-2 text-sm text-gray-600 dark:text-gray-400'>
                       {formatDate(doc.created_at)}
                     </td>
-                    <td className='px-6 py-4'>
+                    <td className='px-6 py-2'>
                       <div className='flex justify-center items-center gap-2'>
                         <a
                           href={`/${doc.url}`}

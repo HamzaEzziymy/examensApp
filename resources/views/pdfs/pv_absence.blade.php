@@ -18,7 +18,10 @@
 
         .container {
             max-width: 800px;
-            margin: 0 20px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
 
         .header {
@@ -65,7 +68,6 @@
         .info-table .label {
             font-weight: bold;
             width: 15%;
-            /* background: #f9f9f9; */
         }
 
         .info-table .value {
@@ -83,12 +85,15 @@
             font-size: 11px;
             margin: 15px 0;
             padding: 8px 0;
+            width: 100%;
         }
 
         .main-table {
             width: 100%;
             border-collapse: collapse;
             margin-top: 20px;
+            margin-left: auto;
+            margin-right: auto;
         }
 
         .main-table th,
@@ -151,6 +156,7 @@
             font-size: 10px;
             margin-top: 10px;
             font-style: italic;
+            width: 100%;
         }
         .niveau {
             text-transform: uppercase;
@@ -160,12 +166,10 @@
     </style>
 </head>
 <body>
-    <div class="container">
+    <div class="container" style="padding-right: 30px;">
         <!-- logo -->
         <img src="{{ public_path('/logo.png') }}" alt="Logo" style="top: 20px; left: 20px; width: 100%; height: 70px;">
-        <div class="header">Service Examens</div>
-        <!-- how to do a curent date -->
-
+        <div class="header" style="margin-top:8px;">Service Examens</div>
 
         <div class="date">Fès le : {{ now()->format('d/m/Y') }}</div>
         
