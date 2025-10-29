@@ -6,6 +6,7 @@ use App\Models\Document;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Spatie\LaravelPdf\Facades\Pdf;
+use Illuminate\Support\Facades\File;
 class DocumentController extends Controller
 {
     public function indexPv()
@@ -23,7 +24,12 @@ class DocumentController extends Controller
     {
         // date know with a second format
         $now = now()->format('Y-m-d_H-i-s');
-        // dd($now);
+        // Ensure target directory exists under public/storage for Browsershot write
+        $publicStoragePvPath = public_path('storage/pvs_absence');
+        if (! File::exists($publicStoragePvPath)) {
+            File::makeDirectory($publicStoragePvPath, 0755, true);
+        }
+
         Pdf::view('pdfs.pv_absence', ['data' => $request->all()])
             ->format('a4')
             ->save('storage/pvs_absence/'.$now.'pv_absence.pdf');
