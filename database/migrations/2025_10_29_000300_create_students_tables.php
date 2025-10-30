@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration {
     public function up(): void {
         Schema::create('etudiants', function (Blueprint $table) {
-            $table->increments('id_etudiant');
+            $table->id('id_etudiant');
             $table->string('cne', 20)->unique();
             $table->string('nom', 50);
             $table->string('prenom', 50);
@@ -16,59 +16,64 @@ return new class extends Migration {
             $table->date('date_naissance')->nullable();
             $table->string('telephone', 20)->nullable();
             $table->string('url_photo', 255)->nullable();
-            $table->unsignedInteger('id_filiere')->nullable();
-            $table->foreign('id_filiere')->references('id_filiere')->on('filieres');
+            $table->unsignedBigInteger('id_filiere')->nullable();
+            $table->foreign('id_filiere')->references('id_filiere')->on('filieres')->onDelete('set null');
+            $table->timestamps();
         });
 
         Schema::create('inscriptions_administratives', function (Blueprint $table) {
-            $table->increments('id_inscription_admin');
-            $table->unsignedInteger('id_etudiant')->nullable();
-            $table->unsignedInteger('id_annee')->nullable();
-            $table->unsignedInteger('id_niveau')->nullable();
+            $table->id('id_inscription_admin');
+            $table->unsignedBigInteger('id_etudiant')->nullable();
+            $table->unsignedBigInteger('id_annee')->nullable();
+            $table->unsignedBigInteger('id_niveau')->nullable();
             $table->date('date_inscription');
             $table->string('statut', 30)->default('Active');
             $table->foreign('id_niveau')->references('id_niveau')->on('niveaux');
             $table->foreign('id_etudiant')->references('id_etudiant')->on('etudiants');
             $table->foreign('id_annee')->references('id_annee')->on('annees_universitaires');
+            $table->timestamps();
         });
 
         Schema::create('inscriptions_pedagogiques', function (Blueprint $table) {
-            $table->increments('id_inscription_pedagogique');
-            $table->unsignedInteger('id_etudiant')->nullable();
-            $table->unsignedInteger('id_inscription_admin')->nullable();
-            $table->unsignedInteger('id_module')->nullable();
-            $table->enum('type_inscription', ['Normal', 'Credit', 'Anticipé']);
+            $table->id('id_inscription_pedagogique');
+            $table->unsignedBigInteger('id_etudiant')->nullable();
+            $table->unsignedBigInteger('id_inscription_admin')->nullable();
+            $table->unsignedBigInteger('id_module')->nullable();
+            $table->enum('type_inscription', ['Normal', 'Credit', 'Anticipe']);
             $table->integer('credits_acquis')->default(0);
             $table->foreign('id_etudiant')->references('id_etudiant')->on('etudiants');
             $table->foreign('id_inscription_admin')->references('id_inscription_admin')->on('inscriptions_administratives');
             $table->foreign('id_module')->references('id_module')->on('modules');
+            $table->timestamps();
         });
 
         Schema::create('capitalisations', function (Blueprint $table) {
-            $table->increments('id_capitalisation');
-            $table->unsignedInteger('id_inscription_pedagogique')->nullable();
-            $table->unsignedInteger('id_module')->nullable();
+            $table->id('id_capitalisation');
+            $table->unsignedBigInteger('id_inscription_pedagogique')->nullable();
+            $table->unsignedBigInteger('id_module')->nullable();
             $table->date('date_capitalisation');
             $table->date('date_expiration')->nullable();
             $table->foreign('id_inscription_pedagogique')->references('id_inscription_pedagogique')->on('inscriptions_pedagogiques');
             $table->foreign('id_module')->references('id_module')->on('modules');
+            $table->timestamps();
         });
 
         Schema::create('stages', function (Blueprint $table) {
-            $table->increments('id_stage');
-            $table->unsignedInteger('id_inscription_pedagogique')->nullable();
-            $table->unsignedInteger('id_module')->nullable();
+            $table->id('id_stage');
+            $table->unsignedBigInteger('id_inscription_pedagogique')->nullable();
+            $table->unsignedBigInteger('id_module')->nullable();
             $table->string('nom_hopital', 255)->nullable();
             $table->string('service', 255)->nullable();
             $table->date('date_debut')->nullable();
             $table->date('date_fin')->nullable();
             $table->string('encadrant_hopital', 255)->nullable();
-            $table->unsignedInteger('encadrant_faculte')->nullable(); // id_enseignant
+            $table->unsignedBigInteger('encadrant_faculte')->nullable(); // id_enseignant
             $table->decimal('note_stage', 5, 2)->nullable();
             $table->string('rapport_stage', 255)->nullable();
             $table->foreign('id_inscription_pedagogique')->references('id_inscription_pedagogique')->on('inscriptions_pedagogiques');
             $table->foreign('id_module')->references('id_module')->on('modules');
             $table->foreign('encadrant_faculte')->references('id_enseignant')->on('enseignants');
+            $table->timestamps();
         });
     }
 
@@ -80,3 +85,4 @@ return new class extends Migration {
         Schema::dropIfExists('etudiants');
     }
 };
+
