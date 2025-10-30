@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Semestre extends Model
 {
@@ -12,5 +14,14 @@ class Semestre extends Model
     protected $table = 'semestres';
     protected $primaryKey = 'id_semestre';
     protected $guarded = [];
-}
 
+    public function niveau(): BelongsTo
+    {
+        return $this->belongsTo(Niveau::class, 'id_niveau', 'id_niveau');
+    }
+
+    public function modules(): HasMany
+    {
+        return $this->hasMany(Module::class, 'id_semestre', 'id_semestre');
+    }
+}
