@@ -17,6 +17,7 @@ class DocumentController extends Controller
 
         return Inertia::render('Documents/Pvs/Index', [
             'documents' => $documents,
+            
         ]);
     }
 

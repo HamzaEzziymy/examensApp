@@ -15,6 +15,11 @@ class InscriptionPedagogique extends Model
     protected $primaryKey = 'id_inscription_pedagogique';
     protected $guarded = [];
 
+    protected $fillable = [
+        'id_etudiant','id_inscription_admin','id_module',
+        'type_inscription','credits_acquis',
+    ];
+    
     public function etudiant(): BelongsTo
     {
         return $this->belongsTo(Etudiant::class, 'id_etudiant', 'id_etudiant');

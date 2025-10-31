@@ -13,6 +13,10 @@ class Capitalisation extends Model
     protected $table = 'capitalisations';
     protected $primaryKey = 'id_capitalisation';
     protected $guarded = [];
+     protected $fillable = [
+        'id_inscription_pedagogique','id_module',
+        'date_capitalisation','date_expiration',
+    ];
 
     public function inscriptionPedagogique(): BelongsTo
     {

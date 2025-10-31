@@ -13,7 +13,11 @@ class MembreCommission extends Model
     protected $table = 'membres_commission';
     protected $primaryKey = 'id_membre_commission';
     protected $guarded = [];
-
+    protected $fillable = [
+        'id_commission',
+        'id_enseignant',
+        'role',
+    ];
     public function commission(): BelongsTo
     {
         return $this->belongsTo(Commission::class, 'id_commission', 'id_commission');
@@ -24,4 +28,3 @@ class MembreCommission extends Model
         return $this->belongsTo(Enseignant::class, 'id_enseignant', 'id_enseignant');
     }
 }
-

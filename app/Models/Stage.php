@@ -14,6 +14,13 @@ class Stage extends Model
     protected $primaryKey = 'id_stage';
     protected $guarded = [];
 
+     protected $fillable = [
+        'id_inscription_pedagogique','id_module',
+        'nom_hopital','service','date_debut','date_fin',
+        'encadrant_hopital','encadrant_faculte',
+        'note_stage','rapport_stage',
+    ];
+    
     public function inscriptionPedagogique(): BelongsTo
     {
         return $this->belongsTo(InscriptionPedagogique::class, 'id_inscription_pedagogique', 'id_inscription_pedagogique');

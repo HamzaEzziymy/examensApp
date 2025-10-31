@@ -14,6 +14,16 @@ class Examen extends Model
     protected $table = 'examens';
     protected $primaryKey = 'id_examen';
     protected $guarded = [];
+    protected $fillable = [
+        'id_session_examen',
+        'id_module',
+        'id_salle',
+        'date_examen',
+        'date_debut',
+        'date_fin',
+        'statut',
+        'description',
+    ];
 
     public function sessionExamen(): BelongsTo
     {
@@ -65,4 +75,3 @@ class Examen extends Model
         return $this->hasMany(PvExamen::class, 'id_examen', 'id_examen');
     }
 }
-

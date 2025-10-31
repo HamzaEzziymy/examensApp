@@ -14,7 +14,14 @@ class Surveillance extends Model
     protected $table = 'surveillances';
     protected $primaryKey = 'id_surveillance';
     protected $guarded = [];
-
+    protected $fillable = [
+        'id_examen',
+        'id_surveillant',
+        'role',
+        'heure_debut',
+        'heure_fin',
+        'observations',
+    ];
     public function examen(): BelongsTo
     {
         return $this->belongsTo(Examen::class, 'id_examen', 'id_examen');
@@ -30,4 +37,3 @@ class Surveillance extends Model
         return $this->hasMany(IncidentExamen::class, 'id_surveillance', 'id_surveillance');
     }
 }
-

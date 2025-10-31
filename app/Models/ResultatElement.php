@@ -13,7 +13,14 @@ class ResultatElement extends Model
     protected $table = 'resultats_elements';
     protected $primaryKey = 'id_resultat_element';
     protected $guarded = [];
-
+    protected $fillable = [
+        'id_inscription_pedagogique',
+        'id_element',
+        'id_session_examen',
+        'moyenne_element',
+        'statut',
+        'date_validation',
+    ];
     public function inscriptionPedagogique(): BelongsTo
     {
         return $this->belongsTo(InscriptionPedagogique::class, 'id_inscription_pedagogique', 'id_inscription_pedagogique');
@@ -29,4 +36,3 @@ class ResultatElement extends Model
         return $this->belongsTo(SessionExamen::class, 'id_session_examen', 'id_session_examen');
     }
 }
-

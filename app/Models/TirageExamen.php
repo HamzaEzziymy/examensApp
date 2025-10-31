@@ -13,10 +13,15 @@ class TirageExamen extends Model
     protected $table = 'tirages_examens';
     protected $primaryKey = 'id_tirage';
     protected $guarded = [];
-
+    protected $fillable = [
+        'id_sujet',
+        'id_fonctionnaire',
+        'date_tirage',
+        'nombre_copies',
+        'details_conditionnement',
+    ];
     public function sujet(): BelongsTo
     {
         return $this->belongsTo(SujetExamen::class, 'id_sujet', 'id_sujet');
     }
 }
-

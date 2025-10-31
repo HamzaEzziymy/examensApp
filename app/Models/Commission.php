@@ -13,7 +13,12 @@ class Commission extends Model
     protected $table = 'commissions';
     protected $primaryKey = 'id_commission';
     protected $guarded = [];
-
+    protected $fillable = [
+        'type_commission',
+        'nom_commission',
+        'description',
+    ];
+    
     public function membres(): HasMany
     {
         return $this->hasMany(MembreCommission::class, 'id_commission', 'id_commission');
@@ -24,4 +29,3 @@ class Commission extends Model
         return $this->hasMany(DecisionCommission::class, 'id_commission', 'id_commission');
     }
 }
-

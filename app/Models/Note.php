@@ -13,7 +13,13 @@ class Note extends Model
     protected $table = 'notes';
     protected $primaryKey = 'id_note';
     protected $guarded = [];
-
+    protected $fillable = [
+        'id_anonymat',
+        'id_correcteur',
+        'note',
+        'date_saisie',
+        'commentaire',
+    ];
     public function anonymat(): BelongsTo
     {
         return $this->belongsTo(Anonymat::class, 'id_anonymat', 'id_anonymat');
@@ -24,4 +30,3 @@ class Note extends Model
         return $this->belongsTo(Correcteur::class, 'id_correcteur', 'id_correcteur');
     }
 }
-

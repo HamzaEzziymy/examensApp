@@ -13,10 +13,16 @@ class PvExamen extends Model
     protected $table = 'pv_examens';
     protected $primaryKey = 'id_pv';
     protected $guarded = [];
-
+    protected $fillable = [
+        'id_examen',
+        'date_creation',
+        'nombre_presents',
+        'nombre_absents',
+        'incidents_signales',
+        'observations',
+    ];
     public function examen(): BelongsTo
     {
         return $this->belongsTo(Examen::class, 'id_examen', 'id_examen');
     }
 }
-

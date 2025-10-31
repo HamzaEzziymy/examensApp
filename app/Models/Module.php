@@ -16,6 +16,19 @@ class Module extends Model
     protected $primaryKey = 'id_module';
     protected $guarded = [];
 
+    protected $fillable = [
+        'code_module',
+        'nom_module',
+        'abreviation_module',
+        'nature',
+        'id_niveau',
+        'id_semestre',
+        'quadrimestre',
+        'seuil_validation',
+        'coefficient_module',
+        'credits_requis',
+        'description',
+    ];
     public function niveau(): BelongsTo
     {
         return $this->belongsTo(Niveau::class, 'id_niveau', 'id_niveau');

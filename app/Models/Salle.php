@@ -13,7 +13,11 @@ class Salle extends Model
     protected $table = 'salles';
     protected $primaryKey = 'id_salle';
     protected $guarded = [];
-
+ protected $fillable = [
+        'code_salle','nom_salle','capacite','capacite_examens',
+        'batiment','est_disponible','specificites',
+    ]; 
+    
     public function examens(): HasMany
     {
         return $this->hasMany(Examen::class, 'id_salle', 'id_salle');

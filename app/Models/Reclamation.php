@@ -13,7 +13,15 @@ class Reclamation extends Model
     protected $table = 'reclamations';
     protected $primaryKey = 'id_reclamation';
     protected $guarded = [];
-
+    protected $fillable = [
+        'id_inscription_pedagogique',
+        'id_element_module',
+        'id_session_examen',
+        'date_reclamation',
+        'motif',
+        'decision',
+        'statut',
+    ];
     public function inscriptionPedagogique(): BelongsTo
     {
         return $this->belongsTo(InscriptionPedagogique::class, 'id_inscription_pedagogique', 'id_inscription_pedagogique');
@@ -29,4 +37,3 @@ class Reclamation extends Model
         return $this->belongsTo(SessionExamen::class, 'id_session_examen', 'id_session_examen');
     }
 }
-

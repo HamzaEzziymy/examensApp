@@ -14,7 +14,11 @@ class InscriptionAdministrative extends Model
     protected $table = 'inscriptions_administratives';
     protected $primaryKey = 'id_inscription_admin';
     protected $guarded = [];
-
+    protected $fillable = [
+        'id_etudiant','id_annee','id_niveau',
+        'date_inscription','statut',
+    ];
+    
     public function etudiant(): BelongsTo
     {
         return $this->belongsTo(Etudiant::class, 'id_etudiant', 'id_etudiant');

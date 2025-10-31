@@ -14,6 +14,10 @@ class ElementModule extends Model
     protected $table = 'elements_module';
     protected $primaryKey = 'id_element';
     protected $guarded = [];
+    protected $fillable = [
+        'id_module', 'type_element', 'nom_element',
+        'coefficient_element', 'seuil_validation', 'est_obligatoire',
+    ];
 
     public function module(): BelongsTo
     {

@@ -15,6 +15,10 @@ class Niveau extends Model
     protected $primaryKey = 'id_niveau';
     protected $guarded = [];
 
+    protected $fillable = [
+        'code_niveau', 'nom_niveau', 'id_filiere', 'semestre', 'credits_requis',
+    ];
+    
     public function filiere(): BelongsTo
     {
         return $this->belongsTo(Filiere::class, 'id_filiere', 'id_filiere');

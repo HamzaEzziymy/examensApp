@@ -14,6 +14,17 @@ class Etudiant extends Model
     protected $table = 'etudiants';
     protected $primaryKey = 'id_etudiant';
     protected $guarded = [];
+    protected $fillable = [
+        'cne',
+        'nom',
+        'prenom',
+        'mail_academique',
+        'mail_personnel',
+        'date_naissance',
+        'telephone',
+        'url_photo',
+        'id_filiere',
+    ];
 
     public function filiere(): BelongsTo
     {
@@ -30,4 +41,3 @@ class Etudiant extends Model
         return $this->hasMany(InscriptionPedagogique::class, 'id_etudiant', 'id_etudiant');
     }
 }
-

@@ -14,6 +14,11 @@ class SessionExamen extends Model
     protected $table = 'sessions_examen';
     protected $primaryKey = 'id_session_examen';
     protected $guarded = [];
+    
+ protected $fillable = [
+        'id_filiere','id_annee','nom_session','type_session',
+        'date_session_examen','quadrimestre','description',
+    ];
 
     public function filiere(): BelongsTo
     {

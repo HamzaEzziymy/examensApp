@@ -15,6 +15,14 @@ class SujetExamen extends Model
     protected $table = 'sujets_examens';
     protected $primaryKey = 'id_sujet';
     protected $guarded = [];
+    protected $fillable = [
+        'id_examen',
+        'version_sujet',
+        'chemin_fichier',
+        'id_auteur',
+        'date_creation',
+        'statut',
+    ];
 
     public function examen(): BelongsTo
     {
@@ -36,4 +44,3 @@ class SujetExamen extends Model
         return $this->hasMany(TirageExamen::class, 'id_sujet', 'id_sujet');
     }
 }
-

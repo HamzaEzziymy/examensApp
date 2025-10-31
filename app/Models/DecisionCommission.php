@@ -13,10 +13,15 @@ class DecisionCommission extends Model
     protected $table = 'decisions_commission';
     protected $primaryKey = 'id_decision';
     protected $guarded = [];
-
+    protected $fillable = [
+        'id_commission',
+        'id_cas',
+        'date_decision',
+        'decision',
+        'sanction',
+    ];
     public function commission(): BelongsTo
     {
         return $this->belongsTo(Commission::class, 'id_commission', 'id_commission');
     }
 }
-

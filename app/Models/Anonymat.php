@@ -14,7 +14,11 @@ class Anonymat extends Model
     protected $table = 'anonymat';
     protected $primaryKey = 'id_anonymat';
     protected $guarded = [];
-
+    protected $fillable = [
+        'id_examen',
+        'id_inscription_pedagogique',
+        'code_anonymat',
+    ];
     public function examen(): BelongsTo
     {
         return $this->belongsTo(Examen::class, 'id_examen', 'id_examen');
@@ -40,4 +44,3 @@ class Anonymat extends Model
         return $this->hasMany(Note::class, 'id_anonymat', 'id_anonymat');
     }
 }
-

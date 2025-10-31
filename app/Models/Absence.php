@@ -13,7 +13,15 @@ class Absence extends Model
     protected $table = 'absences';
     protected $primaryKey = 'id_absence';
     protected $guarded = [];
-
+    protected $fillable = [
+        'id_examen',
+        'id_anonymat',
+        'date_absence',
+        'motif',
+        'justificatif',
+        'statut',
+    ];
+    
     public function examen(): BelongsTo
     {
         return $this->belongsTo(Examen::class, 'id_examen', 'id_examen');
@@ -24,4 +32,3 @@ class Absence extends Model
         return $this->belongsTo(Anonymat::class, 'id_anonymat', 'id_anonymat');
     }
 }
-

@@ -13,6 +13,13 @@ class AnneeUniversitaire extends Model
     protected $table = 'annees_universitaires';
     protected $primaryKey = 'id_annee';
     protected $guarded = [];
+    protected $fillable = [
+        'annee_univ',
+        'date_debut',
+        'date_cloture',
+        'est_active',
+        
+    ];
 
     public function filieres(): HasMany
     {

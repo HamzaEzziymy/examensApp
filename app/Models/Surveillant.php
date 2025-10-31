@@ -13,10 +13,16 @@ class Surveillant extends Model
     protected $table = 'surveillants';
     protected $primaryKey = 'id_surveillant';
     protected $guarded = [];
-
+    protected $fillable = [
+        'nom_surveillant',
+        'prenom_surveillant',
+        'mail_surveillant',
+        'telephone_surveillant',
+        'type_surveillant',
+        'disponibilites',
+    ];
     public function surveillances(): HasMany
     {
         return $this->hasMany(Surveillance::class, 'id_surveillant', 'id_surveillant');
     }
 }
-

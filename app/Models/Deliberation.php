@@ -13,7 +13,12 @@ class Deliberation extends Model
     protected $table = 'deliberations';
     protected $primaryKey = 'id_deliberation';
     protected $guarded = [];
-
+    protected $fillable = [
+        'id_session',
+        'id_niveau',
+        'date_deliberation',
+        'statut',
+    ];
     public function sessionExamen(): BelongsTo
     {
         return $this->belongsTo(SessionExamen::class, 'id_session', 'id_session_examen');
@@ -24,4 +29,3 @@ class Deliberation extends Model
         return $this->belongsTo(Niveau::class, 'id_niveau', 'id_niveau');
     }
 }
-

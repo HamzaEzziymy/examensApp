@@ -13,7 +13,14 @@ class IncidentExamen extends Model
     protected $table = 'incidents_examens';
     protected $primaryKey = 'id_incident';
     protected $guarded = [];
-
+    protected $fillable = [
+        'id_anonymat',
+        'id_surveillance',
+        'type_incident',
+        'description',
+        'heure_incident',
+        'mesures_prises',
+    ];
     public function anonymat(): BelongsTo
     {
         return $this->belongsTo(Anonymat::class, 'id_anonymat', 'id_anonymat');
@@ -24,4 +31,3 @@ class IncidentExamen extends Model
         return $this->belongsTo(Surveillance::class, 'id_surveillance', 'id_surveillance');
     }
 }
-

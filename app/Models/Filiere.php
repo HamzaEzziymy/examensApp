@@ -14,6 +14,12 @@ class Filiere extends Model
     protected $table = 'filieres';
     protected $primaryKey = 'id_filiere';
     protected $guarded = [];
+    protected $fillable = [
+        'id_annee',
+        'nom_filiere',
+        'code_filiere',
+
+    ];
 
     public function anneeUniversitaire(): BelongsTo
     {

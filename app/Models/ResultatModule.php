@@ -13,7 +13,14 @@ class ResultatModule extends Model
     protected $table = 'resultats_modules';
     protected $primaryKey = 'id_resultat_module';
     protected $guarded = [];
-
+    protected $fillable = [
+        'id_inscription_pedagogique',
+        'id_module',
+        'moyenne_module',
+        'statut',
+        'date_validation',
+        'est_anticipe',
+    ];
     public function inscriptionPedagogique(): BelongsTo
     {
         return $this->belongsTo(InscriptionPedagogique::class, 'id_inscription_pedagogique', 'id_inscription_pedagogique');
@@ -24,4 +31,3 @@ class ResultatModule extends Model
         return $this->belongsTo(Module::class, 'id_module', 'id_module');
     }
 }
-

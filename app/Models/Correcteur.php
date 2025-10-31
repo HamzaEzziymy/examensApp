@@ -14,7 +14,15 @@ class Correcteur extends Model
     protected $table = 'correcteurs';
     protected $primaryKey = 'id_correcteur';
     protected $guarded = [];
-
+    protected $fillable = [
+        'id_examen',
+        'id_enseignant',
+        'nombre_copies',
+        'date_attribution',
+        'date_limite_correction',
+        'statut',
+    ];
+    
     public function examen(): BelongsTo
     {
         return $this->belongsTo(Examen::class, 'id_examen', 'id_examen');
@@ -30,4 +38,3 @@ class Correcteur extends Model
         return $this->hasMany(Note::class, 'id_correcteur', 'id_correcteur');
     }
 }
-

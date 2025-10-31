@@ -15,7 +15,9 @@ class Enseignant extends Model
     protected $table = 'enseignants';
     protected $primaryKey = 'id_enseignant';
     protected $guarded = [];
-
+ protected $fillable = [
+        'id_user', 'code', 'nom', 'prenom', 'mail_academique', 'telephone',
+    ];
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class, 'id_user', 'id');
