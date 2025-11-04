@@ -3,63 +3,66 @@
 namespace App\Http\Controllers;
 
 use App\Models\Filiere;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 
 class FiliereController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
-    public function index()
+    public function index(): JsonResponse
     {
-        //
+        $filieres = Filiere::with([
+            'anneeUniversitaire:id_annee,annee_univ',
+            'niveaux:id_niveau,id_filiere,nom_niveau',
+        ])->orderBy('nom_filiere')->get();
+
+        return response()->json($filieres);
     }
 
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
+    public function store(Request $request): JsonResponse
     {
-        //
+        $validated = $request->validate([
+            'nom_filiere'  => ['required', 'string', 'max:100'],
+            'code_filiere' => ['nullable', 'integer', 'unique:filieres,code_filiere'],
+            'id_annee'     => ['nullable', 'exists:annees_universitaires,id_annee'],
+        ]);
+
+        $filiere = Filiere::create($validated);
+
+        return response()->json($filiere->load('anneeUniversitaire'), 201);
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(Request $request)
+    public function show(int $id): JsonResponse
     {
-        //
+        $filiere= Filiere::findorfail($id);
+        $filiere->load(['anneeUniversitaire', 'niveaux.modules']);
+
+        return response()->json($filiere);
     }
 
-    /**
-     * Display the specified resource.
-     */
-    public function show(Filiere $filiere)
+    public function update(Request $request, int $id): JsonResponse
     {
-        //
+        $filiere= Filiere::findorfail($id);
+        $validated = $request->validate([
+            'nom_filiere'  => ['required', 'string', 'max:100'],
+            'code_filiere' => [
+                'nullable',
+                'integer',
+                Rule::unique('filieres', 'code_filiere')->ignore($filiere->id_filiere, 'id_filiere'),
+            ],
+            'id_annee'     => ['nullable', 'exists:annees_universitaires,id_annee'],
+        ]);
+
+        $filiere->update($validated);
+
+        return response()->json($filiere->refresh()->load('anneeUniversitaire'));
     }
 
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(Filiere $filiere)
+    public function destroy(int $id): JsonResponse
     {
-        //
-    }
+        $filiere= Filiere::findorfail($id);
+        $filiere->delete();
 
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, Filiere $filiere)
-    {
-        //
-    }
-
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(Filiere $filiere)
-    {
-        //
+        return response()->json(null, 204);
     }
 }

@@ -6,6 +6,7 @@ use App\Models\AnneeUniversitaire;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Inertia\Inertia;
 
 class AnneeUniversitaireController extends Controller
 {
@@ -15,7 +16,9 @@ class AnneeUniversitaireController extends Controller
             ->orderByDesc('date_debut')
             ->get();
 
-        return response()->json($annees);
+        return Inertia::render('Academique/AnneesUniversitaires/Index', [
+            'annees' => $annees,
+        ]);
     }
 
     public function store(Request $request): JsonResponse
@@ -29,7 +32,8 @@ class AnneeUniversitaireController extends Controller
 
         $annee = AnneeUniversitaire::create($validated);
 
-        return response()->json($annee, 201);
+       return Redirect::route('academique.annees-universitaires.index')
+            ->with('success', 'Année universitaire créée.');
     }
 
     public function show(int $id): JsonResponse
@@ -37,8 +41,9 @@ class AnneeUniversitaireController extends Controller
         // $annee = AnneeUniversitaire::with('filieres.niveaux')
         $annee = AnneeUniversitaire::with('filieres')
             ->findOrFail($id);
-
-        return response()->json($annee);
+  return Inertia::render('Academique/AnneesUniversitaires/Show', [
+            'annee' => $anneeUniversitaire,
+        ]);
     }
 
     public function update(Request $request, $id): JsonResponse
@@ -53,13 +58,15 @@ class AnneeUniversitaireController extends Controller
 
         $anneeUniversitaire->update($validated);
 
-        return response()->json($anneeUniversitaire->refresh());
+       return Redirect::route('academique.annees-universitaires.index')
+            ->with('success', 'Année universitaire mise à jour.');
     }
 
     public function destroy(int $id): JsonResponse
     {
         $annee = AnneeUniversitaire::findOrFail($id);
         $annee->delete();
-        return response()->json("deleted", 204);
+       return Redirect::route('academique.annees-universitaires.index')
+            ->with('success', 'Année universitaire supprimée.');
     }
 }

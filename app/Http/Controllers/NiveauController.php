@@ -2,64 +2,66 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Controllers\Controller;
+use App\Models\Niveau;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class NiveauController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
-    public function index()
+    public function index(): JsonResponse
     {
-        //
+        $niveaux = Niveau::with('filiere:id_filiere,nom_filiere')
+            ->withCount(['semestres', 'modules'])
+            ->orderBy('nom_niveau')
+            ->get();
+
+        return response()->json($niveaux);
     }
 
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
+    public function store(Request $request): JsonResponse
     {
-        //
+        $validated = $request->validate([
+            'code_niveau'    => ['required', 'string', 'max:20'],
+            'nom_niveau'     => ['required', 'string', 'max:100'],
+            'semestre'       => ['required', 'integer', 'min:1'],
+            'credits_requis' => ['required', 'integer', 'min:0'],
+            'id_filiere'     => ['nullable', 'exists:filieres,id_filiere'],
+        ]);
+
+        $niveau = Niveau::create($validated);
+
+        return response()->json($niveau->load('filiere'), 201);
     }
 
-    /**
-     * Store a newly created resource in storage.
-     */
-    public function store(Request $request)
+    public function show(int $id): JsonResponse
     {
-        //
+        $niveau= Niveau::findorfail($id);
+        $niveau->load(['filiere', 'semestres.modules']);
+
+        return response()->json($niveau);
     }
 
-    /**
-     * Display the specified resource.
-     */
-    public function show(string $id)
+    public function update(Request $request,int $id): JsonResponse
     {
-        //
+        $niveau= Niveau::findorfail($id);
+        $validated = $request->validate([
+            'code_niveau'    => ['required', 'string', 'max:20'],
+            'nom_niveau'     => ['required', 'string', 'max:100'],
+            'semestre'       => ['required', 'integer', 'min:1'],
+            'credits_requis' => ['required', 'integer', 'min:0'],
+            'id_filiere'     => ['nullable', 'exists:filieres,id_filiere'],
+        ]);
+
+        $niveau->update($validated);
+
+        return response()->json($niveau->refresh()->load('filiere'));
     }
 
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(string $id)
+    public function destroy(int $id): JsonResponse
     {
-        //
-    }
+        $niveau= Niveau::findorfail($id);
+        $niveau->delete();
 
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, string $id)
-    {
-        //
-    }
-
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(string $id)
-    {
-        //
+        return response()->json(null, 204);
     }
 }
