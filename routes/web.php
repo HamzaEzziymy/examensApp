@@ -26,6 +26,7 @@ use App\Http\Controllers\{
     ReclamationController, DecisionCommissionController
 };
 
+use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken as MiddlewareVerifyCsrfToken;
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
@@ -58,7 +59,7 @@ Route::middleware('auth')->group(function () {
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
+Route::withoutMiddleware([MiddlewareVerifyCsrfToken::class])->group(function () {
 
 Route::prefix('academique')->name('academique.')->group(function () {
     Route::resources([
@@ -70,7 +71,7 @@ Route::prefix('academique')->name('academique.')->group(function () {
         'elements-module'       => ElementModuleController::class,
     ]);
 });
-
+});
 /* =========================
 |  Personnes (Enseignants, Surveillants, Étudiants)
 |=========================*/
