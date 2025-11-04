@@ -10,7 +10,7 @@ use Inertia\Inertia;
 
 class AnneeUniversitaireController extends Controller
 {
-    public function index(): JsonResponse
+    public function index()
     {
         $annees = AnneeUniversitaire::with('filieres:id_filiere,id_annee,nom_filiere')
             ->orderByDesc('date_debut')
@@ -21,7 +21,7 @@ class AnneeUniversitaireController extends Controller
         ]);
     }
 
-    public function store(Request $request): JsonResponse
+    public function store(Request $request)
     {
         $validated = $request->validate([
             'annee_univ'   => ['required', 'string', 'max:9', 'unique:annees_universitaires,annee_univ'],
@@ -32,21 +32,21 @@ class AnneeUniversitaireController extends Controller
 
         $annee = AnneeUniversitaire::create($validated);
 
-       return Redirect::route('academique.annees-universitaires.index')
+       return Redirect()->route('academique.annees-universitaires.index')
             ->with('success', 'Année universitaire créée.');
     }
 
-    public function show(int $id): JsonResponse
+    public function show(int $id)
     {
         // $annee = AnneeUniversitaire::with('filieres.niveaux')
         $annee = AnneeUniversitaire::with('filieres')
             ->findOrFail($id);
   return Inertia::render('Academique/AnneesUniversitaires/Show', [
-            'annee' => $anneeUniversitaire,
+            'annee' => $annee,
         ]);
     }
 
-    public function update(Request $request, $id): JsonResponse
+    public function update(Request $request, $id)
     {
         $anneeUniversitaire = AnneeUniversitaire::findorfail($id);
         $validated = $request->validate([
@@ -58,15 +58,15 @@ class AnneeUniversitaireController extends Controller
 
         $anneeUniversitaire->update($validated);
 
-       return Redirect::route('academique.annees-universitaires.index')
+       return Redirect()->route('academique.annees-universitaires.index')
             ->with('success', 'Année universitaire mise à jour.');
     }
 
-    public function destroy(int $id): JsonResponse
+    public function destroy(int $id)
     {
         $annee = AnneeUniversitaire::findOrFail($id);
         $annee->delete();
-       return Redirect::route('academique.annees-universitaires.index')
+       return Redirect()->route('academique.annees-universitaires.index')
             ->with('success', 'Année universitaire supprimée.');
     }
 }

@@ -5,20 +5,23 @@ namespace App\Http\Controllers;
 use App\Models\Niveau;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 
 class NiveauController extends Controller
 {
-    public function index(): JsonResponse
+    public function index()
     {
         $niveaux = Niveau::with('filiere:id_filiere,nom_filiere')
             ->withCount(['semestres', 'modules'])
             ->orderBy('nom_niveau')
             ->get();
 
-        return response()->json($niveaux);
+         return Inertia::render('Academique/Niveaux/Index', [
+            'niveaux' => $niveaux,
+        ]);
     }
 
-    public function store(Request $request): JsonResponse
+    public function store(Request $request)
     {
         $validated = $request->validate([
             'code_niveau'    => ['required', 'string', 'max:20'],
@@ -30,18 +33,21 @@ class NiveauController extends Controller
 
         $niveau = Niveau::create($validated);
 
-        return response()->json($niveau->load('filiere'), 201);
+        return Redirect()->route('academique.niveaux.index')
+            ->with('success', 'Niveau créé.');
     }
 
-    public function show(int $id): JsonResponse
+    public function show(int $id)
     {
         $niveau= Niveau::findorfail($id);
         $niveau->load(['filiere', 'semestres.modules']);
 
-        return response()->json($niveau);
+         return Inertia::render('Academique/Niveaux/Show', [
+            'niveau' => $niveau,
+        ]);
     }
 
-    public function update(Request $request,int $id): JsonResponse
+    public function update(Request $request,int $id)
     {
         $niveau= Niveau::findorfail($id);
         $validated = $request->validate([
@@ -54,14 +60,16 @@ class NiveauController extends Controller
 
         $niveau->update($validated);
 
-        return response()->json($niveau->refresh()->load('filiere'));
+        return Redirect()->route('academique.niveaux.index')
+            ->with('success', 'Niveau mis à jour.');
     }
 
-    public function destroy(int $id): JsonResponse
+    public function destroy(int $id)
     {
         $niveau= Niveau::findorfail($id);
         $niveau->delete();
 
-        return response()->json(null, 204);
+      return Redirect()->route('academique.niveaux.index')
+            ->with('success', 'Niveau supprimé.');
     }
 }

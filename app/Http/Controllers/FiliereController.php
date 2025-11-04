@@ -6,20 +6,23 @@ use App\Models\Filiere;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Inertia\Inertia;
 
 class FiliereController extends Controller
 {
-    public function index(): JsonResponse
+    public function index()
     {
         $filieres = Filiere::with([
             'anneeUniversitaire:id_annee,annee_univ',
             'niveaux:id_niveau,id_filiere,nom_niveau',
         ])->orderBy('nom_filiere')->get();
 
-        return response()->json($filieres);
+       return Inertia::render('Academique/Filieres/Index', [
+            'filieres' => $filieres,
+        ]);
     }
 
-    public function store(Request $request): JsonResponse
+    public function store(Request $request)
     {
         $validated = $request->validate([
             'nom_filiere'  => ['required', 'string', 'max:100'],
@@ -29,18 +32,21 @@ class FiliereController extends Controller
 
         $filiere = Filiere::create($validated);
 
-        return response()->json($filiere->load('anneeUniversitaire'), 201);
+       return Redirect()->route('academique.filieres.index')
+            ->with('success', 'Filière créée.');
     }
 
-    public function show(int $id): JsonResponse
+    public function show(int $id)
     {
         $filiere= Filiere::findorfail($id);
         $filiere->load(['anneeUniversitaire', 'niveaux.modules']);
 
-        return response()->json($filiere);
+        return Inertia::render('Academique/Filieres/Show', [
+            'filiere' => $filiere,
+        ]);
     }
 
-    public function update(Request $request, int $id): JsonResponse
+    public function update(Request $request, int $id)
     {
         $filiere= Filiere::findorfail($id);
         $validated = $request->validate([
@@ -55,14 +61,16 @@ class FiliereController extends Controller
 
         $filiere->update($validated);
 
-        return response()->json($filiere->refresh()->load('anneeUniversitaire'));
+       return Redirect()->route('academique.filieres.index')
+            ->with('success', 'Filière mise à jour.');
     }
 
-    public function destroy(int $id): JsonResponse
+    public function destroy(int $id)
     {
         $filiere= Filiere::findorfail($id);
         $filiere->delete();
 
-        return response()->json(null, 204);
+         return Redirect()->route('academique.filieres.index')
+            ->with('success', 'Filière supprimée.');
     }
 }

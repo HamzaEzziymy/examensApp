@@ -5,20 +5,23 @@ namespace App\Http\Controllers;
 use App\Models\Semestre;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 
 class SemestreController extends Controller
 {
-    public function index(): JsonResponse
+    public function index()
     {
         $semestres = Semestre::with('niveau:id_niveau,nom_niveau')
             ->withCount('modules')
             ->orderBy('code_semestre')
             ->get();
 
-        return response()->json($semestres);
+         return Inertia::render('Academique/Semestres/Index', [
+            'semestres' => $semestres,
+        ]);
     }
 
-    public function store(Request $request): JsonResponse
+    public function store(Request $request)
     {
         $validated = $request->validate([
             'code_semestre'  => ['required', 'string', 'max:20'],
@@ -29,18 +32,21 @@ class SemestreController extends Controller
 
         $semestre = Semestre::create($validated);
 
-        return response()->json($semestre->load('niveau'), 201);
+        return Redirect()->route('academique.semestres.index')
+            ->with('success', 'Semestre créé.');
     }
 
-    public function show(int $id): JsonResponse
+    public function show(int $id)
     {
          $semestre= Semestre::findorfail($id);
         $semestre->load(['niveau', 'modules']);
 
-        return response()->json($semestre);
+        return Inertia::render('Academique/Semestres/Show', [
+            'semestre' => $semestre,
+        ]);
     }
 
-    public function update(Request $request, int $id): JsonResponse
+    public function update(Request $request, int $id)
     {
          $semestre= Semestre::findorfail($id);
         $validated = $request->validate([
@@ -52,14 +58,16 @@ class SemestreController extends Controller
 
         $semestre->update($validated);
 
-        return response()->json($semestre->refresh()->load('niveau'));
+        return Redirect()->route('academique.semestres.index')
+            ->with('success', 'Semestre mis à jour.');
     }
 
-    public function destroy(int $id): JsonResponse
+    public function destroy(int $id)
     {
         $semestre= Semestre::findorfail($id);
         $semestre->delete();
 
-        return response()->json(null, 204);
+       return Redirect()->route('academique.semestres.index')
+            ->with('success', 'Semestre supprimé.');
     }
 }
