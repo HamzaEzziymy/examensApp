@@ -11,10 +11,7 @@ export default function AuthenticatedLayout({ header, children }) {
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [darkMode, setDarkMode] = useState(true);
 
-    
-
-    
-
+    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
     // Dark mode toggle
     const toggleDarkMode = () => {
         setDarkMode(!darkMode);
