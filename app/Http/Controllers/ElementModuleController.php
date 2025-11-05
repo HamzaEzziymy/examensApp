@@ -2,64 +2,71 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Controllers\Controller;
+use App\Models\ElementModule;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-
+use Inertia\Inertia;
 class ElementModuleController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
     public function index()
     {
-        //
+        $elements = ElementModule::with('module:id_module,nom_module')
+            ->orderBy('nom_element')
+            ->get();
+
+       return Inertia::render('Academique/ElementsModule/Index', [
+            'elements' => $elements,
+        ]);
     }
 
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
-    {
-        //
-    }
-
-    /**
-     * Store a newly created resource in storage.
-     */
     public function store(Request $request)
     {
-        //
+        $validated = $request->validate([
+            'id_module'           => ['required', 'exists:modules,id_module'],
+            'type_element'        => ['nullable', 'string', 'max:50'],
+            'nom_element'         => ['required', 'string', 'max:100'],
+            'coefficient_element' => ['required', 'numeric', 'min:0'],
+            'seuil_validation'    => ['required', 'numeric', 'between:0,20'],
+            'est_obligatoire'     => ['sometimes', 'boolean'],
+        ]);
+
+        $element = ElementModule::create($validated);
+
+        return Redirect()->route('academique.elements-module.index')
+            ->with('success', 'Élément de module créé.');
     }
 
-    /**
-     * Display the specified resource.
-     */
-    public function show(string $id)
+    public function show(ElementModule $elements_module)
     {
-        //
+        $elements_module->load('module');
+
+          return Inertia::render('Academique/ElementsModule/Show', [
+            'element' => $elements_module,
+        ]);
     }
 
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(string $id)
+    public function update(Request $request, ElementModule $elements_module)
     {
-        //
+        $validated = $request->validate([
+            'id_module'           => ['required', 'exists:modules,id_module'],
+            'type_element'        => ['nullable', 'string', 'max:50'],
+            'nom_element'         => ['required', 'string', 'max:100'],
+            'coefficient_element' => ['required', 'numeric', 'min:0'],
+            'seuil_validation'    => ['required', 'numeric', 'between:0,20'],
+            'est_obligatoire'     => ['sometimes', 'boolean'],
+        ]);
+
+        $elements_module->update($validated);
+
+        return Redirect()->route('academique.elements-module.index')
+            ->with('success', 'Élément de module mis à jour.');
     }
 
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, string $id)
+    public function destroy(ElementModule $elements_module)
     {
-        //
-    }
+        $elements_module->delete();
 
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(string $id)
-    {
-        //
+        return Redirect()->route('academique.elements-module.index')
+            ->with('success', 'Élément de module supprimé.');
     }
 }

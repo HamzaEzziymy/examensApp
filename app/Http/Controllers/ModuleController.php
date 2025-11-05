@@ -2,64 +2,94 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Controllers\Controller;
+use App\Models\Module;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-
+use Illuminate\Validation\Rule;
+use Inertia\Inertia;
 class ModuleController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
     public function index()
     {
-        //
+        $modules = Module::with([
+                'niveau:id_niveau,nom_niveau',
+                'semestre:id_semestre,nom_semestre',
+            ])
+            ->withCount('elements')
+            ->orderBy('nom_module')
+            ->get();
+
+         return Inertia::render('Academique/Modules/Index', [
+            'modules' => $modules,
+        ]);
     }
 
-    /**
-     * Show the form for creating a new resource.
-     */
-    public function create()
-    {
-        //
-    }
-
-    /**
-     * Store a newly created resource in storage.
-     */
     public function store(Request $request)
     {
-        //
+        $validated = $request->validate([
+            'code_module'        => ['required', 'string', 'max:20', 'unique:modules,code_module'],
+            'nom_module'         => ['required', 'string', 'max:100'],
+            'abreviation_module' => ['required', 'string', 'max:100'],
+            'nature'             => ['required', 'string', 'max:100'],
+            'quadrimestre'       => ['required', 'integer', 'min:1'],
+            'seuil_validation'   => ['required', 'numeric', 'between:0,20'],
+            'coefficient_module' => ['required', 'numeric', 'min:0'],
+            'credits_requis'     => ['nullable', 'integer', 'min:0'],
+            'description'        => ['nullable', 'string'],
+            'id_niveau'          => ['nullable', 'exists:niveaux,id_niveau'],
+            'id_semestre'        => ['nullable', 'exists:semestres,id_semestre'],
+        ]);
+
+        $module = Module::create($validated);
+
+         return Redirect()->route('academique.modules.index')
+            ->with('success', 'Module créé.');
     }
 
-    /**
-     * Display the specified resource.
-     */
-    public function show(string $id)
+    public function show($id)
     {
-        //
+        $module= Module::findorfail($id);
+        $module->load(['niveau', 'semestre', 'elements']);
+
+        return Inertia::render('Academique/Modules/Show', [
+            'module' => $module,
+        ]);
     }
 
-    /**
-     * Show the form for editing the specified resource.
-     */
-    public function edit(string $id)
+    public function update(Request $request, $id)
     {
-        //
+        $module= Module::findorfail($id);
+        $validated = $request->validate([
+            'code_module'        => [
+                'required',
+                'string',
+                'max:20',
+                Rule::unique('modules', 'code_module')->ignore($module->id_module, 'id_module'),
+            ],
+            'nom_module'         => ['required', 'string', 'max:100'],
+            'abreviation_module' => ['required', 'string', 'max:100'],
+            'nature'             => ['required', 'string', 'max:100'],
+            'quadrimestre'       => ['required', 'integer', 'min:1'],
+            'seuil_validation'   => ['required', 'numeric', 'between:0,20'],
+            'coefficient_module' => ['required', 'numeric', 'min:0'],
+            'credits_requis'     => ['nullable', 'integer', 'min:0'],
+            'description'        => ['nullable', 'string'],
+            'id_niveau'          => ['nullable', 'exists:niveaux,id_niveau'],
+            'id_semestre'        => ['nullable', 'exists:semestres,id_semestre'],
+        ]);
+
+        $module->update($validated);
+
+     return Redirect()->route('academique.modules.index')
+            ->with('success', 'Module mis à jour.');
     }
 
-    /**
-     * Update the specified resource in storage.
-     */
-    public function update(Request $request, string $id)
+    public function destroy($id)
     {
-        //
-    }
+        $module= Module::findorfail($id);
+        $module->delete();
 
-    /**
-     * Remove the specified resource from storage.
-     */
-    public function destroy(string $id)
-    {
-        //
+       return Redirect()->route('academique.modules.index')
+            ->with('success', 'Module supprimé.');
     }
 }
