@@ -22,32 +22,26 @@ export default function Header() {
         {
             name: "Filières",
             icon: <GraduationCap size={20} />, // Represents study programs or fields
-            href: "#",
-            current: false,
+            href: route("academique.filieres.index"),
+            current: route().current("academique.filieres.index"),
         },
         {
             name: "Niveaux",
             icon: <Layers size={20} />, // Symbolizes levels/stages
-            href: "#",
-            current: false,
+            href: route("academique.niveaux.index"),
+            current: route().current("academique.niveaux.index"),
         },
         {
             name: "Semestres",
             icon: <BookOpen size={20} />, // Represents semesters and study materials
-            href: "#",
-            current: false,
+            href: route("academique.semestres.index"),
+            current: route().current("academique.semestres.index"),
         },
         {
             name: "Modules",
             icon: <FolderTree size={20} />, // Represents grouped academic modules
-            href: "#",
-            current: false,
-        },
-        {
-            name: "Éléments de Module",
-            icon: <FileText size={20} />, // Represents specific course elements
-            href: "#",
-            current: false,
+            href: route("academique.modules.index"),
+            current: route().current("academique.modules.index"),
         },
     ];
 
@@ -83,17 +77,12 @@ export default function Header() {
                         <span className="font-semibold whitespace-nowrap">
                             {item.name}
                         </span>
-                        
-                        {/* Current page indicator */}
-                        {item.current && (
-                            <span className="absolute -bottom-1 left-1/2 w-2 h-2 bg-blue-400 rounded-full transform -translate-x-1/2" />
-                        )}
-                        </Link>
                         {item !== navigations[navigations.length - 1] && (
                             
                             <FaArrowRight className="self-center text-gray-400" />
                         )
                         }
+                        </Link>
                     </div>
                 ))}
             </nav>

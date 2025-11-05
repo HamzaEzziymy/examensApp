@@ -15,7 +15,7 @@ class AnneeUniversitaireController extends Controller
         $annees = AnneeUniversitaire::with('filieres:id_filiere,id_annee,nom_filiere')
             ->orderByDesc('date_debut')
             ->get();
-          return Inertia::render('Academique/AnneesUniversitaires/Index', [
+        return Inertia::render('Academique/AnneesUniversitaires/Index', [
             'annees' => $annees,
         ]);
     }
@@ -23,16 +23,15 @@ class AnneeUniversitaireController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'annee_univ'   => ['required', 'string', 'max:9', 'unique:annees_universitaires,annee_univ'],
-            'date_debut'   => ['required', 'date'],
+            'annee_univ' => ['required', 'string', 'max:9', 'unique:annees_universitaires,annee_univ'],
+            'date_debut' => ['required', 'date'],
             'date_cloture' => ['required', 'date', 'after:date_debut'],
-            'est_active'   => ['sometimes', 'boolean'],
+            'est_active' => ['sometimes', 'boolean'],
         ]);
 
         $annee = AnneeUniversitaire::create($validated);
 
-       return Redirect()->route('academique.annees-universitaires.index')
-            ->with('success', 'Année universitaire créée.');
+        return Redirect()->route('academique.annees-universitaires.index');
     }
 
     public function show(int $id)
@@ -40,36 +39,35 @@ class AnneeUniversitaireController extends Controller
         // $annee = AnneeUniversitaire::with('filieres.niveaux')
         $annee = AnneeUniversitaire::with('filieres')
             ->findOrFail($id);
-  return Inertia::render('Academique/AnneesUniversitaires/Show', [
+        return Inertia::render('Academique/AnneesUniversitaires/Show', [
             'annee' => $annee,
         ]);
     }
 
-    public function update(Request $request, AnneeUniversitaire $anneesUniversitaire): JsonResponse
-{
-    $validated = $request->validate([
-        'annee_univ'   => [
-            'required',
-            'string',
-            'max:9',
-            Rule::unique('annees_universitaires', 'annee_univ')
-                ->ignore($anneesUniversitaire->getKey(), $anneesUniversitaire->getKeyName()),
-        ],
-        'date_debut'   => ['required', 'date'],
-        'date_cloture' => ['required', 'date', 'after:date_debut'],
-        'est_active'   => ['sometimes', 'boolean'],
-    ]);
+    public function update(Request $request, AnneeUniversitaire $anneesUniversitaire)
+    {
+        $validated = $request->validate([
+            'annee_univ' => [
+                'required',
+                'string',
+                'max:9',
+                Rule::unique('annees_universitaires', 'annee_univ')
+                    ->ignore($anneesUniversitaire->getKey(), $anneesUniversitaire->getKeyName()),
+            ],
+            'date_debut' => ['required', 'date'],
+            'date_cloture' => ['required', 'date', 'after:date_debut'],
+            'est_active' => ['sometimes', 'boolean'],
+        ]);
 
-    $anneesUniversitaire->update($validated);
+        $anneesUniversitaire->update($validated);
 
-    return response()->json($anneesUniversitaire->refresh()->load('filieres.niveaux'));
-}
+        return Redirect()->route('academique.annees-universitaires.index');
+    }
 
     public function destroy(int $id)
     {
         $annee = AnneeUniversitaire::findOrFail($id);
         $annee->delete();
-       return Redirect()->route('academique.annees-universitaires.index')
-            ->with('success', 'Année universitaire supprimée.');
+        return Redirect()->route('academique.annees-universitaires.index');
     }
 }
