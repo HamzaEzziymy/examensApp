@@ -1,5 +1,5 @@
 import React from 'react'
-import { Link } from '@inertiajs/react';
+import { Link, usePage } from '@inertiajs/react';
 import ApplicationLogo from '@/Components/ApplicationLogo';
 import {FaHome, FaPaperclip, FaProjectDiagram, FaTasks, FaUser } from 'react-icons/fa';
 import { IoDocumentsSharp } from "react-icons/io5";
@@ -7,15 +7,19 @@ import { MdAccountTree } from "react-icons/md";
 
 
 function Sidebar({sidebarOpen, setSidebarOpen, mobileMenuOpen, setMobileMenuOpen}) {
+    
     // Navigation items
     const navigation = [
         { name: 'Dashboard',icon:<FaHome size={20}/> , href: route('dashboard'), current: route().current('dashboard') },
         { name: 'Documents',icon:<IoDocumentsSharp size={20}/>, href: route('proces-v'), current: route().current('*.documents.*') },
-        { name: 'Structure académique',icon:<MdAccountTree size={20}/>, href: '#', current: false },
+        { 
+            name: 'Structure académique',
+            icon:<MdAccountTree size={20}/>, 
+            href: route('academique.annees-universitaires.index'), 
+            current: route().current('academique.*') 
+        },
         { name: 'Projects',icon:<FaProjectDiagram size={20}/>, href: '#', current: false },
-        // { name: 'Tasks',icon:<FaTasks size={20}/>, href: route("AnneeUniversitaire"), current: route().current("AnneeUniversitaire") },
         { name: 'Reports',icon:<FaPaperclip size={20}/>, href: '#', current: false },
-        // { name: 'Settings',icon:<CiSettings size={20}/>, href: '#', current: false },
         { name: 'Profile',icon:<FaUser size={20}/>, href: route('profile.edit'), current: route().current('profile.edit') },
     ];
 
