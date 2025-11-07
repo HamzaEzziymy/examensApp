@@ -26,7 +26,7 @@ class FiliereController extends Controller
     {
         $validated = $request->validate([
             'nom_filiere'  => ['required', 'string', 'max:100'],
-            'code_filiere' => ['nullable', 'integer', 'unique:filieres,code_filiere'],
+            'code_filiere' => ['nullable', 'string', 'max:20', 'unique:filieres,code_filiere'],
             'id_annee'     => ['nullable', 'exists:annees_universitaires,id_annee'],
         ]);
 
@@ -53,7 +53,8 @@ class FiliereController extends Controller
             'nom_filiere'  => ['required', 'string', 'max:100'],
             'code_filiere' => [
                 'nullable',
-                'integer',
+                'string',
+                'max:20',
                 Rule::unique('filieres', 'code_filiere')->ignore($filiere->id_filiere, 'id_filiere'),
             ],
             'id_annee'     => ['nullable', 'exists:annees_universitaires,id_annee'],

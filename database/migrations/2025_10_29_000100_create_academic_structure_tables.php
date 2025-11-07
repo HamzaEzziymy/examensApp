@@ -19,7 +19,7 @@ return new class extends Migration {
             $table->id('id_filiere');
             $table->unsignedBigInteger('id_annee')->nullable();
             $table->string('nom_filiere', 100);
-            $table->integer('code_filiere')->unique()->nullable();
+            $table->string('code_filiere', 20)->unique()->nullable();
             $table->foreign('id_annee')->references('id_annee')->on('annees_universitaires');
             $table->timestamps();
         });

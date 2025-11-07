@@ -15,7 +15,7 @@ class FiliereFactory extends Factory
         return [
             'id_annee'    => AnneeUniversitaire::factory(),
             'nom_filiere' => $this->faker->unique()->words(3, true),
-            'code_filiere'=> $this->faker->unique()->numberBetween(100, 9999),
+            'code_filiere'=> strtoupper($this->faker->unique()->bothify('FIL###')),
         ];
     }
 }
