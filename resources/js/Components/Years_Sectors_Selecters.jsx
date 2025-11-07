@@ -1,24 +1,14 @@
+import { usePage } from '@inertiajs/react';
 import React, { useState } from 'react'
 
 function Years_Sectors_Selecters() {
+    const filiers = usePage().props.filieres;
+    const academicYears = usePage().props.anneeUniv;
+        
     
     const [selectedYear, setSelectedYear] = useState('2024-2025');
-    const [selectedFilier, setSelectedFilier] = useState('Pharmacie'); 
-    // Academic years list
-        const academicYears = [
-            { value: '2024-2025', label: '2024-2025' },
-            { value: '2023-2024', label: '2023-2024' },
-            { value: '2022-2023', label: '2022-2023' },
-            { value: '2021-2022', label: '2021-2022 (Archived)' },
-        ];
-    
-        // filiers
-        const filiers = [
-            { value: 'PHR', label: 'Pharmacie' },
-            { value: 'MED FR', label: 'Médecine FR' },
-            { value: 'MED ANG', label: 'Médecine ANG' },
-            { value: 'MED DEN', label: 'Médecine Dentaire' },
-        ];
+    const [selectedFilier, setSelectedFilier] = useState('Pharmacie');
+
 
   return (
     <div className='flex items-center gap-x-2 lg:gap-x-4'>
@@ -30,8 +20,8 @@ function Years_Sectors_Selecters() {
                 className="block w-full rounded-lg border-0 bg-gray-100 py-2 pl-3 pr-10 text-sm font-medium text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600 dark:bg-gray-700 dark:text-gray-100 dark:ring-gray-600"
             >
                 {academicYears.map((year) => (
-                    <option key={year.value} value={year.value}>
-                        {year.label}
+                    <option key={year.annee_univ} value={year.annee_univ}>
+                        {year.annee_univ}
                     </option>
                 ))}
             </select>
@@ -44,8 +34,8 @@ function Years_Sectors_Selecters() {
                 className="block w-full rounded-lg border-0 bg-gray-100 py-2 pl-3 pr-10 text-sm font-medium text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 focus:ring-2 focus:ring-indigo-600 dark:bg-gray-700 dark:text-gray-100 dark:ring-gray-600"
             >
                 {filiers.map((filier) => (
-                    <option key={filier.value} value={filier.value}>
-                        {filier.label}
+                    <option key={filier.nom_filiere} value={filier.nom_filiere}>
+                        {filier.nom_filiere}
                     </option>
                 ))}
             </select>

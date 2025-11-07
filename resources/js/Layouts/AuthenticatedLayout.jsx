@@ -6,14 +6,12 @@ import Sidebar from './Sidebar';
 
 export default function AuthenticatedLayout({ header, children }) {
     const user = usePage().props.auth.user;
+
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
     const [darkMode, setDarkMode] = useState(true);
 
-    
-
-    
-
+    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
     // Dark mode toggle
     const toggleDarkMode = () => {
         setDarkMode(!darkMode);

@@ -4,6 +4,8 @@ namespace App\Http\Middleware;
 
 use Illuminate\Http\Request;
 use Inertia\Middleware;
+use App\Models\Filiere;
+use App\Models\AnneeUniversitaire;
 
 class HandleInertiaRequests extends Middleware
 {
@@ -34,6 +36,12 @@ class HandleInertiaRequests extends Middleware
             'auth' => [
                 'user' => $request->user(),
             ],
+            'filieres' => function () {
+                return Filiere::all();
+            },
+            'anneeUniv' => function () {
+                return AnneeUniversitaire::all();
+            },
         ];
     }
 }
