@@ -65,11 +65,13 @@ Route::prefix('academique')->name('academique.')->group(function () {
     Route::resources([
         'annees-universitaires' => AnneeUniversitaireController::class,
         'filieres'              => FiliereController::class,
-        'niveaux'               => NiveauController::class,
         'semestres'             => SemestreController::class,
         'modules'               => ModuleController::class,
         'elements-module'       => ElementModuleController::class,
     ]);
+
+    Route::get('niveaux/fillieres/{filiere}', [NiveauController::class, 'index'])->name('niveaux.index');
+    Route::resource('niveaux', NiveauController::class)->except(['index']);
 });
 });
 /* =========================
