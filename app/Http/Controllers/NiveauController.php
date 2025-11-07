@@ -22,7 +22,9 @@ class NiveauController extends Controller
             ->where('id_filiere', $filiere->id_filiere)
             ->orderBy('nom_niveau')
             ->get();
-        return response()->json($niveaux);
+        return Inertia::render('Academique/Niveaux/Index', [
+            'niveaux'     => $niveaux
+        ]);
     }
 
     public function store(Request $request)
