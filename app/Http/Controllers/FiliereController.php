@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AnneeUniversitaire;
 use App\Models\Filiere;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -12,18 +13,18 @@ class FiliereController extends Controller
 {
     public function index()
     {
-        $filieres = Filiere::with([
-            'anneeUniversitaire:id_annee,annee_univ',
-            'niveaux:id_niveau,id_filiere,nom_niveau',
-        ])->orderBy('nom_filiere')->get();
+        $filieres = Filiere::all();
+        $anneesUniv = AnneeUniversitaire::all();
 
        return Inertia::render('Academique/Filieres/Index', [
             'filieres' => $filieres,
+            'anneesUniv'=> $anneesUniv
         ]);
     }
 
     public function store(Request $request)
     {
+        dd($request->all());
         $validated = $request->validate([
             'nom_filiere'  => ['required', 'string', 'max:100'],
             'code_filiere' => ['nullable', 'integer', 'unique:filieres,code_filiere'],
@@ -61,8 +62,7 @@ class FiliereController extends Controller
 
         $filiere->update($validated);
 
-       return Redirect()->route('academique.filieres.index')
-            ->with('success', 'Filière mise à jour.');
+       return Redirect()->route('academique.filieres.index');
     }
 
     public function destroy(int $id)

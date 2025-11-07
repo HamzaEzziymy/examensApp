@@ -5,8 +5,7 @@ import Header from '../Header'
 import FormAjouter from './FormAjouter';
 import Desplay from './Desplay';
 
-function Index({annees}) {
-    // console.log(annees);
+function Index({filieres, anneesUniv}) {
   return (
     <AuthenticatedLayout
         header={
@@ -19,8 +18,8 @@ function Index({annees}) {
       <Header />
       <div className="p-4 rounded-lg">
           <div className="grid lg:grid-cols-2 grid-cols-1 gap-4 mb-4">
-          {/* <FormAjouter /> */}
-          {/* <Desplay anneesUniv = {annees}/> */}
+          <FormAjouter anneesUniv={anneesUniv} />
+          <Desplay filieres = {filieres} anneesUniv={anneesUniv} />
         </div>
         <div className="grid lg:grid-cols-2 grid-cols-1 gap-4 mb-4">
         </div>
