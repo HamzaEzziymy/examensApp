@@ -23,6 +23,7 @@ class SemestreController extends Controller
 
     public function store(Request $request)
     {
+        dd($request->all());
         $validated = $request->validate([
             'code_semestre'  => ['required', 'string', 'max:20'],
             'nom_semestre'   => ['required', 'string', 'max:100'],

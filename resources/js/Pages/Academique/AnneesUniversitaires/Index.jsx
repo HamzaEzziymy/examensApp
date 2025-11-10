@@ -6,7 +6,7 @@ import FormAjouter from './FormAjouter';
 import Desplay from './Desplay';
 
 function Index({annees}) {
-    console.log(annees);
+  
   return (
     <AuthenticatedLayout
         header={

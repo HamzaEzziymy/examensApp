@@ -23,7 +23,7 @@ class NiveauController extends Controller
             ->get();
         $filieres = Filiere::select('id_filiere', 'nom_filiere')->orderBy('nom_filiere')->get();
 
-        return Inertia::render('Academique/Niveaux/Index', [
+        return Inertia::render('Academique/Niveaux/Index', props: [
             'niveaux'     => $niveaux,
             'filieres'=> $filieres
         ]);
@@ -60,7 +60,6 @@ class NiveauController extends Controller
         $validated = $request->validate([
             'code_niveau'    => ['required', 'string', 'max:20'],
             'nom_niveau'     => ['required', 'string', 'max:100'],
-          
             'credits_requis' => ['required', 'integer', 'min:0'],
             'id_filiere'     => ['nullable', 'exists:filieres,id_filiere'],
         ]);

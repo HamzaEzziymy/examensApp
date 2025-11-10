@@ -66,6 +66,7 @@ Route::prefix('academique')->name('academique.')->group(function () {
         'annees-universitaires' => AnneeUniversitaireController::class,
         'filieres'              => FiliereController::class,
         'niveaux'               => NiveauController::class,
+        'semestres'             => SemestreController::class,
         'modules'               => ModuleController::class,
         'elements-module'       => ElementModuleController::class,
     ]);
