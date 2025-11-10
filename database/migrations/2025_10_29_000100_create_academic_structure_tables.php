@@ -20,7 +20,7 @@ return new class extends Migration {
             $table->unsignedBigInteger('id_annee')->nullable();
             $table->string('nom_filiere', 100);
             $table->string('code_filiere')->unique()->nullable();
-            $table->foreign('id_annee')->references('id_annee')->on('annees_universitaires');
+            $table->foreign('id_annee')->references('id_annee')->on('annees_universitaires')->onDelete('set null');
             $table->timestamps();
         });
 
@@ -41,7 +41,7 @@ return new class extends Migration {
             $table->string('nom_semestre', 100);
             $table->unsignedBigInteger('id_niveau')->nullable();
             $table->integer('credits_requis')->nullable();
-            $table->foreign('id_niveau')->references('id_niveau')->on('niveaux');
+            $table->foreign('id_niveau')->references('id_niveau')->on('niveaux')->onDelete('set null');
             $table->timestamps();
         });
 
@@ -58,8 +58,8 @@ return new class extends Migration {
             $table->decimal('coefficient_module', 4, 2);
             $table->integer('credits_requis')->nullable();
             $table->text('description')->nullable();
-            $table->foreign('id_semestre')->references('id_semestre')->on('semestres');
-            $table->foreign('id_niveau')->references('id_niveau')->on('niveaux');
+            $table->foreign('id_semestre')->references('id_semestre')->on('semestres')->onDelete('set null');
+            $table->foreign('id_niveau')->references('id_niveau')->on('niveaux')->onDelete('set null');
             $table->timestamps();
         });
 
@@ -71,7 +71,7 @@ return new class extends Migration {
             $table->decimal('coefficient_element', 4, 2);
             $table->decimal('seuil_validation', 4, 2)->default(10.00);
             $table->boolean('est_obligatoire')->default(true);
-            $table->foreign('id_module')->references('id_module')->on('modules');
+            $table->foreign('id_module')->references('id_module')->on('modules')->onDelete('set null');
             $table->timestamps();
         });
     }
