@@ -16,7 +16,7 @@ class Niveau extends Model
     protected $guarded = [];
 
     protected $fillable = [
-        'code_niveau', 'nom_niveau', 'id_filiere', 'semestre', 'credits_requis',
+        'code_niveau', 'nom_niveau', 'id_filiere',  'credits_requis',
     ];
     
     public function filiere(): BelongsTo

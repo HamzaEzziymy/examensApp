@@ -34,7 +34,6 @@ class NiveauController extends Controller
         $validated = $request->validate([
             'code_niveau'    => ['required', 'string', 'max:20'],
             'nom_niveau'     => ['required', 'string', 'max:100'],
-            'semestre'       => ['required', 'integer', 'min:1'],
             'credits_requis' => ['required', 'integer', 'min:0'],
             'id_filiere'     => ['nullable', 'exists:filieres,id_filiere'],
         ]);
@@ -61,7 +60,7 @@ class NiveauController extends Controller
         $validated = $request->validate([
             'code_niveau'    => ['required', 'string', 'max:20'],
             'nom_niveau'     => ['required', 'string', 'max:100'],
-            'semestre'       => ['required', 'integer', 'min:1'],
+          
             'credits_requis' => ['required', 'integer', 'min:0'],
             'id_filiere'     => ['nullable', 'exists:filieres,id_filiere'],
         ]);

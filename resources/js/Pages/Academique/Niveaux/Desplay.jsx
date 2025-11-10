@@ -4,7 +4,7 @@ import Swal from 'sweetalert2';
 import { Pencil, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 
 export default function Display({ niveaux, filieres }) {
-    console.log(filieres);
+
     const [modalOpen, setModalOpen] = useState(false);
     const [expandedRows, setExpandedRows] = useState({});
     const formRef = useRef();
@@ -23,7 +23,6 @@ export default function Display({ niveaux, filieres }) {
         code_niveau: '',
         nom_niveau: '',
         id_filiere: '',
-        semestre: '',
         credits_requis: '',
     });
 
@@ -40,11 +39,9 @@ export default function Display({ niveaux, filieres }) {
             code_niveau: niveau.code_niveau,
             nom_niveau: niveau.nom_niveau,
             id_filiere: niveau.id_filiere || '',
-            semestre: niveau.semestre,
             credits_requis: niveau.credits_requis,
         });
         setModalOpen(true);
-        console.log(niveau);
     };
 
     const closeModal = () => {
@@ -54,7 +51,6 @@ export default function Display({ niveaux, filieres }) {
             code_niveau: '',
             nom_niveau: '',
             id_filiere: '',
-            semestre: '',
             credits_requis: '',
         });
     };
@@ -115,7 +111,6 @@ export default function Display({ niveaux, filieres }) {
                             <th className="px-4 py-2 text-left">Code</th>
                             <th className="px-4 py-2 text-left">Nom du Niveau</th>
                             <th className="px-4 py-2 text-left">Filière</th>
-                            <th className="px-4 py-2 text-left">Semestre</th>
                             <th className="px-4 py-2 text-left">Crédits Requis</th>
                             <th className="px-4 py-2 text-left">Modules</th>
                             <th className="px-4 py-2 text-left">Actions</th>
@@ -140,7 +135,6 @@ export default function Display({ niveaux, filieres }) {
                                     <td className="px-4 py-2 font-medium">{niveau.code_niveau}</td>
                                     <td className="px-4 py-2">{niveau.nom_niveau}</td>
                                     <td className="px-4 py-2">{niveau.filiere?.nom_filiere || 'N/A'}</td>
-                                    <td className="px-4 py-2">{niveau.semestre}</td>
                                     <td className="px-4 py-2">{niveau.credits_requis}</td>
                                     <td className="px-4 py-2">
                                         <span className="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-1 rounded text-sm">
@@ -260,17 +254,6 @@ export default function Display({ niveaux, filieres }) {
                                     ))}
                                 </select>
                                 {errors.id_filiere && <div className="text-red-500 text-sm">{errors.id_filiere}</div>}
-                            </div>
-                            <div>
-                                <label className="block text-sm">Semestre</label>
-                                <input
-                                    type="number"
-                                    value={data.semestre}
-                                    onChange={(e) => setData('semestre', e.target.value)}
-                                    className="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600"
-                                    placeholder="e.g., 1 pour L1, 2 pour L2"
-                                />
-                                {errors.semestre && <div className="text-red-500 text-sm">{errors.semestre}</div>}
                             </div>
                             <div>
                                 <label className="block text-sm">Crédits Requis</label>
