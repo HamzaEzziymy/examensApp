@@ -1,12 +1,12 @@
 import React, { useState, useRef } from 'react';
 import { usePage, useForm } from '@inertiajs/react';
 import Swal from 'sweetalert2';
-import { Pencil, Trash2 } from 'lucide-react';
+import { Pencil, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 
-
-export default function Desplay({ anneesUniv }) {
-
+export default function Display({ niveaux, filieres }) {
+    console.log(filieres);
     const [modalOpen, setModalOpen] = useState(false);
+    const [expandedRows, setExpandedRows] = useState({});
     const formRef = useRef();
 
     const {
@@ -19,36 +19,47 @@ export default function Desplay({ anneesUniv }) {
         processing,
         recentlySuccessful
     } = useForm({
-        id_annee: null,
-        annee_univ: '',
-        date_debut: '',
-        date_cloture: '',
-        est_active: false,
+        id_niveau: null,
+        code_niveau: '',
+        nom_niveau: '',
+        id_filiere: '',
+        semestre: '',
+        credits_requis: '',
     });
 
-    const openEditModal = (annee) => {
+    const toggleRow = (id_niveau) => {
+        setExpandedRows(prev => ({
+            ...prev,
+            [id_niveau]: !prev[id_niveau]
+        }));
+    };
+
+    const openEditModal = (niveau) => {
         setData({
-            id_annee: annee.id_annee,
-            annee_univ: annee.annee_univ,
-            date_debut: annee.date_debut,
-            date_cloture: annee.date_cloture,
-            est_active: annee.est_active,
+            id_niveau: niveau.id_niveau,
+            code_niveau: niveau.code_niveau,
+            nom_niveau: niveau.nom_niveau,
+            id_filiere: niveau.id_filiere || '',
+            semestre: niveau.semestre,
+            credits_requis: niveau.credits_requis,
         });
         setModalOpen(true);
+        console.log(niveau);
     };
 
     const closeModal = () => {
         setModalOpen(false);
         setData({
-            id_annee: null,
-            annee_univ: '',
-            date_debut: '',
-            date_cloture: '',
-            est_active: false,
+            id_niveau: null,
+            code_niveau: '',
+            nom_niveau: '',
+            id_filiere: '',
+            semestre: '',
+            credits_requis: '',
         });
     };
 
-    const handleDelete = (id_annee) => {
+    const handleDelete = (id_niveau) => {
         Swal.fire({
             title: 'Êtes-vous sûr ?',
             text: "Cette action est irréversible !",
@@ -60,9 +71,9 @@ export default function Desplay({ anneesUniv }) {
             cancelButtonText: 'Annuler'
         }).then((result) => {
             if (result.isConfirmed) {
-                destroy(route('academique.annees-universitaires.destroy', id_annee), {
+                destroy(route('academique.niveaux.destroy', id_niveau), {
                     onSuccess: () => {
-                        Swal.fire('Supprimé !', 'L\'année universitaire a été supprimée.', 'success');
+                        Swal.fire('Supprimé !', 'Le niveau a été supprimé.', 'success');
                     },
                     onError: () => {
                         Swal.fire('Erreur', 'Une erreur est survenue.', 'error');
@@ -70,18 +81,17 @@ export default function Desplay({ anneesUniv }) {
                 });
             }
         });
-        };
-
+    };
 
     const handleUpdate = (e) => {
         e.preventDefault();
-        put(route('academique.annees-universitaires.update', data.id_annee), {
+        put(route('academique.niveaux.update', data.id_niveau), {
             preserveScroll: true,
             onSuccess: () => {
                 closeModal();
                 Swal.fire({
                     icon: "success",
-                    title: "modifier avec succès",
+                    title: "Modifié avec succès",
                     showConfirmButton: false,
                     timer: 1500
                 });
@@ -92,51 +102,119 @@ export default function Desplay({ anneesUniv }) {
     return (
         <div className="bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 p-6 rounded-md">
             <div className="border-b border-gray-300 dark:border-gray-700 pb-4 mb-6">
-                    <h2 className="text-2xl font-semibold flex items-center">
-                      Années Universitaires
-                    </h2>
-                  </div>
+                <h2 className="text-2xl font-semibold flex items-center">
+                    Niveaux
+                </h2>
+            </div>
 
             <div className="overflow-x-auto rounded shadow border dark:border-gray-700">
                 <table className="min-w-full table-auto">
                     <thead className="bg-gray-100 dark:bg-gray-800">
                         <tr>
-                            <th className="px-4 py-2 text-left">Année</th>
-                            <th className="px-4 py-2 text-left">Début</th>
-                            <th className="px-4 py-2 text-left">Fin</th>
-                            <th className="px-4 py-2 text-left">Active</th>
+                            <th className="px-4 py-2 text-left w-12"></th>
+                            <th className="px-4 py-2 text-left">Code</th>
+                            <th className="px-4 py-2 text-left">Nom du Niveau</th>
+                            <th className="px-4 py-2 text-left">Filière</th>
+                            <th className="px-4 py-2 text-left">Semestre</th>
+                            <th className="px-4 py-2 text-left">Crédits Requis</th>
+                            <th className="px-4 py-2 text-left">Modules</th>
                             <th className="px-4 py-2 text-left">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {anneesUniv.map((annee, index) => (
-                            <tr key={index} className="border-t border-gray-200 dark:border-gray-700">
-                                <td className="px-4 py-2">{annee.annee_univ}</td>
-                                <td className="px-4 py-2">{annee.date_debut}</td>
-                                <td className="px-4 py-2">{annee.date_cloture}</td>
-                                <td className="px-4 py-2">
-                                    {annee.est_active ? (
-                                        <span className="text-green-500 font-semibold">Oui</span>
-                                    ) : (
-                                        <span className="text-gray-500">Non</span>
-                                    )}
-                                </td>
-                                <td className="flex px-4 py-2 space-x-2">
-                                    <button
-                                        className="flex items-center gap-1 bg-blue-500 hover:bg-blue-600 text-white p-2 rounded"
-                                        onClick={() => openEditModal(annee)}
-                                    >
-                                        <Pencil size={16} />
-                                    </button>
-                                    <button
-                                        className="flex items-center gap-1 bg-red-500 hover:bg-red-600 text-white p-2 rounded"
-                                        onClick={() => handleDelete(annee.id_annee)}
-                                    >
-                                        <Trash2 size={16} />
-                                    </button>
-                                </td>
-
-                            </tr>
+                        {niveaux.map((niveau) => (
+                            <React.Fragment key={niveau.id_niveau}>
+                                <tr className="border-t border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
+                                    <td className="px-4 py-2">
+                                        <button
+                                            onClick={() => toggleRow(niveau.id_niveau)}
+                                            className="text-blue-500 hover:text-blue-700"
+                                        >
+                                            {expandedRows[niveau.id_niveau] ? (
+                                                <ChevronUp size={20} />
+                                            ) : (
+                                                <ChevronDown size={20} />
+                                            )}
+                                        </button>
+                                    </td>
+                                    <td className="px-4 py-2 font-medium">{niveau.code_niveau}</td>
+                                    <td className="px-4 py-2">{niveau.nom_niveau}</td>
+                                    <td className="px-4 py-2">{niveau.filiere?.nom_filiere || 'N/A'}</td>
+                                    <td className="px-4 py-2">{niveau.semestre}</td>
+                                    <td className="px-4 py-2">{niveau.credits_requis}</td>
+                                    <td className="px-4 py-2">
+                                        <span className="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-1 rounded text-sm">
+                                            {niveau.modules_count || 0}
+                                        </span>
+                                    </td>
+                                    <td className="flex px-4 py-2 space-x-2">
+                                        <button
+                                            className="flex items-center gap-1 bg-blue-500 hover:bg-blue-600 text-white p-2 rounded"
+                                            onClick={() => openEditModal(niveau)}
+                                        >
+                                            <Pencil size={16} />
+                                        </button>
+                                        <button
+                                            className="flex items-center gap-1 bg-red-500 hover:bg-red-600 text-white p-2 rounded"
+                                            onClick={() => handleDelete(niveau.id_niveau)}
+                                        >
+                                            <Trash2 size={16} />
+                                        </button>
+                                    </td>
+                                </tr>
+                                
+                                {expandedRows[niveau.id_niveau] && (
+                                    <tr className="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
+                                        <td colSpan="9" className="px-4 py-4">
+                                            <div className="ml-8">
+                                                <h3 className="text-lg font-semibold mb-3 text-blue-700 dark:text-blue-400">
+                                                    Semestres
+                                                </h3>
+                                                {niveau.semestres && niveau.semestres.length > 0 ? (
+                                                    <div className="space-y-3">
+                                                        {niveau.semestres.map((semestre) => (
+                                                            <div 
+                                                                key={semestre.id_semestre}
+                                                                className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700"
+                                                            >
+                                                                <div className="flex items-center justify-between mb-2">
+                                                                    <h4 className="font-semibold text-gray-800 dark:text-gray-200">
+                                                                        {semestre.nom_semestre} ({semestre.code_semestre})
+                                                                    </h4>
+                                                                    <span className="text-sm text-gray-500 dark:text-gray-400">
+                                                                        {semestre.modules?.length || 0} modules
+                                                                    </span>
+                                                                </div>
+                                                                
+                                                                {semestre.modules && semestre.modules.length > 0 && (
+                                                                    <div className="mt-3">
+                                                                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">Modules:</p>
+                                                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                                                            {semestre.modules.map((module, idx) => (
+                                                                                <div 
+                                                                                    key={idx}
+                                                                                    className="text-sm bg-blue-50 dark:bg-blue-900/20 text-blue-900 dark:text-blue-200 px-3 py-2 rounded"
+                                                                                >
+                                                                                    <span className="font-medium">{module.code_module}</span>
+                                                                                    {module.nom_module && ` - ${module.nom_module}`}
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                ) : (
+                                                    <p className="text-gray-500 dark:text-gray-400 italic">
+                                                        Aucun semestre disponible
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                )}
+                            </React.Fragment>
                         ))}
                     </tbody>
                 </table>
@@ -144,50 +222,67 @@ export default function Desplay({ anneesUniv }) {
 
             {modalOpen && (
                 <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                    <div className="bg-white dark:bg-gray-800 p-6 rounded shadow-lg w-full max-w-md">
-                        <h2 className="text-xl font-bold mb-4">Modifier Année Universitaire</h2>
-                        <form onSubmit={handleUpdate} className="space-y-4" ref={formRef}>
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded shadow-lg w-full max-w-md max-h-[90vh] overflow-y-auto">
+                        <h2 className="text-xl font-bold mb-4">Modifier Niveau</h2>
+                        <div className="space-y-4">
                             <div>
-                                <label className="block text-sm">Année</label>
+                                <label className="block text-sm">Code Niveau</label>
                                 <input
                                     type="text"
-                                    value={data.annee_univ}
-                                    onChange={(e) => setData('annee_univ', e.target.value)}
+                                    value={data.code_niveau}
+                                    onChange={(e) => setData('code_niveau', e.target.value)}
                                     className="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600"
                                 />
-                                {errors.annee_univ && <div className="text-red-500 text-sm">{errors.annee_univ}</div>}
+                                {errors.code_niveau && <div className="text-red-500 text-sm">{errors.code_niveau}</div>}
                             </div>
                             <div>
-                                <label className="block text-sm">Date de Début</label>
+                                <label className="block text-sm">Nom du Niveau</label>
                                 <input
-                                    type="date"
-                                    value={data.date_debut}
-                                    onChange={(e) => setData('date_debut', e.target.value)}
+                                    type="text"
+                                    value={data.nom_niveau}
+                                    onChange={(e) => setData('nom_niveau', e.target.value)}
                                     className="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600"
                                 />
-                                {errors.date_debut && <div className="text-red-500 text-sm">{errors.date_debut}</div>}
+                                {errors.nom_niveau && <div className="text-red-500 text-sm">{errors.nom_niveau}</div>}
                             </div>
                             <div>
-                                <label className="block text-sm">Date de Fin</label>
+                                <label className="block text-sm">Filière</label>
+                                <select
+                                    value={data.id_filiere}
+                                    onChange={(e) => setData('id_filiere', e.target.value)}
+                                    className="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600"
+                                >
+                                    <option value="">Sélectionner une filière</option>
+                                    {filieres.map((filiere) => (
+                                        <option key={filiere.id_filiere} value={filiere.id_filiere}>
+                                            {filiere.nom_filiere}
+                                        </option>
+                                    ))}
+                                </select>
+                                {errors.id_filiere && <div className="text-red-500 text-sm">{errors.id_filiere}</div>}
+                            </div>
+                            <div>
+                                <label className="block text-sm">Semestre</label>
                                 <input
-                                    type="date"
-                                    value={data.date_cloture}
-                                    onChange={(e) => setData('date_cloture', e.target.value)}
+                                    type="number"
+                                    value={data.semestre}
+                                    onChange={(e) => setData('semestre', e.target.value)}
+                                    className="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600"
+                                    placeholder="e.g., 1 pour L1, 2 pour L2"
+                                />
+                                {errors.semestre && <div className="text-red-500 text-sm">{errors.semestre}</div>}
+                            </div>
+                            <div>
+                                <label className="block text-sm">Crédits Requis</label>
+                                <input
+                                    type="number"
+                                    value={data.credits_requis}
+                                    onChange={(e) => setData('credits_requis', e.target.value)}
                                     className="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600"
                                 />
-                                {errors.date_cloture && <div className="text-red-500 text-sm">{errors.date_cloture}</div>}
+                                {errors.credits_requis && <div className="text-red-500 text-sm">{errors.credits_requis}</div>}
                             </div>
-                            <div className="flex items-center">
-                                <input
-                                    type="checkbox"
-                                    checked={data.est_active}
-                                    onChange={(e) => setData('est_active', e.target.checked)}
-                                    className="mr-2"
-                                    id="est_active"
-                                />
-                                <label htmlFor="est_active">Activer cette année</label>
-                            </div>
-                            <div className="flex justify-end space-x-2">
+                            <div className="flex justify-end space-x-2 pt-2">
                                 <button
                                     type="button"
                                     onClick={closeModal}
@@ -196,14 +291,15 @@ export default function Desplay({ anneesUniv }) {
                                     Annuler
                                 </button>
                                 <button
-                                    type="submit"
+                                    type="button"
+                                    onClick={handleUpdate}
                                     disabled={processing}
                                     className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded"
                                 >
                                     Sauvegarder
                                 </button>
                             </div>
-                        </form>
+                        </div>
                     </div>
                 </div>
             )}

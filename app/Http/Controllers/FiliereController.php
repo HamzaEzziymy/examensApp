@@ -24,17 +24,15 @@ class FiliereController extends Controller
 
     public function store(Request $request)
     {
-        dd($request->all());
         $validated = $request->validate([
             'nom_filiere'  => ['required', 'string', 'max:100'],
             'code_filiere' => ['nullable', 'string', 'max:20', 'unique:filieres,code_filiere'],
             'id_annee'     => ['nullable', 'exists:annees_universitaires,id_annee'],
         ]);
-
+        
         $filiere = Filiere::create($validated);
 
-       return Redirect()->route('academique.filieres.index')
-            ->with('success', 'Filière créée.');
+       return Redirect()->route('academique.filieres.index');
     }
 
     public function show(int $id)

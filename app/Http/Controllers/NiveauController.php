@@ -10,20 +10,22 @@ use Inertia\Inertia;
 
 class NiveauController extends Controller
 {
-    public function index(Filiere $filiere)
+    public function index()
     {
         $niveaux = Niveau::with([
                 'filiere:id_filiere,nom_filiere',
-                'semestres:id_semestre,id_niveau,nom_semestre',
+                'semestres:id_semestre,id_niveau,nom_semestre,code_semestre',
                 'semestres.modules:id_module,id_semestre,id_niveau,code_module,nom_module',
                 'semestres.modules.elements:id_element,id_module,nom_element',
             ])
             ->withCount(['semestres', 'modules'])
-            ->where('id_filiere', $filiere->id_filiere)
             ->orderBy('nom_niveau')
             ->get();
+        $filieres = Filiere::select('id_filiere', 'nom_filiere')->orderBy('nom_filiere')->get();
+
         return Inertia::render('Academique/Niveaux/Index', [
-            'niveaux'     => $niveaux
+            'niveaux'     => $niveaux,
+            'filieres'=> $filieres
         ]);
     }
 

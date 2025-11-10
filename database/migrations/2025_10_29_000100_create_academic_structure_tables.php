@@ -19,7 +19,7 @@ return new class extends Migration {
             $table->id('id_filiere');
             $table->unsignedBigInteger('id_annee')->nullable();
             $table->string('nom_filiere', 100);
-            $table->string('code_filiere', 20)->unique()->nullable();
+            $table->string('code_filiere')->unique()->nullable();
             $table->foreign('id_annee')->references('id_annee')->on('annees_universitaires');
             $table->timestamps();
         });
@@ -29,9 +29,9 @@ return new class extends Migration {
             $table->string('code_niveau', 20);
             $table->string('nom_niveau', 100);
             $table->unsignedBigInteger('id_filiere')->nullable();
-            $table->integer('semestre'); // L1=1, L2=2, etc.
+            $table->integer('semestre');
             $table->integer('credits_requis');
-            $table->foreign('id_filiere')->references('id_filiere')->on('filieres');
+            $table->foreign('id_filiere')->references('id_filiere')->on('filieres')->onDelete('set null');
             $table->timestamps();
         });
 

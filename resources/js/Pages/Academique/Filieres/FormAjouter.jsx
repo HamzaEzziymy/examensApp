@@ -76,8 +76,7 @@ function FormAjouter({ anneesUniv }) {
             Code Filière
           </label>
           <input
-            type="number"
-            placeholder="e.g., 101"
+            placeholder="e.g., M101"
             value={data.code_filiere}
             onChange={(e) => setData('code_filiere', e.target.value)}
             className="w-full rounded-lg border border-blue-300 dark:border-gray-600 bg-transparent dark:bg-gray-800 py-3 px-4 text-black dark:text-white focus:ring-2 focus:ring-blue-400 focus:outline-none"

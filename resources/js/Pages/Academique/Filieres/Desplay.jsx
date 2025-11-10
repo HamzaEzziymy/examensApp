@@ -150,7 +150,6 @@ export default function Display({ filieres, anneesUniv }) {
                             <div>
                                 <label className="block text-sm">Code Filière</label>
                                 <input
-                                    type="number"
                                     value={data.code_filiere}
                                     onChange={(e) => setData('code_filiere', e.target.value)}
                                     className="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600"
