@@ -14,13 +14,14 @@ class NiveauController extends Controller
     {
         $niveaux = Niveau::with([
                 'filiere:id_filiere,nom_filiere',
-                'semestres:id_semestre,id_niveau,nom_semestre,code_semestre',
-                'semestres.modules:id_module,id_semestre,id_niveau,code_module,nom_module',
+                'semestres:id_semestre,id_niveau,nom_semestre,code_semestre,credits_requis',
+                'semestres.modules:id_module,id_semestre,id_niveau,code_module,nom_module,credits_requis',
                 'semestres.modules.elements:id_element,id_module,nom_element',
             ])
             ->withCount(['semestres', 'modules'])
             ->orderBy('nom_niveau')
             ->get();
+
         $filieres = Filiere::select('id_filiere', 'nom_filiere')->orderBy('nom_filiere')->get();
 
         return Inertia::render('Academique/Niveaux/Index', props: [

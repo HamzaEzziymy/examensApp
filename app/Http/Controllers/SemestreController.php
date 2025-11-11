@@ -23,7 +23,6 @@ class SemestreController extends Controller
 
     public function store(Request $request)
     {
-        dd($request->all());
         $validated = $request->validate([
             'code_semestre'  => ['required', 'string', 'max:20'],
             'nom_semestre'   => ['required', 'string', 'max:100'],
@@ -31,10 +30,9 @@ class SemestreController extends Controller
             'id_niveau'      => ['nullable', 'exists:niveaux,id_niveau'],
         ]);
 
-        $semestre = Semestre::create($validated);
+        Semestre::create($validated);
 
-        return Redirect()->route('academique.semestres.index')
-            ->with('success', 'Semestre créé.');
+        return Redirect()->route('academique.niveaux.index');
     }
 
     public function show(int $id)
@@ -49,7 +47,7 @@ class SemestreController extends Controller
 
     public function update(Request $request, int $id)
     {
-         $semestre= Semestre::findorfail($id);
+        $semestre= Semestre::findorfail($id);
         $validated = $request->validate([
             'code_semestre'  => ['required', 'string', 'max:20'],
             'nom_semestre'   => ['required', 'string', 'max:100'],
@@ -59,8 +57,7 @@ class SemestreController extends Controller
 
         $semestre->update($validated);
 
-        return Redirect()->route('academique.semestres.index')
-            ->with('success', 'Semestre mis à jour.');
+        return Redirect()->route('academique.niveaux.index');
     }
 
     public function destroy(int $id)
@@ -68,7 +65,6 @@ class SemestreController extends Controller
         $semestre= Semestre::findorfail($id);
         $semestre->delete();
 
-       return Redirect()->route('academique.semestres.index')
-            ->with('success', 'Semestre supprimé.');
+       return Redirect()->route('academique.niveaux.index');
     }
 }
