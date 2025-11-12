@@ -12,13 +12,16 @@ class NiveauController extends Controller
 {
     public function index()
     {
+
         $niveaux = Niveau::with([
-                'filiere:id_filiere,nom_filiere',
-                'semestres:id_semestre,id_niveau,nom_semestre,code_semestre,credits_requis',
-                'semestres.modules:id_module,id_semestre,id_niveau,code_module,nom_module,credits_requis',
-                'semestres.modules.elements:id_element,id_module,nom_element',
-            ])
-            ->withCount(['semestres', 'modules'])
+            'filiere:id_filiere,nom_filiere',
+            'semestres:id_semestre,id_niveau,nom_semestre,code_semestre,credits_requis',
+            'semestres.modules:id_module,id_semestre,code_module,nom_module,credits_requis',
+            'semestres.modules.elements:id_element,id_module,nom_element',
+        ])
+            ->withCount(['semestres', 'semestres as modules_count' => function ($query) {
+                $query->join('modules', 'semestres.id_semestre', '=', 'modules.id_semestre');
+            }])
             ->orderBy('nom_niveau')
             ->get();
 
@@ -26,7 +29,7 @@ class NiveauController extends Controller
 
         return Inertia::render('Academique/Niveaux/Index', props: [
             'niveaux'     => $niveaux,
-            'filieres'=> $filieres
+            'filieres' => $filieres
         ]);
     }
 
@@ -47,17 +50,17 @@ class NiveauController extends Controller
 
     public function show(int $id)
     {
-        $niveau= Niveau::findorfail($id);
+        $niveau = Niveau::findorfail($id);
         $niveau->load(['filiere', 'semestres.modules']);
 
-         return Inertia::render('Academique/Niveaux/Show', [
+        return Inertia::render('Academique/Niveaux/Show', [
             'niveau' => $niveau,
         ]);
     }
 
-    public function update(Request $request,int $id)
+    public function update(Request $request, int $id)
     {
-        $niveau= Niveau::findorfail($id);
+        $niveau = Niveau::findorfail($id);
         $validated = $request->validate([
             'code_niveau'    => ['required', 'string', 'max:20'],
             'nom_niveau'     => ['required', 'string', 'max:100'],
@@ -73,10 +76,10 @@ class NiveauController extends Controller
 
     public function destroy(int $id)
     {
-        $niveau= Niveau::findorfail($id);
+        $niveau = Niveau::findorfail($id);
         $niveau->delete();
 
-      return Redirect()->route('academique.niveaux.index')
+        return Redirect()->route('academique.niveaux.index')
             ->with('success', 'Niveau supprimé.');
     }
 }

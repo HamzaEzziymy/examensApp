@@ -38,7 +38,6 @@ class CoreAcademicSeeder extends Seeder
                 $semIds = $semestres->pluck('id_semestre')->all();
 
                 $modules = Module::factory()->count(fake()->numberBetween(5,7))->create([
-                    'id_niveau'   => $niv->id_niveau,
                     'id_semestre' => fake()->randomElement($semIds),
                 ]);
 

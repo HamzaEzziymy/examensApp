@@ -29,11 +29,6 @@ class Niveau extends Model
         return $this->hasMany(Semestre::class, 'id_niveau', 'id_niveau');
     }
 
-    public function modules(): HasMany
-    {
-        return $this->hasMany(Module::class, 'id_niveau', 'id_niveau');
-    }
-
     public function inscriptionsAdministratives(): HasMany
     {
         return $this->hasMany(InscriptionAdministrative::class, 'id_niveau', 'id_niveau');

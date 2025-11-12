@@ -18,7 +18,6 @@ class ModuleFactory extends Factory
             'nom_module'         => ucfirst($this->faker->unique()->words(3, true)),
             'abreviation_module' => strtoupper($this->faker->lexify('????')),
             'nature'             => $this->faker->randomElement(['Fondamental','Transversal','Pratique']),
-            'id_niveau'          => Niveau::factory(),
             'id_semestre'        => Semestre::factory(),
             'quadrimestre'       => $this->faker->numberBetween(1, 8),
             'seuil_validation'   => 10.00,

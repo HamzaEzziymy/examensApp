@@ -51,7 +51,6 @@ return new class extends Migration {
             $table->string('nom_module', 100);
             $table->string('abreviation_module', 100);
             $table->string('nature', 100);
-            $table->unsignedBigInteger('id_niveau')->nullable();
             $table->unsignedBigInteger('id_semestre')->nullable();
             $table->integer('quadrimestre');
             $table->decimal('seuil_validation', 4, 2)->default(10.00);
@@ -59,7 +58,6 @@ return new class extends Migration {
             $table->integer('credits_requis')->nullable();
             $table->text('description')->nullable();
             $table->foreign('id_semestre')->references('id_semestre')->on('semestres')->onDelete('set null');
-            $table->foreign('id_niveau')->references('id_niveau')->on('niveaux')->onDelete('set null');
             $table->timestamps();
         });
 

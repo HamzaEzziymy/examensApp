@@ -1,11 +1,11 @@
 <?php
-
 namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
 use App\Models\Etudiant;
 use App\Models\Filiere;
 use App\Models\Niveau;
+use App\Models\Semestre;
 use App\Models\AnneeUniversitaire;
 use App\Models\InscriptionAdministrative;
 use App\Models\InscriptionPedagogique;
@@ -34,7 +34,7 @@ class EnrollmentSeeder extends Seeder
 
         // Create administrative and pedagogical registrations
         foreach ($students as $etd) {
-            // pick a niveau from the student's filiere
+            // Pick a niveau from the student's filiere
             $niveau = Niveau::where('id_filiere', $etd->id_filiere)->inRandomOrder()->first();
             if (!$niveau) continue;
 
@@ -45,14 +45,22 @@ class EnrollmentSeeder extends Seeder
                 'statut'      => 'Active',
             ]);
 
-            // pick some modules from that niveau
-            $modules = Module::where('id_niveau', $niveau->id_niveau)->inRandomOrder()->take(4)->get();
+            // Get semestres for this niveau, then get modules from those semestres
+            $semestreIds = Semestre::where('id_niveau', $niveau->id_niveau)->pluck('id_semestre');
+            
+            if ($semestreIds->isEmpty()) continue;
+
+            $modules = Module::whereIn('id_semestre', $semestreIds)
+                ->inRandomOrder()
+                ->take(4)
+                ->get();
+
             foreach ($modules as $m) {
                 InscriptionPedagogique::factory()->create([
                     'id_etudiant'          => $etd->id_etudiant,
                     'id_inscription_admin' => $ia->id_inscription_admin,
                     'id_module'            => $m->id_module,
-                    'type_inscription'     => fake()->randomElement(['Normal','Credit']),
+                    'type_inscription'     => fake()->randomElement(['Normal', 'Credit']),
                 ]);
             }
         }

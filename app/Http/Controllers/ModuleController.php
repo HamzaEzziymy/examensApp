@@ -12,7 +12,6 @@ class ModuleController extends Controller
     public function index()
     {
         $modules = Module::with([
-                'niveau:id_niveau,nom_niveau',
                 'semestre:id_semestre,nom_semestre',
             ])
             ->withCount('elements')
@@ -36,7 +35,6 @@ class ModuleController extends Controller
             'coefficient_module' => ['required', 'numeric', 'min:0'],
             'credits_requis'     => ['nullable', 'integer', 'min:0'],
             'description'        => ['nullable', 'string'],
-            'id_niveau'          => ['nullable', 'exists:niveaux,id_niveau'],
             'id_semestre'        => ['nullable', 'exists:semestres,id_semestre'],
         ]);
 
@@ -49,7 +47,7 @@ class ModuleController extends Controller
     public function show($id)
     {
         $module= Module::findorfail($id);
-        $module->load(['niveau', 'semestre', 'elements']);
+        $module->load(['semestre', 'elements']);
 
         return Inertia::render('Academique/Modules/Show', [
             'module' => $module,
@@ -74,7 +72,6 @@ class ModuleController extends Controller
             'coefficient_module' => ['required', 'numeric', 'min:0'],
             'credits_requis'     => ['nullable', 'integer', 'min:0'],
             'description'        => ['nullable', 'string'],
-            'id_niveau'          => ['nullable', 'exists:niveaux,id_niveau'],
             'id_semestre'        => ['nullable', 'exists:semestres,id_semestre'],
         ]);
 

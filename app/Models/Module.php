@@ -21,7 +21,6 @@ class Module extends Model
         'nom_module',
         'abreviation_module',
         'nature',
-        'id_niveau',
         'id_semestre',
         'quadrimestre',
         'seuil_validation',
@@ -29,11 +28,6 @@ class Module extends Model
         'credits_requis',
         'description',
     ];
-    public function niveau(): BelongsTo
-    {
-        return $this->belongsTo(Niveau::class, 'id_niveau', 'id_niveau');
-    }
-
     public function semestre(): BelongsTo
     {
         return $this->belongsTo(Semestre::class, 'id_semestre', 'id_semestre');
