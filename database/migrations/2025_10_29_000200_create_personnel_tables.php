@@ -8,33 +8,33 @@ return new class extends Migration {
     public function up(): void {
         Schema::create('enseignants', function (Blueprint $table) {
             $table->id('id_enseignant');
-            // Match Laravel users.id (bigint) to avoid FK type mismatch
-            $table->unsignedBigInteger('id_user')->nullable(); // FK to existing users table
-            $table->string('code', 20)->unique();
+            $table->unsignedBigInteger('id_utilisateur')->nullable()->unique()->comment('Lien vers le compte utilisateur');
+            $table->string('matricule', 20)->unique();
             $table->string('nom', 50);
             $table->string('prenom', 50);
-            $table->string('mail_academique', 100)->unique();
-            $table->string('telephone', 20)->nullable();
-
-            // assume your user table is "users" with pk "id"
-            $table->foreign('id_user')->references('id')->on('users')->onDelete('set null');
-            $table->timestamps();
+            $table->string('email', 100)->unique();
+            $table->string('grade', 50)->nullable();
+            $table->string('departement', 100)->nullable()->comment('Specialite ou departement');
+            $table->string('chemin_signature_scan', 255)->nullable()->comment('Chemin vers la signature numerisee');
+            $table->foreign('id_utilisateur')->references('id')->on('users')->onDelete('set null');
+            $table->comment('Profil des enseignants (correcteur, surveillant)');
+             $table->timestamps();
         });
 
-        Schema::create('enseignant_module', function (Blueprint $table) {
-            $table->id();
-            $table->unsignedBigInteger('id_enseignant');
-            $table->unsignedBigInteger('id_module');
-            $table->timestamps();
-
-            $table->foreign('id_enseignant')->references('id_enseignant')->on('enseignants')->onDelete('cascade');
-            $table->foreign('id_module')->references('id_module')->on('modules')->onDelete('cascade');
-            $table->unique(['id_enseignant', 'id_module']);
-        });
+        if (Schema::hasTable('offre_formation')) {
+            Schema::table('offre_formation', function (Blueprint $table) {
+                $table->foreign('id_coordinateur')->references('id_enseignant')->on('enseignants')->onDelete('set null');
+            });
+        }
     }
 
     public function down(): void {
-        Schema::dropIfExists('enseignant_module');
+        if (Schema::hasTable('offre_formation')) {
+            Schema::table('offre_formation', function (Blueprint $table) {
+                $table->dropForeign(['id_coordinateur']);
+            });
+        }
+
         Schema::dropIfExists('enseignants');
     }
 };

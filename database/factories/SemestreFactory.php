@@ -16,7 +16,7 @@ class SemestreFactory extends Factory
             'code_semestre'   => 'S' . $this->faker->unique()->numerify('##'),
             'nom_semestre'    => 'Semestre ' . $this->faker->numberBetween(1, 12),
             'id_niveau'       => Niveau::factory(),
-            'credits_requis'  => $this->faker->numberBetween(0, 30),
+            'ordre'           => $this->faker->numberBetween(1, 12),
         ];
     }
 }

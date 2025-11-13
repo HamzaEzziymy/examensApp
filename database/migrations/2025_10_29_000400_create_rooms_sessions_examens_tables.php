@@ -42,7 +42,7 @@ return new class extends Migration {
             $table->dateTime('date_fin');
             $table->enum('statut', ['Planifiee', 'En cours', 'Terminee', 'Annulee']);
             $table->text('description')->nullable();
-            $table->foreign('id_session_examen')->references('id_session_examen')->on('sessions_examen');
+            $table->foreign('id_session_examen')->references('id_session_examen')->on('sessions_examen')->onDelete('set null');
             $table->foreign('id_module')->references('id_module')->on('modules')->onDelete('set null');
             $table->foreign('id_salle')->references('id_salle')->on('salles')->onDelete('set null');
             $table->timestamps();
@@ -55,4 +55,3 @@ return new class extends Migration {
         Schema::dropIfExists('salles');
     }
 };
-

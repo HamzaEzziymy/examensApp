@@ -13,12 +13,12 @@ class ElementModuleFactory extends Factory
     public function definition(): array
     {
         return [
-            'id_module'          => Module::factory(),
-            'type_element'       => $this->faker->randomElement(['TP','TD','COURS','STAGE']),
-            'nom_element'        => ucfirst($this->faker->words(2, true)),
-            'coefficient_element'=> $this->faker->randomFloat(2, 0.5, 2.0),
-            'seuil_validation'   => 10.00,
-            'est_obligatoire'    => $this->faker->boolean(80),
+            'id_module'        => Module::factory(),
+            'id_element_parent'=> null,
+            'code_element'     => strtoupper($this->faker->unique()->bothify('EL-##')),
+            'nom_element'      => ucfirst($this->faker->words(2, true)),
+            'type_element'     => $this->faker->randomElement(['COURS','TP','PRE_CLINIQUE','STAGE_ELEMENT','AUTRE']),
+            'coefficient'      => $this->faker->randomFloat(2, 0.5, 2.0),
         ];
     }
 }

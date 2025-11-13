@@ -14,8 +14,8 @@ return new class extends Migration {
             $table->date('date_attribution')->nullable();
             $table->date('date_limite_correction')->nullable();
             $table->enum('statut', ['Attribue', 'En cours', 'Termine']);
-            $table->foreign('id_examen')->references('id_examen')->on('examens');
-            $table->foreign('id_enseignant')->references('id_enseignant')->on('enseignants');
+            $table->foreign('id_examen')->references('id_examen')->on('examens')->onDelete('set null');
+            $table->foreign('id_enseignant')->references('id_enseignant')->on('enseignants')->onDelete('set null');
             $table->timestamps();
         });
 
@@ -26,8 +26,8 @@ return new class extends Migration {
             $table->decimal('note', 5, 2);
             $table->dateTime('date_saisie')->useCurrent();
             $table->text('commentaire')->nullable();
-            $table->foreign('id_anonymat')->references('id_anonymat')->on('anonymat');
-            $table->foreign('id_correcteur')->references('id_correcteur')->on('correcteurs');
+            $table->foreign('id_anonymat')->references('id_anonymat')->on('anonymat')->onDelete('set null');
+            $table->foreign('id_correcteur')->references('id_correcteur')->on('correcteurs')->onDelete('set null');
             $table->timestamps();
         });
 
@@ -39,9 +39,9 @@ return new class extends Migration {
             $table->decimal('moyenne_element', 5, 2)->nullable();
             $table->enum('statut', ['En cours', 'Valide', 'Non Valide', 'Rattrapage']);
             $table->date('date_validation')->nullable();
-            $table->foreign('id_inscription_pedagogique')->references('id_inscription_pedagogique')->on('inscriptions_pedagogiques');
-            $table->foreign('id_element')->references('id_element')->on('elements_module');
-            $table->foreign('id_session_examen')->references('id_session_examen')->on('sessions_examen');
+            $table->foreign('id_inscription_pedagogique')->references('id_inscription_pedagogique')->on('inscriptions_pedagogiques')->onDelete('set null');
+            $table->foreign('id_element')->references('id_element')->on('elements_module')->onDelete('set null');
+            $table->foreign('id_session_examen')->references('id_session_examen')->on('sessions_examen')->onDelete('set null');
             $table->timestamps();
         });
 
@@ -53,8 +53,8 @@ return new class extends Migration {
             $table->enum('statut', ['En cours', 'Valide', 'Non Valide', 'Rattrapage', 'Capitalise', 'En dette']);
             $table->date('date_validation')->nullable();
             $table->boolean('est_anticipe')->default(false);
-            $table->foreign('id_inscription_pedagogique')->references('id_inscription_pedagogique')->on('inscriptions_pedagogiques');
-            $table->foreign('id_module')->references('id_module')->on('modules');
+            $table->foreign('id_inscription_pedagogique')->references('id_inscription_pedagogique')->on('inscriptions_pedagogiques')->onDelete('set null');
+            $table->foreign('id_module')->references('id_module')->on('modules')->onDelete('set null');
             $table->timestamps();
         });
     }
@@ -66,4 +66,3 @@ return new class extends Migration {
         Schema::dropIfExists('correcteurs');
     }
 };
-

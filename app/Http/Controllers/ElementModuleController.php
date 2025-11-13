@@ -22,12 +22,12 @@ class ElementModuleController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'id_module'           => ['required', 'exists:modules,id_module'],
-            'type_element'        => ['nullable', 'string', 'max:50'],
-            'nom_element'         => ['required', 'string', 'max:100'],
-            'coefficient_element' => ['required', 'numeric', 'min:0'],
-            'seuil_validation'    => ['required', 'numeric', 'between:0,20'],
-            'est_obligatoire'     => ['sometimes', 'boolean'],
+            'id_module'        => ['required', 'exists:modules,id_module'],
+            'id_element_parent'=> ['nullable', 'exists:elements_module,id_element'],
+            'code_element'     => ['required', 'string', 'max:20'],
+            'nom_element'      => ['required', 'string', 'max:255'],
+            'type_element'     => ['required', 'in:COURS,TP,PRE_CLINIQUE,STAGE_ELEMENT,AUTRE'],
+            'coefficient'      => ['required', 'numeric', 'min:0'],
         ]);
 
         $element = ElementModule::create($validated);
@@ -48,12 +48,12 @@ class ElementModuleController extends Controller
     public function update(Request $request, ElementModule $elements_module)
     {
         $validated = $request->validate([
-            'id_module'           => ['required', 'exists:modules,id_module'],
-            'type_element'        => ['nullable', 'string', 'max:50'],
-            'nom_element'         => ['required', 'string', 'max:100'],
-            'coefficient_element' => ['required', 'numeric', 'min:0'],
-            'seuil_validation'    => ['required', 'numeric', 'between:0,20'],
-            'est_obligatoire'     => ['sometimes', 'boolean'],
+            'id_module'        => ['required', 'exists:modules,id_module'],
+            'id_element_parent'=> ['nullable', 'exists:elements_module,id_element'],
+            'code_element'     => ['required', 'string', 'max:20'],
+            'nom_element'      => ['required', 'string', 'max:255'],
+            'type_element'     => ['required', 'in:COURS,TP,PRE_CLINIQUE,STAGE_ELEMENT,AUTRE'],
+            'coefficient'      => ['required', 'numeric', 'min:0'],
         ]);
 
         $elements_module->update($validated);

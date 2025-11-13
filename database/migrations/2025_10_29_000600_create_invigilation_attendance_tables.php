@@ -25,8 +25,8 @@ return new class extends Migration {
             $table->time('heure_debut')->nullable();
             $table->time('heure_fin')->nullable();
             $table->text('observations')->nullable();
-            $table->foreign('id_examen')->references('id_examen')->on('examens');
-            $table->foreign('id_surveillant')->references('id_surveillant')->on('surveillants');
+            $table->foreign('id_examen')->references('id_examen')->on('examens')->onDelete('set null');
+            $table->foreign('id_surveillant')->references('id_surveillant')->on('surveillants')->onDelete('set null');
             $table->timestamps();
         });
 
@@ -35,15 +35,15 @@ return new class extends Migration {
             $table->unsignedBigInteger('id_examen')->nullable();
             $table->unsignedBigInteger('id_inscription_pedagogique')->nullable();
             $table->string('code_anonymat', 20);
-            $table->foreign('id_examen')->references('id_examen')->on('examens');
-            $table->foreign('id_inscription_pedagogique')->references('id_inscription_pedagogique')->on('inscriptions_pedagogiques');
+            $table->foreign('id_examen')->references('id_examen')->on('examens')->onDelete('set null');
+            $table->foreign('id_inscription_pedagogique')->references('id_inscription_pedagogique')->on('inscriptions_pedagogiques')->onDelete('set null');
             $table->timestamps();
         });
 
         Schema::create('repartition_etudiants', function (Blueprint $table) {
             $table->id('id_repartition');
-            $table->unsignedBigInteger('id_examen');
-            $table->unsignedBigInteger('id_inscription_pedagogique');
+            $table->unsignedBigInteger('id_examen')->nullable();
+            $table->unsignedBigInteger('id_inscription_pedagogique')->nullable();
             $table->integer('code_grille');
             $table->string('code_anonymat', 20)->nullable();
             $table->string('numero_place', 10)->nullable();
@@ -51,8 +51,8 @@ return new class extends Migration {
             $table->time('heure_arrivee')->nullable();
             $table->time('heure_sortie')->nullable();
             $table->text('observation')->nullable();
-            $table->foreign('id_examen')->references('id_examen')->on('examens')->onDelete('cascade');
-            $table->foreign('id_inscription_pedagogique')->references('id_inscription_pedagogique')->on('inscriptions_pedagogiques')->onDelete('cascade');
+            $table->foreign('id_examen')->references('id_examen')->on('examens')->onDelete('set null');
+            $table->foreign('id_inscription_pedagogique')->references('id_inscription_pedagogique')->on('inscriptions_pedagogiques')->onDelete('set null');
             $table->timestamps();
         });
 
@@ -64,8 +64,8 @@ return new class extends Migration {
             $table->text('motif')->nullable();
             $table->string('justificatif', 255)->nullable();
             $table->enum('statut', ['Non justifiee', 'Justifiee', 'En attente']);
-            $table->foreign('id_examen')->references('id_examen')->on('examens');
-            $table->foreign('id_anonymat')->references('id_anonymat')->on('anonymat');
+            $table->foreign('id_examen')->references('id_examen')->on('examens')->onDelete('set null');
+            $table->foreign('id_anonymat')->references('id_anonymat')->on('anonymat')->onDelete('set null');
             $table->timestamps();
         });
 
@@ -77,8 +77,8 @@ return new class extends Migration {
             $table->text('description')->nullable();
             $table->time('heure_incident');
             $table->text('mesures_prises')->nullable();
-            $table->foreign('id_anonymat')->references('id_anonymat')->on('anonymat');
-            $table->foreign('id_surveillance')->references('id_surveillance')->on('surveillances');
+            $table->foreign('id_anonymat')->references('id_anonymat')->on('anonymat')->onDelete('set null');
+            $table->foreign('id_surveillance')->references('id_surveillance')->on('surveillances')->onDelete('set null');
             $table->timestamps();
         });
 
@@ -90,7 +90,7 @@ return new class extends Migration {
             $table->integer('nombre_absents')->nullable();
             $table->boolean('incidents_signales')->default(false);
             $table->text('observations')->nullable();
-            $table->foreign('id_examen')->references('id_examen')->on('examens');
+            $table->foreign('id_examen')->references('id_examen')->on('examens')->onDelete('set null');
             $table->timestamps();
         });
     }
@@ -105,4 +105,3 @@ return new class extends Migration {
         Schema::dropIfExists('surveillants');
     }
 };
-

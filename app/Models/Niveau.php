@@ -4,7 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Niveau extends Model
@@ -13,25 +12,18 @@ class Niveau extends Model
 
     protected $table = 'niveaux';
     protected $primaryKey = 'id_niveau';
+    public $timestamps = false;
     protected $guarded = [];
 
     protected $fillable = [
-        'code_niveau', 'nom_niveau', 'id_filiere',  'credits_requis',
+        'code_niveau',
+        'nom_niveau',
+        'ordre',
     ];
-    
-    public function filiere(): BelongsTo
-    {
-        return $this->belongsTo(Filiere::class, 'id_filiere', 'id_filiere');
-    }
 
     public function semestres(): HasMany
     {
         return $this->hasMany(Semestre::class, 'id_niveau', 'id_niveau');
-    }
-
-    public function modules(): HasMany
-    {
-        return $this->hasMany(Module::class, 'id_niveau', 'id_niveau');
     }
 
     public function inscriptionsAdministratives(): HasMany

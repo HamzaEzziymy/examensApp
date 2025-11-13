@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Filiere;
 use App\Models\Niveau;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -13,20 +12,18 @@ class NiveauController extends Controller
     public function index()
     {
         $niveaux = Niveau::with([
-                'filiere:id_filiere,nom_filiere',
-                'semestres:id_semestre,id_niveau,nom_semestre,code_semestre,credits_requis',
-                'semestres.modules:id_module,id_semestre,id_niveau,code_module,nom_module,credits_requis',
-                'semestres.modules.elements:id_element,id_module,nom_element',
+                'semestres:id_semestre,id_niveau,nom_semestre,code_semestre,ordre',
+                'semestres.offresFormation.module:id_module,code_module,nom_module,type_module',
+                'semestres.offresFormation.section:id_section,nom_section,langue',
+                'semestres.offresFormation.anneeUniversitaire:id_annee,annee_univ',
+                'semestres.offresFormation.coordinateur:id_enseignant,nom,prenom',
             ])
-            ->withCount(['semestres', 'modules'])
-            ->orderBy('nom_niveau')
+            ->withCount('semestres')
+            ->orderBy('ordre')
             ->get();
 
-        $filieres = Filiere::select('id_filiere', 'nom_filiere')->orderBy('nom_filiere')->get();
-
-        return Inertia::render('Academique/Niveaux/Index', props: [
-            'niveaux'     => $niveaux,
-            'filieres'=> $filieres
+        return Inertia::render('Academique/Niveaux/Index', [
+            'niveaux' => $niveaux,
         ]);
     }
 
@@ -35,8 +32,7 @@ class NiveauController extends Controller
         $validated = $request->validate([
             'code_niveau'    => ['required', 'string', 'max:20'],
             'nom_niveau'     => ['required', 'string', 'max:100'],
-            'credits_requis' => ['required', 'integer', 'min:0'],
-            'id_filiere'     => ['nullable', 'exists:filieres,id_filiere'],
+            'ordre'       => ['required', 'integer', 'min:1'],
         ]);
 
         $niveau = Niveau::create($validated);
@@ -47,8 +43,7 @@ class NiveauController extends Controller
 
     public function show(int $id)
     {
-        $niveau= Niveau::findorfail($id);
-        $niveau->load(['filiere', 'semestres.modules']);
+        $niveau = Niveau::with('semestres.offresFormation.module')->findOrFail($id);
 
          return Inertia::render('Academique/Niveaux/Show', [
             'niveau' => $niveau,
@@ -59,10 +54,9 @@ class NiveauController extends Controller
     {
         $niveau= Niveau::findorfail($id);
         $validated = $request->validate([
-            'code_niveau'    => ['required', 'string', 'max:20'],
-            'nom_niveau'     => ['required', 'string', 'max:100'],
-            'credits_requis' => ['required', 'integer', 'min:0'],
-            'id_filiere'     => ['nullable', 'exists:filieres,id_filiere'],
+            'code_niveau' => ['required', 'string', 'max:20'],
+            'nom_niveau'  => ['required', 'string', 'max:100'],
+            'ordre'       => ['required', 'integer', 'min:1'],
         ]);
 
         $niveau->update($validated);

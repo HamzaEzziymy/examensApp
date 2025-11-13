@@ -13,22 +13,21 @@ class Filiere extends Model
 
     protected $table = 'filieres';
     protected $primaryKey = 'id_filiere';
+    public $timestamps = false;
     protected $guarded = [];
     protected $fillable = [
-        'id_annee',
+        'id_faculte',
         'nom_filiere',
-        'code_filiere',
-
     ];
 
-    public function anneeUniversitaire(): BelongsTo
+    public function faculte(): BelongsTo
     {
-        return $this->belongsTo(AnneeUniversitaire::class, 'id_annee', 'id_annee');
+        return $this->belongsTo(Faculte::class, 'id_faculte', 'id_faculte');
     }
 
-    public function niveaux(): HasMany
+    public function sections(): HasMany
     {
-        return $this->hasMany(Niveau::class, 'id_filiere', 'id_filiere');
+        return $this->hasMany(Section::class, 'id_filiere', 'id_filiere');
     }
 
     public function etudiants(): HasMany

@@ -5,7 +5,6 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Enseignant extends Model
@@ -14,24 +13,28 @@ class Enseignant extends Model
 
     protected $table = 'enseignants';
     protected $primaryKey = 'id_enseignant';
+    public $timestamps = false;
     protected $guarded = [];
- protected $fillable = [
-        'id_user', 'code', 'nom', 'prenom', 'mail_academique', 'telephone',
+
+    protected $fillable = [
+        'id_utilisateur',
+        'matricule',
+        'nom',
+        'prenom',
+        'email',
+        'grade',
+        'departement',
+        'chemin_signature_scan',
     ];
+
     public function user(): BelongsTo
     {
-        return $this->belongsTo(User::class, 'id_user', 'id');
+        return $this->belongsTo(User::class, 'id_utilisateur', 'id');
     }
 
-    public function module(): BelongsTo
+    public function offresCoordonnees(): HasMany
     {
-        return $this->belongsTo(Module::class, 'id_module', 'id_module');
-    }
-
-    public function modules(): BelongsToMany
-    {
-        return $this->belongsToMany(Module::class, 'enseignant_module', 'id_enseignant', 'id_module')
-            ->withTimestamps();
+        return $this->hasMany(OffreFormation::class, 'id_coordinateur', 'id_enseignant');
     }
 
     public function sujetsExamens(): HasMany

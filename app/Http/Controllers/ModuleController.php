@@ -11,11 +11,7 @@ class ModuleController extends Controller
 {
     public function index()
     {
-        $modules = Module::with([
-                'niveau:id_niveau,nom_niveau',
-                'semestre:id_semestre,nom_semestre',
-            ])
-            ->withCount('elements')
+        $modules = Module::withCount('elements')
             ->orderBy('nom_module')
             ->get();
 
@@ -27,17 +23,10 @@ class ModuleController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'code_module'        => ['required', 'string', 'max:20', 'unique:modules,code_module'],
-            'nom_module'         => ['required', 'string', 'max:100'],
-            'abreviation_module' => ['required', 'string', 'max:100'],
-            'nature'             => ['required', 'string', 'max:100'],
-            'quadrimestre'       => ['required', 'integer', 'min:1'],
-            'seuil_validation'   => ['required', 'numeric', 'between:0,20'],
-            'coefficient_module' => ['required', 'numeric', 'min:0'],
-            'credits_requis'     => ['nullable', 'integer', 'min:0'],
-            'description'        => ['nullable', 'string'],
-            'id_niveau'          => ['nullable', 'exists:niveaux,id_niveau'],
-            'id_semestre'        => ['nullable', 'exists:semestres,id_semestre'],
+            'code_module' => ['required', 'string', 'max:20', 'unique:modules,code_module'],
+            'nom_module'  => ['required', 'string', 'max:255'],
+            'type_module' => ['required', 'in:CONNAISSANCE,HORIZONTAL,STAGE,THESE'],
+            'credits'     => ['required', 'numeric', 'min:0'],
         ]);
 
         $module = Module::create($validated);
@@ -48,8 +37,7 @@ class ModuleController extends Controller
 
     public function show($id)
     {
-        $module= Module::findorfail($id);
-        $module->load(['niveau', 'semestre', 'elements']);
+        $module = Module::with('elements')->findOrFail($id);
 
         return Inertia::render('Academique/Modules/Show', [
             'module' => $module,
@@ -60,22 +48,15 @@ class ModuleController extends Controller
     {
         $module= Module::findorfail($id);
         $validated = $request->validate([
-            'code_module'        => [
+            'code_module' => [
                 'required',
                 'string',
                 'max:20',
                 Rule::unique('modules', 'code_module')->ignore($module->id_module, 'id_module'),
             ],
-            'nom_module'         => ['required', 'string', 'max:100'],
-            'abreviation_module' => ['required', 'string', 'max:100'],
-            'nature'             => ['required', 'string', 'max:100'],
-            'quadrimestre'       => ['required', 'integer', 'min:1'],
-            'seuil_validation'   => ['required', 'numeric', 'between:0,20'],
-            'coefficient_module' => ['required', 'numeric', 'min:0'],
-            'credits_requis'     => ['nullable', 'integer', 'min:0'],
-            'description'        => ['nullable', 'string'],
-            'id_niveau'          => ['nullable', 'exists:niveaux,id_niveau'],
-            'id_semestre'        => ['nullable', 'exists:semestres,id_semestre'],
+            'nom_module'  => ['required', 'string', 'max:255'],
+            'type_module' => ['required', 'in:CONNAISSANCE,HORIZONTAL,STAGE,THESE'],
+            'credits'     => ['required', 'numeric', 'min:0'],
         ]);
 
         $module->update($validated);

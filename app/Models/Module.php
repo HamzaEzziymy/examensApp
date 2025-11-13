@@ -4,8 +4,6 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Module extends Model
@@ -14,45 +12,24 @@ class Module extends Model
 
     protected $table = 'modules';
     protected $primaryKey = 'id_module';
+    public $timestamps = false;
     protected $guarded = [];
 
     protected $fillable = [
         'code_module',
         'nom_module',
-        'abreviation_module',
-        'nature',
-        'id_niveau',
-        'id_semestre',
-        'quadrimestre',
-        'seuil_validation',
-        'coefficient_module',
-        'credits_requis',
-        'description',
+        'type_module',
+        'credits',
     ];
-    public function niveau(): BelongsTo
-    {
-        return $this->belongsTo(Niveau::class, 'id_niveau', 'id_niveau');
-    }
-
-    public function semestre(): BelongsTo
-    {
-        return $this->belongsTo(Semestre::class, 'id_semestre', 'id_semestre');
-    }
 
     public function elements(): HasMany
     {
         return $this->hasMany(ElementModule::class, 'id_module', 'id_module');
     }
 
-    public function enseignantsResponsables(): HasMany
+    public function offresFormation(): HasMany
     {
-        return $this->hasMany(Enseignant::class, 'id_module', 'id_module');
-    }
-
-    public function enseignants(): BelongsToMany
-    {
-        return $this->belongsToMany(Enseignant::class, 'enseignant_module', 'id_module', 'id_enseignant')
-            ->withTimestamps();
+        return $this->hasMany(OffreFormation::class, 'id_module', 'id_module');
     }
 
     public function inscriptionsPedagogiques(): HasMany
@@ -80,3 +57,4 @@ class Module extends Model
         return $this->hasMany(Examen::class, 'id_module', 'id_module');
     }
 }
+

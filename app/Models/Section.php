@@ -7,29 +7,29 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-class Semestre extends Model
+class Section extends Model
 {
     use HasFactory;
 
-    protected $table = 'semestres';
-    protected $primaryKey = 'id_semestre';
+    protected $table = 'sections';
+    protected $primaryKey = 'id_section';
     public $timestamps = false;
     protected $guarded = [];
 
     protected $fillable = [
-        'code_semestre',
-        'nom_semestre',
-        'id_niveau',
-        'ordre',
+        'id_filiere',
+        'nom_section',
+        'langue',
     ];
 
-    public function niveau(): BelongsTo
+    public function filiere(): BelongsTo
     {
-        return $this->belongsTo(Niveau::class, 'id_niveau', 'id_niveau');
+        return $this->belongsTo(Filiere::class, 'id_filiere', 'id_filiere');
     }
 
     public function offresFormation(): HasMany
     {
-        return $this->hasMany(OffreFormation::class, 'id_semestre', 'id_semestre');
+        return $this->hasMany(OffreFormation::class, 'id_section', 'id_section');
     }
 }
+

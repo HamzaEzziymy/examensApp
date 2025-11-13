@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\AnneeUniversitaire;
+use App\Models\Faculte;
 use App\Models\Filiere;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -13,21 +13,23 @@ class FiliereController extends Controller
 {
     public function index()
     {
-        $filieres = Filiere::all();
-        $anneesUniv = AnneeUniversitaire::all();
+        $filieres = Filiere::with('faculte:id_faculte,nom_faculte')
+            ->withCount('sections')
+            ->orderBy('nom_filiere')
+            ->get();
+        $facultes = Faculte::select('id_faculte', 'nom_faculte')->orderBy('nom_faculte')->get();
 
        return Inertia::render('Academique/Filieres/Index', [
             'filieres' => $filieres,
-            'anneesUniv'=> $anneesUniv
+            'facultes' => $facultes,
         ]);
     }
 
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'nom_filiere'  => ['required', 'string', 'max:100'],
-            'code_filiere' => ['nullable', 'string', 'max:20', 'unique:filieres,code_filiere'],
-            'id_annee'     => ['nullable', 'exists:annees_universitaires,id_annee'],
+            'nom_filiere' => ['required', 'string', 'max:100'],
+            'id_faculte'  => ['required', 'exists:facultes,id_faculte'],
         ]);
         
         $filiere = Filiere::create($validated);
@@ -37,8 +39,12 @@ class FiliereController extends Controller
 
     public function show(int $id)
     {
-        $filiere= Filiere::findorfail($id);
-        $filiere->load(['anneeUniversitaire', 'niveaux.modules']);
+        $filiere = Filiere::with([
+                'faculte',
+                'sections.offresFormation.module',
+                'sections.offresFormation.semestre',
+            ])
+            ->findOrFail($id);
 
         return Inertia::render('Academique/Filieres/Show', [
             'filiere' => $filiere,
@@ -49,14 +55,8 @@ class FiliereController extends Controller
     {
         $filiere= Filiere::findorfail($id);
         $validated = $request->validate([
-            'nom_filiere'  => ['required', 'string', 'max:100'],
-            'code_filiere' => [
-                'nullable',
-                'string',
-                'max:20',
-                Rule::unique('filieres', 'code_filiere')->ignore($filiere->id_filiere, 'id_filiere'),
-            ],
-            'id_annee'     => ['nullable', 'exists:annees_universitaires,id_annee'],
+            'nom_filiere' => ['required', 'string', 'max:100'],
+            'id_faculte'  => ['required', 'exists:facultes,id_faculte'],
         ]);
 
         $filiere->update($validated);

@@ -21,7 +21,12 @@ class EnrollmentSeeder extends Seeder
         // Create 200 students distributed across existing filieres
         $filieres = Filiere::all();
         if ($filieres->isEmpty()) {
-            $filieres = Filiere::factory()->count(3)->create(['id_annee' => $activeYear->id_annee]);
+            $filieres = Filiere::factory()->count(3)->create();
+        }
+
+        $niveaux = Niveau::all();
+        if ($niveaux->isEmpty()) {
+            $niveaux = Niveau::factory()->count(4)->create();
         }
 
         $students = collect();
@@ -34,9 +39,8 @@ class EnrollmentSeeder extends Seeder
 
         // Create administrative and pedagogical registrations
         foreach ($students as $etd) {
-            // pick a niveau from the student's filiere
-            $niveau = Niveau::where('id_filiere', $etd->id_filiere)->inRandomOrder()->first();
-            if (!$niveau) continue;
+            // pick any niveau from the catalogue
+            $niveau = $niveaux->random();
 
             $ia = InscriptionAdministrative::factory()->create([
                 'id_etudiant' => $etd->id_etudiant,
@@ -45,8 +49,8 @@ class EnrollmentSeeder extends Seeder
                 'statut'      => 'Active',
             ]);
 
-            // pick some modules from that niveau
-            $modules = Module::where('id_niveau', $niveau->id_niveau)->inRandomOrder()->take(4)->get();
+            // pick some modules from the global catalogue
+            $modules = Module::inRandomOrder()->take(4)->get();
             foreach ($modules as $m) {
                 InscriptionPedagogique::factory()->create([
                     'id_etudiant'          => $etd->id_etudiant,

@@ -12,10 +12,9 @@ class AnneeUniversitaireController extends Controller
 {
     public function index()
     {
-        $annees = AnneeUniversitaire::with('filieres:id_filiere,id_annee,nom_filiere')
-            ->orderByDesc('date_debut')
-            ->get();
-        return Inertia::render('Academique/AnneesUniversitaires/Index', [
+        $annees = AnneeUniversitaire::orderByDesc('date_debut')->get();
+        // dd($annees);
+        return Inertia::render('academique/AnneesUniversitaires/Index', [
             'annees' => $annees,
         ]);
     }
@@ -25,7 +24,7 @@ class AnneeUniversitaireController extends Controller
         $validated = $request->validate([
             'annee_univ' => ['required', 'string', 'max:9', 'unique:annees_universitaires,annee_univ'],
             'date_debut' => ['required', 'date'],
-            'date_cloture' => ['required', 'date', 'after:date_debut'],
+            'date_fin'     => ['required', 'date', 'after:date_debut'],
             'est_active' => ['sometimes', 'boolean'],
         ]);
 
@@ -37,8 +36,7 @@ class AnneeUniversitaireController extends Controller
     public function show(int $id)
     {
         // $annee = AnneeUniversitaire::with('filieres.niveaux')
-        $annee = AnneeUniversitaire::with('filieres')
-            ->findOrFail($id);
+        $annee = AnneeUniversitaire::findOrFail($id);
         return Inertia::render('Academique/AnneesUniversitaires/Show', [
             'annee' => $annee,
         ]);
@@ -55,7 +53,7 @@ class AnneeUniversitaireController extends Controller
                     ->ignore($anneesUniversitaire->getKey(), $anneesUniversitaire->getKeyName()),
             ],
             'date_debut' => ['required', 'date'],
-            'date_cloture' => ['required', 'date', 'after:date_debut'],
+            'date_fin'     => ['required', 'date', 'after:date_debut'],
             'est_active' => ['sometimes', 'boolean'],
         ]);
 

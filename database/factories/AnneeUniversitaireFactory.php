@@ -16,10 +16,10 @@ class AnneeUniversitaireFactory extends Factory
         $annee = sprintf('%d/%d', $start, $start + 1);
 
         return [
-            'annee_univ'   => $annee,
-            'date_debut'   => "{$start}-09-01",
-            'date_cloture' => ($start + 1) . "-07-31",
-            'est_active'   => $this->faker->boolean(20),
+            'annee_univ' => $annee,
+            'date_debut' => "{$start}-09-01",
+            'date_fin'   => ($start + 1) . "-07-31",
+            'est_active' => $this->faker->boolean(20),
         ];
     }
 

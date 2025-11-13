@@ -12,18 +12,18 @@ class AnneeUniversitaire extends Model
 
     protected $table = 'annees_universitaires';
     protected $primaryKey = 'id_annee';
+    public $timestamps = false;
     protected $guarded = [];
     protected $fillable = [
         'annee_univ',
         'date_debut',
-        'date_cloture',
+        'date_fin',
         'est_active',
-        
     ];
 
-    public function filieres(): HasMany
+    public function offresFormation(): HasMany
     {
-        return $this->hasMany(Filiere::class, 'id_annee', 'id_annee');
+        return $this->hasMany(OffreFormation::class, 'id_annee', 'id_annee');
     }
 
     public function inscriptionsAdministratives(): HasMany

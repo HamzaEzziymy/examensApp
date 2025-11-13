@@ -13,15 +13,31 @@ class ElementModule extends Model
 
     protected $table = 'elements_module';
     protected $primaryKey = 'id_element';
+    public $timestamps = false;
     protected $guarded = [];
+
     protected $fillable = [
-        'id_module', 'type_element', 'nom_element',
-        'coefficient_element', 'seuil_validation', 'est_obligatoire',
+        'id_module',
+        'id_element_parent',
+        'code_element',
+        'nom_element',
+        'type_element',
+        'coefficient',
     ];
 
     public function module(): BelongsTo
     {
         return $this->belongsTo(Module::class, 'id_module', 'id_module');
+    }
+
+    public function parent(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'id_element_parent', 'id_element');
+    }
+
+    public function enfants(): HasMany
+    {
+        return $this->hasMany(self::class, 'id_element_parent', 'id_element');
     }
 
     public function resultatsElements(): HasMany

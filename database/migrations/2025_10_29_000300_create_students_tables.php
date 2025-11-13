@@ -28,9 +28,9 @@ return new class extends Migration {
             $table->unsignedBigInteger('id_niveau')->nullable();
             $table->date('date_inscription');
             $table->string('statut', 30)->default('Active');
-            $table->foreign('id_niveau')->references('id_niveau')->on('niveaux');
-            $table->foreign('id_etudiant')->references('id_etudiant')->on('etudiants');
-            $table->foreign('id_annee')->references('id_annee')->on('annees_universitaires');
+            $table->foreign('id_niveau')->references('id_niveau')->on('niveaux')->onDelete('set null');
+            $table->foreign('id_etudiant')->references('id_etudiant')->on('etudiants')->onDelete('set null');
+            $table->foreign('id_annee')->references('id_annee')->on('annees_universitaires')->onDelete('set null');
             $table->timestamps();
         });
 
@@ -41,9 +41,9 @@ return new class extends Migration {
             $table->unsignedBigInteger('id_module')->nullable();
             $table->enum('type_inscription', ['Normal', 'Credit', 'Anticipe']);
             $table->integer('credits_acquis')->default(0);
-            $table->foreign('id_etudiant')->references('id_etudiant')->on('etudiants');
-            $table->foreign('id_inscription_admin')->references('id_inscription_admin')->on('inscriptions_administratives');
-            $table->foreign('id_module')->references('id_module')->on('modules');
+            $table->foreign('id_etudiant')->references('id_etudiant')->on('etudiants')->onDelete('set null');
+            $table->foreign('id_inscription_admin')->references('id_inscription_admin')->on('inscriptions_administratives')->onDelete('set null');
+            $table->foreign('id_module')->references('id_module')->on('modules')->onDelete('set null');
             $table->timestamps();
         });
 
@@ -53,8 +53,8 @@ return new class extends Migration {
             $table->unsignedBigInteger('id_module')->nullable();
             $table->date('date_capitalisation');
             $table->date('date_expiration')->nullable();
-            $table->foreign('id_inscription_pedagogique')->references('id_inscription_pedagogique')->on('inscriptions_pedagogiques');
-            $table->foreign('id_module')->references('id_module')->on('modules');
+            $table->foreign('id_inscription_pedagogique')->references('id_inscription_pedagogique')->on('inscriptions_pedagogiques')->onDelete('set null');
+            $table->foreign('id_module')->references('id_module')->on('modules')->onDelete('set null');
             $table->timestamps();
         });
 
@@ -70,9 +70,9 @@ return new class extends Migration {
             $table->unsignedBigInteger('encadrant_faculte')->nullable(); // id_enseignant
             $table->decimal('note_stage', 5, 2)->nullable();
             $table->string('rapport_stage', 255)->nullable();
-            $table->foreign('id_inscription_pedagogique')->references('id_inscription_pedagogique')->on('inscriptions_pedagogiques');
-            $table->foreign('id_module')->references('id_module')->on('modules');
-            $table->foreign('encadrant_faculte')->references('id_enseignant')->on('enseignants');
+            $table->foreign('id_inscription_pedagogique')->references('id_inscription_pedagogique')->on('inscriptions_pedagogiques')->onDelete('set null');
+            $table->foreign('id_module')->references('id_module')->on('modules')->onDelete('set null');
+            $table->foreign('encadrant_faculte')->references('id_enseignant')->on('enseignants')->onDelete('set null');
             $table->timestamps();
         });
     }
@@ -85,4 +85,3 @@ return new class extends Migration {
         Schema::dropIfExists('etudiants');
     }
 };
-
