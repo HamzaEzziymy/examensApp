@@ -9,6 +9,7 @@ use App\Models\AnneeUniversitaire;
 use App\Models\Examen;
 use App\Models\Salle;
 use App\Models\Module;
+use App\Models\OffreFormation;
 
 class ExamSeeder extends Seeder
 {
@@ -26,18 +27,33 @@ class ExamSeeder extends Seeder
                 'id_annee'   => $activeYear?->id_annee,
             ]);
 
-            // exams for modules of this filiere's niveaux
-            $moduleIds = Module::whereIn('id_niveau',
-                $f->niveaux()->pluck('id_niveau')
-            )->pluck('id_module')->all();
+            // Determine modules linked to this filiere through sections/offres
+            $sectionIds = $f->sections()->pluck('id_section');
+            $moduleIds = OffreFormation::whereIn('id_section', $sectionIds)
+                ->pluck('id_module')
+                ->unique()
+                ->filter()
+                ->values()
+                ->all();
+
+            if (empty($moduleIds)) {
+                // fallback to a small random pool so the seeder still produces data
+                $moduleIds = Module::inRandomOrder()->limit(5)->pluck('id_module')->all();
+            }
 
             foreach ($sessions as $sess) {
-                foreach (array_slice($moduleIds, 0, min(10, count($moduleIds))) as $modId) {
+                $modulesForSession = array_slice($moduleIds, 0, min(10, count($moduleIds)));
+
+                foreach ($modulesForSession as $modId) {
+                    $salleId = $salles->isNotEmpty()
+                        ? optional($salles->random())->id_salle
+                        : null;
+
                     Examen::factory()->create([
                         'id_session_examen' => $sess->id_session_examen,
                         'id_module'         => $modId,
-                        'id_salle'          => $salles->random()->id_salle ?? null,
-                        'statut'            => fake()->randomElement(['Planifiee','En cours','Terminee']),
+                        'id_salle'          => $salleId,
+                        'statut'            => fake()->randomElement(['Planifiee', 'En cours', 'Terminee']),
                     ]);
                 }
             }

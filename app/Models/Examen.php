@@ -11,6 +11,8 @@ class Examen extends Model
 {
     use HasFactory;
 
+    public const STATUTS = ['Planifiee', 'En cours', 'Terminee', 'Annulee'];
+
     protected $table = 'examens';
     protected $primaryKey = 'id_examen';
     protected $guarded = [];
@@ -23,6 +25,11 @@ class Examen extends Model
         'date_fin',
         'statut',
         'description',
+    ];
+    protected $casts = [
+        'date_examen' => 'date',
+        'date_debut'  => 'datetime',
+        'date_fin'    => 'datetime',
     ];
 
     public function sessionExamen(): BelongsTo

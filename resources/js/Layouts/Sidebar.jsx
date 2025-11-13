@@ -1,7 +1,7 @@
 import React from 'react'
 import { Link, usePage } from '@inertiajs/react';
 import ApplicationLogo from '@/Components/ApplicationLogo';
-import {FaHome, FaPaperclip, FaProjectDiagram, FaTasks, FaUser } from 'react-icons/fa';
+import {FaHome, FaPaperclip, FaTasks, FaUser } from 'react-icons/fa';
 import { IoDocumentsSharp } from "react-icons/io5";
 import { MdAccountTree } from "react-icons/md";
 
@@ -18,7 +18,12 @@ function Sidebar({sidebarOpen, setSidebarOpen, mobileMenuOpen, setMobileMenuOpen
             href: route('academique.annees-universitaires.index'), 
             current: route().current('academique.*') 
         },
-        { name: 'Projects',icon:<FaProjectDiagram size={20}/>, href: '#', current: false },
+        { 
+            name: 'Examens',
+            icon:<FaTasks size={20}/>, 
+            href: route('examens.sessions.index'), 
+            current: route().current('examens.*') || route().current('surveillance.repartition-etudiants.*') 
+        },
         { name: 'Reports',icon:<FaPaperclip size={20}/>, href: '#', current: false },
         { name: 'Profile',icon:<FaUser size={20}/>, href: route('profile.edit'), current: route().current('profile.edit') },
     ];
