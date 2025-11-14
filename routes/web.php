@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\FaculteController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\DocumentController;
 use Illuminate\Foundation\Application;
@@ -59,6 +60,14 @@ Route::middleware('auth')->group(function () {
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+// faculter route
+Route::middleware('auth')->group(function () {
+    Route::resources([
+        'faculte' => FaculteController::class,
+    ]);
+});
+
+
 Route::withoutMiddleware([MiddlewareVerifyCsrfToken::class])->group(function () {
 
 Route::prefix('academique')->name('academique.')->group(function () {

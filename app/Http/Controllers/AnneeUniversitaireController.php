@@ -14,7 +14,7 @@ class AnneeUniversitaireController extends Controller
     {
         $annees = AnneeUniversitaire::orderByDesc('date_debut')->get();
         // dd($annees);
-        return Inertia::render('academique/AnneesUniversitaires/Index', [
+        return Inertia::render('Academique/AnneesUniversitaires/Index', [
             'annees' => $annees,
         ]);
     }
