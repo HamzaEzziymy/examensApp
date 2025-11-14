@@ -4,7 +4,7 @@ import Swal from 'sweetalert2';
 import { Pencil, Trash2 } from 'lucide-react';
 
 
-export default function Desplay({ anneesUniv }) {
+export default function Display({ anneesUniv }) {
 
     const [modalOpen, setModalOpen] = useState(false);
     const formRef = useRef();
@@ -22,7 +22,7 @@ export default function Desplay({ anneesUniv }) {
         id_annee: null,
         annee_univ: '',
         date_debut: '',
-        date_cloture: '',
+        date_fin: '',
         est_active: false,
     });
 
@@ -31,7 +31,7 @@ export default function Desplay({ anneesUniv }) {
             id_annee: annee.id_annee,
             annee_univ: annee.annee_univ,
             date_debut: annee.date_debut,
-            date_cloture: annee.date_cloture,
+            date_fin: annee.date_fin,
             est_active: annee.est_active,
         });
         setModalOpen(true);
@@ -43,7 +43,7 @@ export default function Desplay({ anneesUniv }) {
             id_annee: null,
             annee_univ: '',
             date_debut: '',
-            date_cloture: '',
+            date_fin: '',
             est_active: false,
         });
     };
@@ -60,7 +60,7 @@ export default function Desplay({ anneesUniv }) {
             cancelButtonText: 'Annuler'
         }).then((result) => {
             if (result.isConfirmed) {
-                destroy(route('academique.annees-universitaires.destroy', id_annee), {
+                destroy(route('configuration.annees-universitaires.destroy', id_annee), {
                     onSuccess: () => {
                         Swal.fire('Supprimé !', 'L\'année universitaire a été supprimée.', 'success');
                     },
@@ -75,7 +75,7 @@ export default function Desplay({ anneesUniv }) {
 
     const handleUpdate = (e) => {
         e.preventDefault();
-        put(route('academique.annees-universitaires.update', data.id_annee), {
+        put(route('configuration.annees-universitaires.update', data.id_annee), {
             preserveScroll: true,
             onSuccess: () => {
                 closeModal();
@@ -113,7 +113,7 @@ export default function Desplay({ anneesUniv }) {
                             <tr key={index} className="border-t border-gray-200 dark:border-gray-700">
                                 <td className="px-4 py-2">{annee.annee_univ}</td>
                                 <td className="px-4 py-2">{annee.date_debut}</td>
-                                <td className="px-4 py-2">{annee.date_cloture}</td>
+                                <td className="px-4 py-2">{annee.date_fin}</td>
                                 <td className="px-4 py-2">
                                     {annee.est_active ? (
                                         <span className="text-green-500 font-semibold">Oui</span>
@@ -171,11 +171,11 @@ export default function Desplay({ anneesUniv }) {
                                 <label className="block text-sm">Date de Fin</label>
                                 <input
                                     type="date"
-                                    value={data.date_cloture}
-                                    onChange={(e) => setData('date_cloture', e.target.value)}
+                                    value={data.date_fin}
+                                    onChange={(e) => setData('date_fin', e.target.value)}
                                     className="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600"
                                 />
-                                {errors.date_cloture && <div className="text-red-500 text-sm">{errors.date_cloture}</div>}
+                                {errors.date_fin && <div className="text-red-500 text-sm">{errors.date_fin}</div>}
                             </div>
                             <div className="flex items-center">
                                 <input
@@ -186,6 +186,7 @@ export default function Desplay({ anneesUniv }) {
                                     id="est_active"
                                 />
                                 <label htmlFor="est_active">Activer cette année</label>
+                                {errors.est_active && <div className="text-red-500 text-sm">{errors.est_active}</div>}
                             </div>
                             <div className="flex justify-end space-x-2">
                                 <button

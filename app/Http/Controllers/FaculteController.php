@@ -13,7 +13,7 @@ class FaculteController extends Controller
      */
     public function index()
     {
-        return Inertia::render("Faculte/Index",[
+        return Inertia::render("Configuration/Faculte/Index",[
             "faculte"=> Faculte::all(),
         ]
     );
@@ -53,7 +53,7 @@ class FaculteController extends Controller
 
         $faculte = Faculte::create($validated);
 
-        return redirect()->route('faculte.index');
+        return redirect()->route('configuration.faculte.index');
     }    /**
      * Display the specified resource.
      */
@@ -106,7 +106,7 @@ class FaculteController extends Controller
 
         $faculte->update($validated);
 
-        return redirect()->route('faculte.index');
+        return redirect()->route('configuration.faculte.index');
     }
 
     /**

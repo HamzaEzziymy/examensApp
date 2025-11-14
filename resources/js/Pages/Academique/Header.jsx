@@ -13,14 +13,7 @@ import { useEffect, useState } from 'react';
 
 export default function Header() {
     
-    const navigations = [
-        {
-            name: "Années Universitaires",
-            icon: <CalendarDays size={20} />, // Symbolizes academic year or calendar
-            href: route("academique.annees-universitaires.index"),
-            current: route().current("academique.annees-universitaires.index"),
-        },
-        {
+    const navigations = [{
             name: "Filières",
             icon: <GraduationCap size={20} />, // Represents study programs or fields
             href: route("academique.filieres.index"),

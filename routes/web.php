@@ -8,23 +8,47 @@ use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use App\Http\Controllers\{
     // Académique
-    AnneeUniversitaireController, FiliereController, NiveauController, SemestreController,
-    ModuleController, ElementModuleController,
+    AnneeUniversitaireController,
+    FiliereController,
+    NiveauController,
+    SemestreController,
+    ModuleController,
+    ElementModuleController,
     // Personnes
-    EnseignantController, SurveillantController, EtudiantController, EnseignantModuleController,
+    EnseignantController,
+    SurveillantController,
+    EtudiantController,
+    EnseignantModuleController,
     // Inscriptions
-    InscriptionAdministrativeController, InscriptionPedagogiqueController, CapitalisationController, StageController,
+    InscriptionAdministrativeController,
+    InscriptionPedagogiqueController,
+    CapitalisationController,
+    StageController,
     // Examens
-    SalleController, SessionExamenController, ExamenController,
-    SujetExamenController, GrilleCorrectionController, TirageExamenController,
+    SalleController,
+    SessionExamenController,
+    ExamenController,
+    SujetExamenController,
+    GrilleCorrectionController,
+    TirageExamenController,
     // Surveillance / salle d’exam
-    SurveillanceController, AnonymatController, RepartitionEtudiantController,
-    AbsenceController, IncidentExamenController, PvExamenController,
+    SurveillanceController,
+    AnonymatController,
+    RepartitionEtudiantController,
+    AbsenceController,
+    IncidentExamenController,
+    PvExamenController,
     // Correction & résultats
-    CorrecteurController, NoteController, ResultatElementController, ResultatModuleController,
+    CorrecteurController,
+    NoteController,
+    ResultatElementController,
+    ResultatModuleController,
     // Commissions & réclamations
-    CommissionController, MembreCommissionController, DeliberationController,
-    ReclamationController, DecisionCommissionController
+    CommissionController,
+    MembreCommissionController,
+    DeliberationController,
+    ReclamationController,
+    DecisionCommissionController
 };
 
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken as MiddlewareVerifyCsrfToken;
@@ -60,26 +84,29 @@ Route::middleware('auth')->group(function () {
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-// faculter route
-Route::middleware('auth')->group(function () {
-    Route::resources([
-        'faculte' => FaculteController::class,
-    ]);
+Route::withoutMiddleware([MiddlewareVerifyCsrfToken::class])->group(function () {
+
+    Route::prefix('configuration')->name('configuration.')->group(function () {
+        Route::resources([
+            'faculte' => FaculteController::class,
+            'annees-universitaires' => AnneeUniversitaireController::class,
+        ]);
+    });
 });
 
 
 Route::withoutMiddleware([MiddlewareVerifyCsrfToken::class])->group(function () {
 
-Route::prefix('academique')->name('academique.')->group(function () {
-    Route::resources([
-        'annees-universitaires' => AnneeUniversitaireController::class,
-        'filieres'              => FiliereController::class,
-        'niveaux'               => NiveauController::class,
-        'semestres'             => SemestreController::class,
-        'modules'               => ModuleController::class,
-        'elements-module'       => ElementModuleController::class,
-    ]);
-});
+    Route::prefix('academique')->name('academique.')->group(function () {
+        Route::resources([
+            'annees-universitaires' => AnneeUniversitaireController::class,
+            'filieres' => FiliereController::class,
+            'niveaux' => NiveauController::class,
+            'semestres' => SemestreController::class,
+            'modules' => ModuleController::class,
+            'elements-module' => ElementModuleController::class,
+        ]);
+    });
 });
 /* =========================
 |  Personnes (Enseignants, Surveillants, Étudiants)
@@ -87,8 +114,8 @@ Route::prefix('academique')->name('academique.')->group(function () {
 Route::prefix('personnes')->name('personnes.')->group(function () {
     Route::resources([
         'enseignants' => EnseignantController::class,
-        'surveillants'=> SurveillantController::class,
-        'etudiants'   => EtudiantController::class,
+        'surveillants' => SurveillantController::class,
+        'etudiants' => EtudiantController::class,
     ]);
 
     // Pivot enseignant_module (assignations d’enseignants aux modules)
@@ -102,9 +129,9 @@ Route::prefix('personnes')->name('personnes.')->group(function () {
 Route::prefix('inscriptions')->name('inscriptions.')->group(function () {
     Route::resources([
         'administratives' => InscriptionAdministrativeController::class, // inscriptions_administratives
-        'pedagogiques'    => InscriptionPedagogiqueController::class,    // inscriptions_pedagogiques
+        'pedagogiques' => InscriptionPedagogiqueController::class,    // inscriptions_pedagogiques
         'capitalisations' => CapitalisationController::class,
-        'stages'          => StageController::class,
+        'stages' => StageController::class,
     ]);
 });
 
@@ -113,12 +140,12 @@ Route::prefix('inscriptions')->name('inscriptions.')->group(function () {
 |=========================*/
 Route::prefix('examens')->name('examens.')->group(function () {
     Route::resources([
-        'salles'          => SalleController::class,
-        'sessions'        => SessionExamenController::class, // sessions_examen
-        'examens'         => ExamenController::class,
-        'sujets'          => SujetExamenController::class,
-        'grilles'         => GrilleCorrectionController::class,
-        'tirages'         => TirageExamenController::class,
+        'salles' => SalleController::class,
+        'sessions' => SessionExamenController::class, // sessions_examen
+        'examens' => ExamenController::class,
+        'sujets' => SujetExamenController::class,
+        'grilles' => GrilleCorrectionController::class,
+        'tirages' => TirageExamenController::class,
     ]);
 
     // Exemples d’actions personnalisées utiles (optionnel)
@@ -131,12 +158,12 @@ Route::prefix('examens')->name('examens.')->group(function () {
 |=========================*/
 Route::prefix('surveillance')->name('surveillance.')->group(function () {
     Route::resources([
-        'surveillances'        => SurveillanceController::class,
-        'anonymats'            => AnonymatController::class,           // table anonymat
-        'repartition-etudiants'=> RepartitionEtudiantController::class,
-        'absences'             => AbsenceController::class,
-        'incidents'            => IncidentExamenController::class,
-        'pv-examens'           => PvExamenController::class,
+        'surveillances' => SurveillanceController::class,
+        'anonymats' => AnonymatController::class,           // table anonymat
+        'repartition-etudiants' => RepartitionEtudiantController::class,
+        'absences' => AbsenceController::class,
+        'incidents' => IncidentExamenController::class,
+        'pv-examens' => PvExamenController::class,
     ]);
 });
 
@@ -145,9 +172,9 @@ Route::prefix('surveillance')->name('surveillance.')->group(function () {
 |=========================*/
 Route::prefix('correction')->name('correction.')->group(function () {
     Route::resources([
-        'correcteurs'      => CorrecteurController::class,
-        'notes'            => NoteController::class,
-        'resultats-elements'=> ResultatElementController::class,
+        'correcteurs' => CorrecteurController::class,
+        'notes' => NoteController::class,
+        'resultats-elements' => ResultatElementController::class,
         'resultats-modules' => ResultatModuleController::class,
     ]);
 });
@@ -157,12 +184,12 @@ Route::prefix('correction')->name('correction.')->group(function () {
 |=========================*/
 Route::prefix('commissions')->name('commissions.')->group(function () {
     Route::resources([
-        'commissions'        => CommissionController::class,
-        'membres'            => MembreCommissionController::class,
-        'deliberations'      => DeliberationController::class,
-        'reclamations'       => ReclamationController::class,
-        'decisions'          => DecisionCommissionController::class,
+        'commissions' => CommissionController::class,
+        'membres' => MembreCommissionController::class,
+        'deliberations' => DeliberationController::class,
+        'reclamations' => ReclamationController::class,
+        'decisions' => DecisionCommissionController::class,
     ]);
 
 });
-require __DIR__.'/auth.php';
+require __DIR__ . '/auth.php';

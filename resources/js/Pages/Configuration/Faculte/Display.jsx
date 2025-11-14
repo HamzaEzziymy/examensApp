@@ -4,7 +4,6 @@ import Swal from 'sweetalert2';
 import { Building2, Upload, X, Save, Image, Mail, Phone, Globe, Printer, MapPin } from 'lucide-react';
 
 export default function Display({ faculte }) {
-    console.log(faculte)
     const [previewEntete, setPreviewEntete] = useState(faculte?.entete || null);
     const [previewLogo, setPreviewLogo] = useState(faculte?.logo || null);
     const [isDraggingEntete, setIsDraggingEntete] = useState(false);

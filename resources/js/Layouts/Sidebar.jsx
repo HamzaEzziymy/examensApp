@@ -4,6 +4,8 @@ import ApplicationLogo from '@/Components/ApplicationLogo';
 import { FaHome, FaPaperclip, FaTasks, FaUser } from 'react-icons/fa';
 import { IoDocumentsSharp } from "react-icons/io5";
 import { MdAccountTree, MdFestival } from "react-icons/md";
+import { PiGearBold } from "react-icons/pi";
+import { CalendarDays } from 'lucide-react';
 
 
 function Sidebar({ sidebarOpen, setSidebarOpen, mobileMenuOpen, setMobileMenuOpen }) {
@@ -28,7 +30,11 @@ function Sidebar({ sidebarOpen, setSidebarOpen, mobileMenuOpen, setMobileMenuOpe
         { name: 'Profile', icon: <FaUser size={20} />, href: route('profile.edit'), current: route().current('profile.edit') }
     ];
 
-    const faculteRoute = { name: 'Faculte', icon: <MdFestival size={20} />, href: route('faculte.index'), current: route().current('faculte.index') }
+    const configRoutes = [
+        { name: 'Faculte', icon: <PiGearBold size={20} />, href: route('configuration.faculte.index'), current: route().current('configuration.faculte.index') },
+        { name: 'Années Universitaires', icon: <CalendarDays size={20} />, href: route("configuration.annees-universitaires.index"), current: route().current('configuration.annees-universitaires.index') }
+
+    ]
 
     return (
         <>
@@ -105,7 +111,25 @@ function Sidebar({ sidebarOpen, setSidebarOpen, mobileMenuOpen, setMobileMenuOpe
                     </nav>
                     {/* bottom route */}
                 <div className="mt-4 space-y-1 px-3 mb-8">
-                    <Link
+                    {
+                        configRoutes.map((item) => (
+                            <Link
+                                key={item.name}
+                                href={item.href}
+                                className={`group flex items-center gap-x-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${item.current
+                                        ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400'
+                                        : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
+                                    }`}
+                                title={!sidebarOpen ? item.name : ''}
+                            >
+                                <span className={`${!sidebarOpen && 'mx-auto'}`}>
+                                    {item.icon}
+                                </span>
+                                {sidebarOpen && <span>{item.name}</span>}
+                            </Link>
+                        ))
+                    }
+                    {/* <Link
                         href={faculteRoute.href}
                         className={`group flex items-center gap-x-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${faculteRoute.current
                                 ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400'
@@ -117,7 +141,7 @@ function Sidebar({ sidebarOpen, setSidebarOpen, mobileMenuOpen, setMobileMenuOpe
                             {faculteRoute.icon}
                         </span>
                         {sidebarOpen && <span>{faculteRoute.name}</span>}
-                    </Link>
+                    </Link> */}
                 </div>
                 </div>
             </div>

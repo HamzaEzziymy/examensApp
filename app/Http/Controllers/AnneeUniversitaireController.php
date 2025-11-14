@@ -14,7 +14,7 @@ class AnneeUniversitaireController extends Controller
     {
         $annees = AnneeUniversitaire::orderByDesc('date_debut')->get();
         // dd($annees);
-        return Inertia::render('Academique/AnneesUniversitaires/Index', [
+        return Inertia::render('Configuration/AnneesUniversitaires/Index', [
             'annees' => $annees,
         ]);
     }
@@ -25,19 +25,32 @@ class AnneeUniversitaireController extends Controller
             'annee_univ' => ['required', 'string', 'max:9', 'unique:annees_universitaires,annee_univ'],
             'date_debut' => ['required', 'date'],
             'date_fin'     => ['required', 'date', 'after:date_debut'],
-            'est_active' => ['sometimes', 'boolean'],
+            'est_active' => [
+                'sometimes',
+                'boolean',
+                function ($attribute, $value, $fail) {
+                    if ($value && AnneeUniversitaire::where('est_active', true)->exists()) {
+                        $fail('Il existe déjà une année universitaire active. Désactivez-la d\'abord.');
+                    }
+                },
+            ],
         ]);
 
         $annee = AnneeUniversitaire::create($validated);
 
-        return Redirect()->route('academique.annees-universitaires.index');
+        // If this new year is set active, ensure all others are unset (defensive)
+        if (!empty($validated['est_active']) && $validated['est_active']) {
+            AnneeUniversitaire::where('id_annee', '!=', $annee->id_annee)->update(['est_active' => false]);
+        }
+
+        return Redirect()->route('configuration.annees-universitaires.index');
     }
 
     public function show(int $id)
     {
         // $annee = AnneeUniversitaire::with('filieres.niveaux')
         $annee = AnneeUniversitaire::findOrFail($id);
-        return Inertia::render('Academique/AnneesUniversitaires/Show', [
+        return Inertia::render('Configuration/AnneesUniversitaires/Show', [
             'annee' => $annee,
         ]);
     }
@@ -54,18 +67,33 @@ class AnneeUniversitaireController extends Controller
             ],
             'date_debut' => ['required', 'date'],
             'date_fin'     => ['required', 'date', 'after:date_debut'],
-            'est_active' => ['sometimes', 'boolean'],
+            'est_active' => [
+                'sometimes',
+                'boolean',
+                function ($attribute, $value, $fail) use ($anneesUniversitaire) {
+                    if ($value && AnneeUniversitaire::where('est_active', true)
+                        ->where('id_annee', '!=', $anneesUniversitaire->getKey())
+                        ->exists()) {
+                        $fail('Il existe déjà une autre année universitaire active. Désactivez-la d\'abord.');
+                    }
+                },
+            ],
         ]);
 
         $anneesUniversitaire->update($validated);
 
-        return Redirect()->route('academique.annees-universitaires.index');
+        // If this year is now active, unset est_active on all other years
+        if (!empty($validated['est_active']) && $validated['est_active']) {
+            AnneeUniversitaire::where('id_annee', '!=', $anneesUniversitaire->id_annee)->update(['est_active' => false]);
+        }
+
+        return Redirect()->route('configuration.annees-universitaires.index');
     }
 
     public function destroy(int $id)
     {
         $annee = AnneeUniversitaire::findOrFail($id);
         $annee->delete();
-        return Redirect()->route('academique.annees-universitaires.index');
+        return Redirect()->route('configuration.annees-universitaires.index');
     }
 }

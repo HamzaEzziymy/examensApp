@@ -11,20 +11,20 @@ function FormAjouter() {
   const { setData, data, post, errors, processing } = useForm({
     annee_univ: null,
     date_debut: null,
-    date_cloture: null,
+    date_fin: null,
     est_active: false,
   });
 
   const submit = (e) => {
       e.preventDefault();
 
-      post(route('academique.annees-universitaires.store'), {
+      post(route('configuration.annees-universitaires.store'), {
           forceFormData: true,
           onSuccess: () => {
               setData({
                   annee_univ: null,
                   date_debut: null,
-                  date_cloture: null,
+                  date_fin: null,
                   est_active: false,
               });
               formRef.current?.reset();
@@ -97,10 +97,10 @@ function FormAjouter() {
             <input
               required
               type="date"
-              onChange={(e) => setData('date_cloture', e.target.value)}
+              onChange={(e) => setData('date_fin', e.target.value)}
               className="w-full rounded-lg border border-blue-300 dark:border-gray-600 bg-transparent dark:bg-gray-800 py-3 px-4 text-black dark:text-white focus:ring-2 focus:ring-blue-400 focus:outline-none"
             />
-            <InputError className="mt-1 text-sm" message={errors.date_cloture} />
+            <InputError className="mt-1 text-sm" message={errors.date_fin} />
           </div>
         </div>
 

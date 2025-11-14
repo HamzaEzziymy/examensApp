@@ -1,9 +1,8 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout'
 import { Head } from '@inertiajs/react'
 import React from 'react'
-import Header from '../Header'
 import FormAjouter from './FormAjouter';
-import Desplay from './Desplay';
+import Display from './Display';
 
 function Index({annees}) {
   
@@ -16,11 +15,10 @@ function Index({annees}) {
         }
     >
       <Head title="annees universitaires" />
-      <Header />
       <div className="p-4 rounded-lg">
           <div className="grid lg:grid-cols-2 grid-cols-1 gap-4 mb-4">
           <FormAjouter />
-          <Desplay anneesUniv = {annees}/>
+          <Display anneesUniv = {annees}/>
         </div>
         <div className="grid lg:grid-cols-2 grid-cols-1 gap-4 mb-4">
         </div>
