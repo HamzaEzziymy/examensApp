@@ -13,6 +13,18 @@ const badgeClasses = (present) =>
 
 const formatTime = (value) => (value ? value.substring(0, 5) : '—');
 
+const normalizeText = (value) => {
+    if (value === undefined || value === null) {
+        return '';
+    }
+
+    return value
+        .toString()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+};
+
 const defaultFormState = (examenId) => ({
     id_examen: examenId ? String(examenId) : '',
     id_inscription_pedagogique: '',
@@ -27,6 +39,7 @@ const defaultFormState = (examenId) => ({
 
 export default function RepartitionIndex({ examens, repartitions, inscriptions, selectedExamenId }) {
     const [editingId, setEditingId] = useState(null);
+    const [searchTerm, setSearchTerm] = useState('');
     const { data, setData, post, put, delete: destroy, processing, errors } = useForm(
         defaultFormState(selectedExamenId),
     );
@@ -44,6 +57,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
     useEffect(() => {
         setData(() => defaultFormState(selectedExamenId));
         setEditingId(null);
+        setSearchTerm('');
     }, [selectedExamenId]);
 
     const handleExamChange = (event) => {
@@ -71,6 +85,35 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
 
         return editingRow?.id_inscription_pedagogique === inscription.id_inscription_pedagogique;
     });
+
+    const filteredRepartitions = useMemo(() => {
+        const query = normalizeText(searchTerm.trim());
+
+        if (!query) {
+            return repartitions;
+        }
+
+        return repartitions.filter((item) => {
+            const searchableValues = [
+                item.inscription_pedagogique?.etudiant?.nom,
+                item.inscription_pedagogique?.etudiant?.prenom,
+                item.inscription_pedagogique?.etudiant?.cne,
+                item.inscription_pedagogique?.module?.nom_module,
+                item.inscription_pedagogique?.module?.code_module,
+                item.code_grille,
+                item.numero_place,
+                item.code_anonymat,
+                item.observation,
+                item.present ? 'present' : 'absent',
+                item.heure_arrivee,
+                item.heure_sortie,
+            ];
+
+            return searchableValues.some((value) => normalizeText(value).includes(query));
+        });
+    }, [repartitions, searchTerm]);
+
+    const searchActive = searchTerm.trim().length > 0;
 
     const resetForm = () => {
         setEditingId(null);
@@ -319,9 +362,33 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
 
                 <div className="lg:col-span-2">
                     <div className="rounded-xl bg-white p-6 shadow dark:bg-gray-800">
-                        <div className="mb-4 flex items-center justify-between">
-                            <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Étudiants affectés</h3>
-                            <span className="text-sm text-gray-500 dark:text-gray-400">{repartitions.length} lignes</span>
+                        <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                            <div>
+                                <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Étudiants affectés</h3>
+                                <span className="text-sm text-gray-500 dark:text-gray-400">
+                                    {searchActive ? (
+                                        <>
+                                            {filteredRepartitions.length} / {repartitions.length} lignes
+                                        </>
+                                    ) : (
+                                        `${repartitions.length} lignes`
+                                    )}
+                                </span>
+                            </div>
+                            <div className="w-full md:w-72">
+                                <label htmlFor="repartition-search" className="sr-only">
+                                    Rechercher un étudiant
+                                </label>
+                                <input
+                                    id="repartition-search"
+                                    type="search"
+                                    value={searchTerm}
+                                    onChange={(event) => setSearchTerm(event.target.value)}
+                                    placeholder="Rechercher (nom, CNE, grille...)"
+                                    className="w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-700"
+                                    disabled={!selectedExamenId}
+                                />
+                            </div>
                         </div>
                         <div className="overflow-x-auto">
                             <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
@@ -343,7 +410,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                                    {repartitions.map((repartition) => (
+                                    {filteredRepartitions.map((repartition) => (
                                         <tr key={repartition.id_repartition} className="text-sm text-gray-700 dark:text-gray-200">
                                             <td className="px-4 py-3">
                                                 <div className="font-semibold">
@@ -399,10 +466,12 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                             </td>
                                         </tr>
                                     ))}
-                                    {repartitions.length === 0 && (
+                                    {filteredRepartitions.length === 0 && (
                                         <tr>
                                             <td colSpan={5} className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                                                Aucune répartition pour cet examen.
+                                                {searchActive
+                                                    ? 'Aucun résultat ne correspond à cette recherche.'
+                                                    : 'Aucune répartition pour cet examen.'}
                                             </td>
                                         </tr>
                                     )}

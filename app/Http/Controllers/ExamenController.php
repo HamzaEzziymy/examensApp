@@ -14,6 +14,18 @@ class ExamenController extends Controller
 {
     public function index()
     {
+        return Inertia::render('examens/Examens/Index', $this->indexData());
+    }
+
+    public function calendar()
+    {
+        $payload = $this->indexData();
+
+        return Inertia::render('examens/Examens/Calendar', $payload);
+    }
+
+    private function indexData(): array
+    {
         $examens = Examen::with([
                 'sessionExamen:id_session_examen,nom_session,type_session',
                 'module:id_module,nom_module,code_module',
@@ -45,13 +57,13 @@ class ExamenController extends Controller
             ->orderBy('code_salle')
             ->get();
 
-        return Inertia::render('examens/Examens/Index', [
+        return [
             'examens' => $examens,
             'sessions' => $sessions,
             'modules' => $modules,
             'salles' => $salles,
             'statuts' => Examen::STATUTS,
-        ]);
+        ];
     }
 
     public function store(Request $request)

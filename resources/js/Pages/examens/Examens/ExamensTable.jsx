@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useForm } from '@inertiajs/react';
 import Swal from 'sweetalert2';
 import InputError from '@/Components/InputError';
@@ -32,8 +32,21 @@ const statusTone = {
     Annulee: 'bg-rose-50 text-rose-600 dark:bg-rose-900/40 dark:text-rose-200',
 };
 
+const normalizeText = (value) => {
+    if (value === undefined || value === null) {
+        return '';
+    }
+
+    return value
+        .toString()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+};
+
 export default function ExamensTable({ examens, sessions, modules, salles, statuts }) {
     const [modalOpen, setModalOpen] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
 
     const { data, setData, put, delete: destroy, errors, processing, reset } = useForm({
         id_examen: null,
@@ -107,11 +120,62 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
         });
     };
 
+    const filteredExamens = useMemo(() => {
+        const query = normalizeText(searchTerm.trim());
+
+        if (!query) {
+            return examens;
+        }
+
+        return examens.filter((examen) => {
+            const searchableValues = [
+                examen.module?.nom_module,
+                examen.module?.code_module,
+                examen.session_examen?.nom_session,
+                examen.session_examen?.type_session,
+                examen.salle?.nom_salle,
+                examen.salle?.code_salle,
+                examen.statut,
+                examen.description,
+                examen.date_examen,
+                examen.date_debut,
+                examen.date_fin,
+            ];
+
+            return searchableValues.some((value) => normalizeText(value).includes(query));
+        });
+    }, [examens, searchTerm]);
+
+    const searchActive = searchTerm.trim().length > 0;
+
     return (
         <div className="rounded-xl bg-white p-6 shadow dark:bg-gray-800">
-            <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Examens programmés</h2>
-                <span className="text-sm text-gray-500 dark:text-gray-400">{examens.length} examens</span>
+            <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                    <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Examens programmés</h2>
+                    <span className="text-sm text-gray-500 dark:text-gray-400">
+                        {searchActive ? (
+                            <>
+                                {filteredExamens.length} / {examens.length} examens
+                            </>
+                        ) : (
+                            `${examens.length} examens`
+                        )}
+                    </span>
+                </div>
+                <div className="w-full md:w-64">
+                    <label htmlFor="examens-search" className="sr-only">
+                        Rechercher un examen
+                    </label>
+                    <input
+                        id="examens-search"
+                        type="search"
+                        value={searchTerm}
+                        onChange={(event) => setSearchTerm(event.target.value)}
+                        placeholder="Rechercher (module, session, salle...)"
+                        className="w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-700"
+                    />
+                </div>
             </div>
 
             <div className="overflow-x-auto">
@@ -140,7 +204,7 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                        {examens.map((examen) => (
+                        {filteredExamens.map((examen) => (
                             <tr key={examen.id_examen} className="text-sm text-gray-700 dark:text-gray-200">
                                 <td className="px-4 py-3 font-medium">
                                     <div>{examen.module?.nom_module ?? 'Module inconnu'}</div>
@@ -202,10 +266,12 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
                                 </td>
                             </tr>
                         ))}
-                        {examens.length === 0 && (
+                        {filteredExamens.length === 0 && (
                             <tr>
                                 <td colSpan={7} className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                                    Aucun examen planifié pour l’instant.
+                                    {searchActive
+                                        ? 'Aucun examen ne correspond à cette recherche.'
+                                        : 'Aucun examen planifié pour l’instant.'}
                                 </td>
                             </tr>
                         )}

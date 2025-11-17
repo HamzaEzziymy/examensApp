@@ -153,6 +153,8 @@ Route::prefix('examens')->name('examens.')->group(function () {
     // Exemples d’actions personnalisées utiles (optionnel)
     // Route::post('examens/{examen}/publier', [ExamenController::class, 'publier'])->name('examens.publier');
     // Route::get('examens/{examen}/pv',      [PvExamenController::class, 'showByExamen'])->name('examens.pv');
+
+    Route::get('calendrier', [ExamenController::class, 'calendar'])->name('calendar');
 });
 
 /* =========================
