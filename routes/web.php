@@ -3,6 +3,8 @@
 use App\Http\Controllers\FaculteController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\DocumentController;
+use App\Http\Controllers\SectionController;
+use App\Models\Section;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
@@ -99,12 +101,12 @@ Route::withoutMiddleware([MiddlewareVerifyCsrfToken::class])->group(function () 
 
     Route::prefix('academique')->name('academique.')->group(function () {
         Route::resources([
-            'annees-universitaires' => AnneeUniversitaireController::class,
-            'filieres' => FiliereController::class,
             'niveaux' => NiveauController::class,
             'semestres' => SemestreController::class,
             'modules' => ModuleController::class,
             'elements-module' => ElementModuleController::class,
+            'filieres' => FiliereController::class,
+            'sections' => SectionController::class,
         ]);
     });
 });

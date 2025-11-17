@@ -2,10 +2,10 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout'
 import { Head } from '@inertiajs/react'
 import React from 'react'
 import Header from '../Header'
-import FormAjouter from './FormAjouter';
-import Desplay from './Desplay';
+import Display from './Display';
 
-function Index({filieres, anneesUniv}) {
+function Index({filieres, facultes}) {
+  console.log(filieres);
   return (
     <AuthenticatedLayout
         header={
@@ -17,12 +17,7 @@ function Index({filieres, anneesUniv}) {
       <Head title="filieres" />
       <Header />
       <div className="p-4 rounded-lg">
-          <div className="grid lg:grid-cols-2 grid-cols-1 gap-4 mb-4">
-          <FormAjouter anneesUniv={anneesUniv} />
-          <Desplay filieres = {filieres} anneesUniv={anneesUniv} />
-        </div>
-        <div className="grid lg:grid-cols-2 grid-cols-1 gap-4 mb-4">
-        </div>
+          <Display filieres = {filieres} facultes={facultes} />
       </div>
 
             

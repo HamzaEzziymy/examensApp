@@ -13,10 +13,15 @@ class FiliereController extends Controller
 {
     public function index()
     {
-        $filieres = Filiere::with('faculte:id_faculte,nom_faculte')
-            ->withCount('sections')
-            ->orderBy('nom_filiere')
-            ->get();
+        // $filieres = Filiere::with('faculte:id_faculte,nom_faculte')
+        //     ->withCount('sections')
+        //     ->orderBy('nom_filiere')
+        //     ->get();
+
+        //get filieres with section and sections count
+       $filieres = Filiere::with('sections')->get();
+
+
         $facultes = Faculte::select('id_faculte', 'nom_faculte')->orderBy('nom_faculte')->get();
 
        return Inertia::render('Academique/Filieres/Index', [
@@ -28,7 +33,7 @@ class FiliereController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'nom_filiere' => ['required', 'string', 'max:100'],
+            'nom_filiere' => ['required', 'string', 'max:100', 'unique:filieres,nom_filiere'],
             'id_faculte'  => ['required', 'exists:facultes,id_faculte'],
         ]);
         

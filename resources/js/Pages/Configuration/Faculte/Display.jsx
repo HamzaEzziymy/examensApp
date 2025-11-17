@@ -93,7 +93,7 @@ export default function Display({ faculte }) {
         });
 
         if (faculte) {
-            post(route('faculte.update', faculte.id_faculte), {
+            post(route('configuration.faculte.update', faculte.id_faculte), {
                 forceFormData: true,
                 preserveScroll: true,
                 onSuccess: () => {
@@ -114,7 +114,7 @@ export default function Display({ faculte }) {
                 }
             });
         } else {
-            post(route('faculte.store'), {
+            post(route('configuration.faculte.store'), {
                 forceFormData: true,
                 preserveScroll: true,
                 onSuccess: () => {
