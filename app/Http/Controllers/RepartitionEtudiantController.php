@@ -7,6 +7,7 @@ use App\Models\InscriptionPedagogique;
 use App\Models\RepartitionEtudiant;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Unique as UniqueRule;
 use Inertia\Inertia;
 
 class RepartitionEtudiantController extends Controller
@@ -149,13 +150,13 @@ class RepartitionEtudiantController extends Controller
                 $this->uniquePerExamen('numero_place', $examenId, $repartitionId),
             ],
             'present' => ['sometimes', 'boolean'],
-            'heure_arrivee' => ['nullable', 'date_format:H:i'],
-            'heure_sortie' => ['nullable', 'date_format:H:i', 'after_or_equal:heure_arrivee'],
+            'heure_arrivee' => ['nullable'],
+            'heure_sortie' => ['nullable', 'after_or_equal:heure_arrivee'],
             'observation' => ['nullable', 'string'],
         ];
     }
 
-    private function uniquePerExamen(string $column, int $examenId, ?int $ignoreId = null): Rule
+    private function uniquePerExamen(string $column, int $examenId, ?int $ignoreId = null): UniqueRule
     {
         return Rule::unique('repartition_etudiants', $column)
             ->where(fn ($query) => $query->where('id_examen', $examenId))

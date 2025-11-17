@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useForm } from '@inertiajs/react';
 import Swal from 'sweetalert2';
 import InputError from '@/Components/InputError';
@@ -9,8 +9,21 @@ const formatDate = (value) => {
     return new Date(value).toLocaleDateString();
 };
 
+const normalizeText = (value) => {
+    if (value === undefined || value === null) {
+        return '';
+    }
+
+    return value
+        .toString()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+};
+
 export default function SessionTable({ sessions, filieres, annees, typesSession }) {
     const [modalOpen, setModalOpen] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
 
     const { data, setData, put, delete: destroy, errors, processing, reset } = useForm({
         id_session_examen: null,
@@ -82,11 +95,58 @@ export default function SessionTable({ sessions, filieres, annees, typesSession 
         });
     };
 
+    const filteredSessions = useMemo(() => {
+        const query = normalizeText(searchTerm.trim());
+
+        if (!query) {
+            return sessions;
+        }
+
+        return sessions.filter((session) => {
+            const searchableValues = [
+                session.nom_session,
+                session.type_session,
+                session.quadrimestre,
+                session.description,
+                session.date_session_examen,
+                session.filiere?.nom_filiere,
+                session.annee_universitaire?.annee_univ,
+            ];
+
+            return searchableValues.some((value) => normalizeText(value).includes(query));
+        });
+    }, [sessions, searchTerm]);
+
+    const searchActive = searchTerm.trim().length > 0;
+
     return (
         <div className="rounded-xl bg-white p-6 shadow dark:bg-gray-800">
-            <div className="mb-4 flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Sessions planifiées</h2>
-                <span className="text-sm text-gray-500 dark:text-gray-400">{sessions.length} sessions</span>
+            <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                <div>
+                    <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Sessions planifiées</h2>
+                    <span className="text-sm text-gray-500 dark:text-gray-400">
+                        {searchActive ? (
+                            <>
+                                {filteredSessions.length} / {sessions.length} sessions
+                            </>
+                        ) : (
+                            `${sessions.length} sessions`
+                        )}
+                    </span>
+                </div>
+                <div className="w-full md:w-64">
+                    <label htmlFor="session-search" className="sr-only">
+                        Rechercher une session
+                    </label>
+                    <input
+                        id="session-search"
+                        type="search"
+                        value={searchTerm}
+                        onChange={(event) => setSearchTerm(event.target.value)}
+                        placeholder="Rechercher (nom, filière, type...)"
+                        className="w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-700"
+                    />
+                </div>
             </div>
 
             <div className="overflow-x-auto">
@@ -115,7 +175,7 @@ export default function SessionTable({ sessions, filieres, annees, typesSession 
                         </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                        {sessions.map((session) => (
+                        {filteredSessions.map((session) => (
                             <tr key={session.id_session_examen} className="text-sm text-gray-700 dark:text-gray-200">
                                 <td className="px-4 py-3 font-medium">{session.nom_session}</td>
                                 <td className="px-4 py-3">
@@ -147,10 +207,12 @@ export default function SessionTable({ sessions, filieres, annees, typesSession 
                                 </td>
                             </tr>
                         ))}
-                        {sessions.length === 0 && (
+                        {filteredSessions.length === 0 && (
                             <tr>
                                 <td colSpan={7} className="px-4 py-5 text-center text-sm text-gray-500 dark:text-gray-400">
-                                    Aucune session prévue pour le moment.
+                                    {searchActive
+                                        ? 'Aucune session ne correspond à votre recherche.'
+                                        : 'Aucune session prévue pour le moment.'}
                                 </td>
                             </tr>
                         )}
