@@ -29,7 +29,7 @@ export default function Header() {
         // offer de formations
         {
             name: "Offres de Formation",
-            icon: <IoDocumentsSharp size={20} />, // Represents educational offerings
+            icon: <GiCheckboxTree size={20} />, // Represents educational offerings
             href: route("academique.offres-formations.index"),
             current: route().current("academique.offres-formations.index"),
         },

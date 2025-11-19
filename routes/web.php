@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\FaculteController;
+use App\Http\Controllers\OffreFormationController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\SectionController;
@@ -107,6 +108,7 @@ Route::withoutMiddleware([MiddlewareVerifyCsrfToken::class])->group(function () 
             'elements-module' => ElementModuleController::class,
             'filieres' => FiliereController::class,
             'sections' => SectionController::class,
+            'offres-formations' => OffreFormationController::class, // offre_formation
         ]);
     });
 });

@@ -5,7 +5,7 @@ import Header from '../Header'
 import Display from './Display';
 
 function Index({filieres, facultes}) {
-  console.log(filieres);
+  
   return (
     <AuthenticatedLayout
         header={

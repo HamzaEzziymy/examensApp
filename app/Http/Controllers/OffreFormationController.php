@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\OffreFormation;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 
 class OffreFormationController extends Controller
 {
@@ -11,7 +13,18 @@ class OffreFormationController extends Controller
      */
     public function index()
     {
-        //
+        $offresFormation = OffreFormation::with([
+            'module.elements',
+            'semestre.niveau',
+            'section.filiere',
+            'anneeUniversitaire',
+            'coordinateur'
+        ])->get();
+
+        return Inertia::render('Academique/OffresFormation/Index',
+        [
+            'offresFormation' => $offresFormation,
+        ]);
     }
 
     /**

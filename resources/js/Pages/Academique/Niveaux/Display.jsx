@@ -3,7 +3,7 @@ import { useForm } from '@inertiajs/react';
 import Swal from 'sweetalert2';
 import { Pencil, Trash2, Plus, ChevronDown, ChevronUp } from 'lucide-react';
 
-export default function NiveauxDisplay({ niveaux }) {
+export default function Display({ niveaux }) {
     const [expandedRows, setExpandedRows] = useState({});
     const [modalOpen, setModalOpen] = useState(false);
     const [modalType, setModalType] = useState(''); // 'add' or 'edit'

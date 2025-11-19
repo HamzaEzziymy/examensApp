@@ -2,11 +2,9 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout'
 import { Head } from '@inertiajs/react'
 import React from 'react'
 import Header from '../Header'
-import FormAjouter from './FormAjouter';
-import Desplay from './Desplay';
+import Display from './Display';
 
 function Index({niveaux, filieres}) {
-  console.log(niveaux);
   
   return (
     <AuthenticatedLayout
@@ -19,18 +17,11 @@ function Index({niveaux, filieres}) {
       <Head title="niveaux" />
       <Header />
       <div className="p-4 rounded-lg">
-          {/* <div className="grid lg:grid-cols-2 grid-cols-1 gap-4 mb-4"> */}
-          {/* <FormAjouter /> */}
-          <Desplay niveaux = {niveaux} filieres={filieres}/>
-        {/* </div> */}
-        <div className="grid lg:grid-cols-2 grid-cols-1 gap-4 mb-4">
-        </div>
+        <Display niveaux = {niveaux} filieres={filieres}/>
       </div>
-
-            
     </AuthenticatedLayout>
                 
   )
 }
 
-export default Index
+export default Index;

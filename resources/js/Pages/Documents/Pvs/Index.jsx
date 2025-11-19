@@ -6,7 +6,7 @@ import CreateForm from './CreateForm'
 import DisplayDocuments from './DisplayDocuments'
 
 function Index({documents}) {
-  console.log(documents);
+  
   return (
     <AuthenticatedLayout
         header={

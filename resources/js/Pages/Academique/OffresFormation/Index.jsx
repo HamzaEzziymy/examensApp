@@ -2,22 +2,23 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout'
 import { Head } from '@inertiajs/react'
 import React from 'react'
 import Header from '../Header'
-import Desplay from './Desplay';
+import Display from './Display';
 
-function Index({ modules }) {
-  
+function Index({ offresFormation }) {
+  console.log(offresFormation);
+
   return (
     <AuthenticatedLayout
       header={
         <h2 className="text-xl font-semibold leading-tight text-gray-800 dark:text-gray-200">
-          Modules
+          Offre Formation
         </h2>
       }
     >
-      <Head title="modules" />
+      <Head title="Offre Formation" />
       <Header />
       <div className="p-4 rounded-lg">
-        <Desplay modules={modules} />
+        <Display offresFormation = {offresFormation} />
       </div>
 
 
