@@ -1,5 +1,6 @@
 import { Head, Link, usePage } from '@inertiajs/react';
 import { FaArrowLeft, FaArrowRight, FaFileAlt, FaHome, FaPaperclip, FaProjectDiagram, FaTasks, FaTheaterMasks, FaUser } from 'react-icons/fa';
+import { GiCheckboxTree } from "react-icons/gi";
 import { IoDocumentsSharp } from 'react-icons/io5';
 import {
     CalendarDays,
@@ -22,13 +23,18 @@ export default function Header() {
         {
             name: "Niveaux",
             icon: <Layers size={20} />, // Symbolizes levels/stages
-            // send a parameter in niveaux route to indicate it's for filieres
-
             href: route("academique.niveaux.index"),
             current: route().current("academique.niveaux.index"),
         },
+        // offer de formations
         {
-            name: "Modules",
+            name: "Offres de Formation",
+            icon: <IoDocumentsSharp size={20} />, // Represents educational offerings
+            href: route("academique.offres-formations.index"),
+            current: route().current("academique.offres-formations.index"),
+        },
+        {
+            name: "Modules et Éléments",
             icon: <FolderTree size={20} />, // Represents grouped academic modules
             href: route("academique.modules.index"),
             current: route().current("academique.modules.index"),
@@ -54,6 +60,10 @@ export default function Header() {
                         `}
                             aria-current={item.current ? 'page' : undefined}
                         >
+                            {item.name == "Modules et Éléments" && (
+                                <FaArrowLeft className="self-center text-gray-400" />
+                            )
+                        }
                             {/* Animated icon wrapper */}
                             <span className={`
                             transition-transform duration-200 
@@ -66,10 +76,9 @@ export default function Header() {
                             <span className="font-semibold whitespace-nowrap">
                                 {item.name}
                             </span>
-                            {item !== navigations[navigations.length - 1] && (
-
-                                <FaArrowRight className="self-center text-gray-400" />
-                            )
+                            {item.name !== "Modules et Éléments" && (
+                                    <FaArrowRight className="self-center text-gray-400" />
+                                )
                             }
                         </Link>
                     </div>

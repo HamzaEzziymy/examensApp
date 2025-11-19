@@ -13,10 +13,6 @@ class FiliereController extends Controller
 {
     public function index()
     {
-        // $filieres = Filiere::with('faculte:id_faculte,nom_faculte')
-        //     ->withCount('sections')
-        //     ->orderBy('nom_filiere')
-        //     ->get();
 
         //get filieres with section and sections count
        $filieres = Filiere::with('sections')->get();

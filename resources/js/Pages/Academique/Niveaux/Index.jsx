@@ -6,6 +6,7 @@ import FormAjouter from './FormAjouter';
 import Desplay from './Desplay';
 
 function Index({niveaux, filieres}) {
+  console.log(niveaux);
   
   return (
     <AuthenticatedLayout

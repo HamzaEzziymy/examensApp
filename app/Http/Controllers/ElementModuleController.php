@@ -66,7 +66,6 @@ class ElementModuleController extends Controller
     {
         $elements_module->delete();
 
-        return Redirect()->route('academique.elements-module.index')
-            ->with('success', 'Élément de module supprimé.');
+        return Redirect()->route('academique.modules.index');
     }
 }

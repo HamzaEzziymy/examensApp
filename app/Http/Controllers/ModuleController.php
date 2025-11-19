@@ -11,7 +11,7 @@ class ModuleController extends Controller
 {
     public function index()
     {
-        $modules = Module::withCount('elements')
+        $modules = Module::with('elements')
             ->orderBy('nom_module')
             ->get();
 
@@ -31,8 +31,7 @@ class ModuleController extends Controller
 
         $module = Module::create($validated);
 
-         return Redirect()->route('academique.modules.index')
-            ->with('success', 'Module créé.');
+        return Redirect()->route('academique.modules.index');
     }
 
     public function show($id)
@@ -61,8 +60,7 @@ class ModuleController extends Controller
 
         $module->update($validated);
 
-     return Redirect()->route('academique.modules.index')
-            ->with('success', 'Module mis à jour.');
+     return Redirect()->route('academique.modules.index');
     }
 
     public function destroy($id)

@@ -11,15 +11,9 @@ class NiveauController extends Controller
 {
     public function index()
     {
-        $niveaux = Niveau::with([
-                'semestres:id_semestre,id_niveau,nom_semestre,code_semestre,ordre',
-                'semestres.offresFormation.module:id_module,code_module,nom_module,type_module',
-                'semestres.offresFormation.section:id_section,nom_section,langue',
-                'semestres.offresFormation.anneeUniversitaire:id_annee,annee_univ',
-                'semestres.offresFormation.coordinateur:id_enseignant,nom,prenom',
-            ])
+        $niveaux = Niveau::with('semestres')
             ->withCount('semestres')
-            ->orderBy('ordre')
+            ->orderBy('code_niveau')
             ->get();
 
         return Inertia::render('Academique/Niveaux/Index', [
@@ -37,8 +31,7 @@ class NiveauController extends Controller
 
         $niveau = Niveau::create($validated);
 
-        return Redirect()->route('academique.niveaux.index')
-            ->with('success', 'Niveau créé.');
+        return Redirect()->route('academique.niveaux.index');
     }
 
     public function show(int $id)
@@ -60,9 +53,7 @@ class NiveauController extends Controller
         ]);
 
         $niveau->update($validated);
-
-        return Redirect()->route('academique.niveaux.index')
-            ->with('success', 'Niveau mis à jour.');
+        return Redirect()->route('academique.niveaux.index');
     }
 
     public function destroy(int $id)
