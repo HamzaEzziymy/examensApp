@@ -452,20 +452,29 @@ export default function Display({ offresFormation: initialOffres }) {
                                                         <h4 className="text-lg font-semibold mb-3 text-blue-700 dark:text-blue-400">
                                                             Détails du Module
                                                         </h4>
-                                                        <div className="space-y-2">
-                                                            <div className="flex justify-between">
-                                                                <span className="font-medium">Nom affiché:</span>
-                                                                <span>{offre.nom_affiche || offre.module?.nom_module}</span>
-                                                            </div>
-                                                            <div className="flex justify-between">
-                                                                <span className="font-medium">Crédits:</span>
-                                                                <span>{offre.module?.credits}</span>
-                                                            </div>
-                                                            <div className="flex justify-between">
-                                                                <span className="font-medium">Type:</span>
-                                                                <span>{getModuleTypeLabel(offre.module?.type_module)}</span>
-                                                            </div>
-                                                        </div>
+                                                        <div className="space-y-2 p-3 rounded-lg bg-gray-100 dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700">
+    <div className="flex justify-between">
+        <span className="font-medium text-gray-700 dark:text-gray-300">Nom affiché:</span>
+        <span className="text-gray-900 dark:text-gray-100">
+            {offre.nom_affiche || offre.module?.nom_module}
+        </span>
+    </div>
+
+    <div className="flex justify-between">
+        <span className="font-medium text-gray-700 dark:text-gray-300">Crédits:</span>
+        <span className="text-gray-900 dark:text-gray-100">
+            {offre.module?.credits}
+        </span>
+    </div>
+
+    <div className="flex justify-between">
+        <span className="font-medium text-gray-700 dark:text-gray-300">Type:</span>
+        <span className="text-gray-900 dark:text-gray-100">
+            {getModuleTypeLabel(offre.module?.type_module)}
+        </span>
+    </div>
+</div>
+
                                                     </div>
 
                                                     {/* Elements */}
