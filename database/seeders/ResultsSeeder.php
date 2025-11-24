@@ -16,15 +16,15 @@ class ResultsSeeder extends Seeder
     {
         $sessions = SessionExamen::all();
 
-        foreach (InscriptionPedagogique::all() as $ip) {
-            // Pick a session (random) and an element from the module
+        foreach (InscriptionPedagogique::orderBy('id_inscription_pedagogique')->limit(20)->get() as $ip) {
+            // Pick a session (random) and a single element from the module
             $session = $sessions->random() ?? null;
 
-            $elements = ElementModule::where('id_module', $ip->id_module)->get();
-            foreach ($elements as $el) {
+            $element = ElementModule::where('id_module', $ip->id_module)->first();
+            if ($element) {
                 ResultatElement::factory()->create([
                     'id_inscription_pedagogique' => $ip->id_inscription_pedagogique,
-                    'id_element'                 => $el->id_element,
+                    'id_element'                 => $element->id_element,
                     'id_session_examen'          => $session?->id_session_examen,
                 ]);
             }

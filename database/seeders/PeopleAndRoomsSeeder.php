@@ -11,8 +11,8 @@ class PeopleAndRoomsSeeder extends Seeder
 {
     public function run(): void
     {
-        Enseignant::factory()->count(25)->create();
-        Surveillant::factory()->count(20)->create();
-        Salle::factory()->count(12)->create();
+        Enseignant::factory()->count(5)->create();
+        Surveillant::factory()->count(3)->create();
+        Salle::factory()->count(3)->create();
     }
 }

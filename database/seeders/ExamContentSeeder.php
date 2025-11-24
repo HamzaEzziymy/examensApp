@@ -15,26 +15,26 @@ class ExamContentSeeder extends Seeder
     {
         $enseignants = Enseignant::all();
         foreach (Examen::all() as $exam) {
-            // 1-2 sujets per exam
-            $sujets = SujetExamen::factory()->count(fake()->numberBetween(1,2))->create([
+            // Minimal: single sujet per exam
+            $sujets = SujetExamen::factory()->count(1)->create([
                 'id_examen' => $exam->id_examen,
                 'id_auteur' => $enseignants->random()->id_enseignant ?? null,
             ]);
 
             foreach ($sujets as $sujet) {
-                // 70% have a correction grid
-                if (fake()->boolean(70)) {
+                // Optionally attach a correction grid
+                if (fake()->boolean(50)) {
                     GrilleCorrection::factory()->create([
                         'id_sujet'  => $sujet->id_sujet,
                         'id_auteur' => $enseignants->random()->id_enseignant ?? null,
                     ]);
                 }
 
-                // 60% have a tirage
-                if (fake()->boolean(60)) {
+                // Optionally add a tirage
+                if (fake()->boolean(40)) {
                     TirageExamen::factory()->create([
                         'id_sujet'         => $sujet->id_sujet,
-                        'nombre_copies'    => fake()->numberBetween(20, 200),
+                        'nombre_copies'    => fake()->numberBetween(10, 30),
                     ]);
                 }
             }

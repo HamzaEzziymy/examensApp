@@ -13,9 +13,13 @@ class SessionExamenFactory extends Factory
 
     public function definition(): array
     {
+        $anneeId = AnneeUniversitaire::where('est_active', true)->latest('date_debut')->value('id_annee')
+            ?? AnneeUniversitaire::latest('date_debut')->value('id_annee')
+            ?? AnneeUniversitaire::factory()->create()->id_annee;
+
         return [
             'id_filiere'          => Filiere::factory(),
-            'id_annee'            => AnneeUniversitaire::factory(),
+            'id_annee'            => $anneeId,
             'nom_session'         => $this->faker->randomElement(['Session Principale','Session de Rattrapage','Session Exceptionnelle']),
             'type_session'        => $this->faker->randomElement(['Normale','Rattrapage','Exceptionnelle']),
             'date_session_examen' => $this->faker->date(),

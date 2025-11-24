@@ -13,17 +13,11 @@ class SupervisionSeeder extends Seeder
     {
         $surveillants = Surveillant::all();
         foreach (Examen::all() as $exam) {
-            // 1 principal + 1 assistant
+            // Minimal: single principal surveillant
             Surveillance::factory()->create([
                 'id_examen'     => $exam->id_examen,
                 'id_surveillant'=> $surveillants->random()->id_surveillant ?? null,
                 'role'          => 'Principal',
-            ]);
-
-            Surveillance::factory()->create([
-                'id_examen'     => $exam->id_examen,
-                'id_surveillant'=> $surveillants->random()->id_surveillant ?? null,
-                'role'          => 'Assistant',
             ]);
         }
     }

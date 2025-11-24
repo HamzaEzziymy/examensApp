@@ -15,23 +15,30 @@ class EnrollmentSeeder extends Seeder
 {
     public function run(): void
     {
-        $activeYear = AnneeUniversitaire::where('est_active', true)->latest('date_debut')->first()
-            ?? AnneeUniversitaire::factory()->active()->create();
+        $activeYear = AnneeUniversitaire::where('est_active', true)->latest('date_debut')->first();
 
-        // Create 200 students distributed across existing filieres
+        if (! $activeYear) {
+            $activeData = AnneeUniversitaire::factory()->active()->make(['est_active' => true])->toArray();
+            $activeYear = AnneeUniversitaire::updateOrCreate(
+                ['annee_univ' => $activeData['annee_univ']],
+                $activeData + ['est_active' => true]
+            );
+        }
+
+        // Create a small student cohort across filieres
         $filieres = Filiere::all();
         if ($filieres->isEmpty()) {
-            $filieres = Filiere::factory()->count(3)->create();
+            $filieres = Filiere::factory()->count(1)->create();
         }
 
         $niveaux = Niveau::all();
         if ($niveaux->isEmpty()) {
-            $niveaux = Niveau::factory()->count(4)->create();
+            $niveaux = Niveau::factory()->count(2)->create();
         }
 
         $students = collect();
         foreach ($filieres as $f) {
-            $count = 50 + fake()->numberBetween(0, 30);
+            $count = 5;
             $students = $students->merge(
                 Etudiant::factory()->count($count)->create(['id_filiere' => $f->id_filiere])
             );
@@ -50,7 +57,7 @@ class EnrollmentSeeder extends Seeder
             ]);
 
             // pick some modules from the global catalogue
-            $modules = Module::inRandomOrder()->take(4)->get();
+            $modules = Module::inRandomOrder()->take(2)->get();
             foreach ($modules as $m) {
                 InscriptionPedagogique::factory()->create([
                     'id_etudiant'          => $etd->id_etudiant,

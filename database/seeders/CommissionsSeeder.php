@@ -20,30 +20,30 @@ class CommissionsSeeder extends Seeder
     {
         $enseignants = Enseignant::all();
 
-        // Create a few commissions
-        $comms = Commission::factory()->count(4)->create();
+        // Create a minimal commission
+        $comms = Commission::factory()->count(1)->create();
 
         foreach ($comms as $c) {
-            // 3-5 members
-            MembreCommission::factory()->count(fake()->numberBetween(3,5))->create([
+            // Minimal membership
+            MembreCommission::factory()->count(2)->create([
                 'id_commission' => $c->id_commission,
                 'id_enseignant' => $enseignants->random()->id_enseignant ?? null,
             ]);
         }
 
-        // Deliberations: 1 per session for 3 sessions
-        $sessions = SessionExamen::inRandomOrder()->take(3)->get();
+        // Single deliberation
+        $sessions = SessionExamen::inRandomOrder()->take(1)->get();
         foreach ($sessions as $sess) {
             $niv = Niveau::inRandomOrder()->first();
             Deliberation::factory()->create([
                 'id_session' => $sess->id_session_examen,
                 'id_niveau'  => $niv?->id_niveau,
-                'statut'     => fake()->randomElement(['Planifiee','En cours','Terminee']),
+                'statut'     => 'Planifiee',
             ]);
         }
 
         // Reclamations: create for random registrations
-        $ips = InscriptionPedagogique::inRandomOrder()->take(30)->get();
+        $ips = InscriptionPedagogique::inRandomOrder()->take(5)->get();
         foreach ($ips as $ip) {
             $element = ElementModule::where('id_module', $ip->id_module)->inRandomOrder()->first();
             Reclamation::factory()->create([
@@ -55,7 +55,7 @@ class CommissionsSeeder extends Seeder
 
         // Decisions for each commission
         foreach ($comms as $c) {
-            DecisionCommission::factory()->count(2)->create([
+            DecisionCommission::factory()->count(1)->create([
                 'id_commission' => $c->id_commission,
             ]);
         }
