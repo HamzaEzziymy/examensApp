@@ -1,8 +1,10 @@
+import { usePage } from "@inertiajs/react";
+
 export default function ApplicationLogo(props) {
-    const src="icon.png";
+    const faculte = usePage().props.faculte;
     return (
         <div  {...props}>
-            <img src={`/${src}`} alt="Logo" className="h-14 w-auto" />
+            <img src={`/storage/${faculte.logo}`} alt="Logo" className="h-14 w-auto" />
         </div>
     );
 }

@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Faculte;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 use App\Models\Filiere;
@@ -42,6 +43,9 @@ class HandleInertiaRequests extends Middleware
             'anneeUniv' => function () {
                 return AnneeUniversitaire::all();
             },
+            'faculte' => function () {
+                return Faculte::first();
+            }
         ];
     }
 }

@@ -3,7 +3,14 @@ import { useForm } from '@inertiajs/react';
 import Swal from 'sweetalert2';
 import { Pencil, Trash2, Plus, Search, ChevronDown, ChevronUp, Filter } from 'lucide-react';
 
-export default function Display({ offresFormation: initialOffres }) {
+export default function Display({ 
+    offresFormation: initialOffres, 
+    sections = [], 
+    semestres = [], 
+    modules = [], 
+    coordinateurs = [],
+    anneeUniversitaires = []
+}) {
     const [expandedRows, setExpandedRows] = useState({});
     const [modalOpen, setModalOpen] = useState(false);
     const [modalType, setModalType] = useState(''); // 'add' or 'edit'
@@ -35,21 +42,6 @@ export default function Display({ offresFormation: initialOffres }) {
     const filieres = [...new Map(initialOffres
         .filter(offre => offre.section?.filiere)
         .map(offre => [offre.section.filiere.id_filiere, offre.section.filiere])
-    ).values()];
-
-    const semestres = [...new Map(initialOffres
-        .filter(offre => offre.semestre)
-        .map(offre => [offre.semestre.id_semestre, offre.semestre])
-    ).values()];
-
-    const modules = [...new Map(initialOffres
-        .filter(offre => offre.module)
-        .map(offre => [offre.module.id_module, offre.module])
-    ).values()];
-
-    const enseignants = [...new Map(initialOffres
-        .filter(offre => offre.coordinateur)
-        .map(offre => [offre.coordinateur.id_enseignant, offre.coordinateur])
     ).values()];
 
     // Filter offres based on search term and filters
@@ -126,20 +118,33 @@ export default function Display({ offresFormation: initialOffres }) {
     const handleSubmit = (e) => {
         e.preventDefault();
         const action = modalType === 'add' 
-            ? offreForm.post(route('academique.offres.store'))
-            : offreForm.put(route('academique.offres.update', offreForm.data.id_offre));
-
-        action.then(() => {
-            closeModal();
-            Swal.fire({
-                icon: 'success',
-                title: modalType === 'add' ? 'Offre ajoutée' : 'Offre modifiée',
-                showConfirmButton: false,
-                timer: 1500
+            ? offreForm.post(route('academique.offres-formations.store'), {
+                onSuccess: () => {
+                    offreForm.reset();
+                    closeModal();
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Offre ajoutée',
+                        showConfirmButton: false,
+                        timer: 1500
+                    });
+                },
+                onError: () => {
+                    // Swal.fire('Erreur', 'Une erreur est survenue', 'error');
+                    console.log(offreForm.errors);
+                }
+            })
+            : offreForm.put(route('academique.offres-formations.update', offreForm.data.id_offre), {
+                onSuccess: () => {
+                    closeModal();
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Offre mise à jour',
+                        showConfirmButton: false,
+                        timer: 1500
+                    });
+                }
             });
-        }).catch(() => {
-            Swal.fire('Erreur', 'Une erreur est survenue', 'error');
-        });
     };
 
     const handleDelete = (offre) => {
@@ -154,9 +159,12 @@ export default function Display({ offresFormation: initialOffres }) {
             cancelButtonText: 'Annuler'
         }).then((result) => {
             if (result.isConfirmed) {
-                offreForm.delete(route('academique.offres.destroy', offre.id_offre), {
+                offreForm.delete(route('academique.offres-formations.destroy', offre.id_offre), {
                     onSuccess: () => {
                         Swal.fire('Supprimé !', 'L\'offre a été supprimée.', 'success');
+                    },
+                    onError: () => {
+                        Swal.fire('Erreur', 'Une erreur est survenue', 'error');
                     }
                 });
             }
@@ -305,9 +313,9 @@ export default function Display({ offresFormation: initialOffres }) {
                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-sm"
                     >
                         <option value="">Tous les coordinateurs</option>
-                        {enseignants.map((enseignant) => (
-                            <option key={enseignant.id_enseignant} value={enseignant.id_enseignant}>
-                                {enseignant.nom} {enseignant.prenom}
+                        {coordinateurs.map((coordinateur) => (
+                            <option key={coordinateur.id_enseignant} value={coordinateur.id_enseignant}>
+                                {coordinateur.nom} {coordinateur.prenom}
                             </option>
                         ))}
                     </select>
@@ -452,29 +460,20 @@ export default function Display({ offresFormation: initialOffres }) {
                                                         <h4 className="text-lg font-semibold mb-3 text-blue-700 dark:text-blue-400">
                                                             Détails du Module
                                                         </h4>
-                                                        <div className="space-y-2 p-3 rounded-lg bg-gray-100 dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700">
-    <div className="flex justify-between">
-        <span className="font-medium text-gray-700 dark:text-gray-300">Nom affiché:</span>
-        <span className="text-gray-900 dark:text-gray-100">
-            {offre.nom_affiche || offre.module?.nom_module}
-        </span>
-    </div>
-
-    <div className="flex justify-between">
-        <span className="font-medium text-gray-700 dark:text-gray-300">Crédits:</span>
-        <span className="text-gray-900 dark:text-gray-100">
-            {offre.module?.credits}
-        </span>
-    </div>
-
-    <div className="flex justify-between">
-        <span className="font-medium text-gray-700 dark:text-gray-300">Type:</span>
-        <span className="text-gray-900 dark:text-gray-100">
-            {getModuleTypeLabel(offre.module?.type_module)}
-        </span>
-    </div>
-</div>
-
+                                                        <div className="space-y-2">
+                                                            <div className="flex justify-between">
+                                                                <span className="font-medium">Nom affiché:</span>
+                                                                <span>{offre.nom_affiche || offre.module?.nom_module}</span>
+                                                            </div>
+                                                            <div className="flex justify-between">
+                                                                <span className="font-medium">Crédits:</span>
+                                                                <span>{offre.module?.credits}</span>
+                                                            </div>
+                                                            <div className="flex justify-between">
+                                                                <span className="font-medium">Type:</span>
+                                                                <span>{getModuleTypeLabel(offre.module?.type_module)}</span>
+                                                            </div>
+                                                        </div>
                                                     </div>
 
                                                     {/* Elements */}
@@ -627,12 +626,9 @@ export default function Display({ offresFormation: initialOffres }) {
                                         required
                                     >
                                         <option value="">Sélectionner une section</option>
-                                        {[...new Map(initialOffres
-                                            .filter(offre => offre.section)
-                                            .map(offre => [offre.section.id_section, offre.section])
-                                        ).values()].map(section => (
+                                        {sections.map((section) => (
                                             <option key={section.id_section} value={section.id_section}>
-                                                {section.filiere?.nom_filiere} - {section.nom_section}
+                                                {section.filiere?.nom_filiere} - {section.nom_section} ({section.langue})
                                             </option>
                                         ))}
                                     </select>
@@ -652,7 +648,7 @@ export default function Display({ offresFormation: initialOffres }) {
                                         <option value="">Sélectionner un semestre</option>
                                         {semestres.map((semestre) => (
                                             <option key={semestre.id_semestre} value={semestre.id_semestre}>
-                                                {semestre.nom_semestre} ({semestre.niveau?.nom_niveau})
+                                                {semestre.niveau?.nom_niveau} ({semestre.nom_semestre})
                                             </option>
                                         ))}
                                     </select>
@@ -672,7 +668,7 @@ export default function Display({ offresFormation: initialOffres }) {
                                         <option value="">Sélectionner un module</option>
                                         {modules.map((module) => (
                                             <option key={module.id_module} value={module.id_module}>
-                                                {module.nom_module} ({module.code_module})
+                                                {module.nom_module} ({module.code_module}) - {module.credits} crédits
                                             </option>
                                         ))}
                                     </select>
@@ -684,14 +680,14 @@ export default function Display({ offresFormation: initialOffres }) {
                                 <div>
                                     <label className="block text-sm font-medium mb-1">Coordinateur</label>
                                     <select
-                                        value={offreForm.data.id_coordinateur}
+                                        value={offreForm.data.id_cordinateur}
                                         onChange={(e) => offreForm.setData('id_coordinateur', e.target.value)}
                                         className="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600"
                                     >
                                         <option value="">Sélectionner un coordinateur</option>
-                                        {enseignants.map((enseignant) => (
-                                            <option key={enseignant.id_enseignant} value={enseignant.id_enseignant}>
-                                                {enseignant.prenom} {enseignant.nom} ({enseignant.matricule})
+                                        {coordinateurs.map((coordinateur) => (
+                                            <option key={coordinateur.id_enseignant} value={coordinateur.id_enseignant}>
+                                                {coordinateur.nom} {coordinateur.prenom} ({coordinateur.matricule})
                                             </option>
                                         ))}
                                     </select>
@@ -716,15 +712,18 @@ export default function Display({ offresFormation: initialOffres }) {
 
                                 <div>
                                     <label className="block text-sm font-medium mb-1">Année académique</label>
-                                    <input
-                                        type="number"
+                                    <select
                                         value={offreForm.data.id_annee}
                                         onChange={(e) => offreForm.setData('id_annee', e.target.value)}
                                         className="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600"
-                                        required
-                                        min="2000"
-                                        max="2100"
-                                    />
+                                    >
+                                        <option value="">Sélectionner un coordinateur</option>
+                                        {anneeUniversitaires.map((anneeUniversitaire) => (
+                                            <option key={anneeUniversitaire.id_annee} value={anneeUniversitaire.id_annee}>
+                                                {anneeUniversitaire.annee_univ} {anneeUniversitaire.est_active ? '✅':''}
+                                            </option>
+                                        ))}
+                                    </select>
                                     {offreForm.errors.id_annee && (
                                         <div className="text-red-500 text-sm mt-1">{offreForm.errors.id_annee}</div>
                                     )}

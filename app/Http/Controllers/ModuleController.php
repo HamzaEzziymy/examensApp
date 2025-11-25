@@ -68,7 +68,6 @@ class ModuleController extends Controller
         $module= Module::findorfail($id);
         $module->delete();
 
-       return Redirect()->route('academique.modules.index')
-            ->with('success', 'Module supprimé.');
+       return Redirect()->route('academique.modules.index');
     }
 }

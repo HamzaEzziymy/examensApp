@@ -1,14 +1,23 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useForm } from '@inertiajs/react';
 import Swal from 'sweetalert2';
-import { Pencil, Trash2, Plus, ChevronDown, ChevronUp } from 'lucide-react';
+import { Pencil, Trash2, Plus, Search, ChevronDown, ChevronUp, Filter } from 'lucide-react';
 
-export default function SectionsDisplay({ filieres, facultes }) {
+export default function SectionsDisplay({ filieres: initialFilieres, facultes }) {
     const [expandedRows, setExpandedRows] = useState({});
     const [modalOpen, setModalOpen] = useState(false);
     const [modalType, setModalType] = useState(''); // 'add' or 'edit'
     const [entityType, setEntityType] = useState(''); // 'filiere' or 'section'
     const [selectedFiliere, setSelectedFiliere] = useState(null);
+    
+    // Search and pagination states
+    const [searchTerm, setSearchTerm] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(10);
+    const [filteredFilieres, setFilteredFilieres] = useState(initialFilieres);
+    const [filters, setFilters] = useState({
+        faculte: ''
+    });
 
     const sectionForm = useForm({
         id_section: null,
@@ -22,6 +31,30 @@ export default function SectionsDisplay({ filieres, facultes }) {
         nom_filiere: '',
         id_faculte: ''
     });
+
+    // Filter filieres based on search term and filters
+    useEffect(() => {
+        let filtered = initialFilieres.filter(filiere => {
+            const matchesSearch = 
+                filiere.nom_filiere?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                filiere.sections?.some(section => 
+                    section.nom_section?.toLowerCase().includes(searchTerm.toLowerCase())
+                );
+
+            const matchesFaculte = !filters.faculte || filiere.id_faculte?.toString() === filters.faculte;
+
+            return matchesSearch && matchesFaculte;
+        });
+        
+        setFilteredFilieres(filtered);
+        setCurrentPage(1);
+    }, [searchTerm, filters, initialFilieres]);
+
+    // Calculate pagination
+    const totalItems = filteredFilieres.length;
+    const totalPages = Math.ceil(totalItems / itemsPerPage);
+    const startIndex = (currentPage - 1) * itemsPerPage;
+    const currentFilieres = filteredFilieres.slice(startIndex, startIndex + itemsPerPage);
 
     const toggleRow = (id) => {
         setExpandedRows(prev => ({ ...prev, [id]: !prev[id] }));
@@ -87,7 +120,7 @@ export default function SectionsDisplay({ filieres, facultes }) {
     const handleSectionSubmit = (e) => {
         e.preventDefault();
         const action = modalType === 'add' 
-            ? sectionForm.post(route('academique.sections.store'),{
+            ? sectionForm.post(route('academique.sections.store'), {
                 onSuccess: () => {
                     closeModal();
                     Swal.fire({
@@ -101,7 +134,7 @@ export default function SectionsDisplay({ filieres, facultes }) {
                     Swal.fire('Erreur', 'Une erreur est survenue', 'error');
                 }
             })
-            : sectionForm.put(route('academique.sections.update', sectionForm.data.id_section),{
+            : sectionForm.put(route('academique.sections.update', sectionForm.data.id_section), {
                 onSuccess: () => {
                     closeModal();
                     Swal.fire({
@@ -115,13 +148,12 @@ export default function SectionsDisplay({ filieres, facultes }) {
                     Swal.fire('Erreur', 'Une erreur est survenue', 'error');
                 }
             });
-
     };
 
     const handleFiliereSubmit = (e) => {
         e.preventDefault();
         const action = modalType === 'add' 
-            ? filiereForm.post(route('academique.filieres.store'),{
+            ? filiereForm.post(route('academique.filieres.store'), {
                 onSuccess: () => {
                     closeModal();
                     Swal.fire({
@@ -135,7 +167,7 @@ export default function SectionsDisplay({ filieres, facultes }) {
                     Swal.fire('Erreur', 'Une erreur est survenue', 'error');
                 }
             })
-            : filiereForm.put(route('academique.filieres.update', filiereForm.data.id_filiere),{
+            : filiereForm.put(route('academique.filieres.update', filiereForm.data.id_filiere), {
                 onSuccess: () => {
                     closeModal();
                     Swal.fire({
@@ -193,35 +225,80 @@ export default function SectionsDisplay({ filieres, facultes }) {
         });
     };
 
+    // Pagination handlers
+    const goToPage = (page) => {
+        setCurrentPage(page);
+    };
+
+    const goToPreviousPage = () => {
+        setCurrentPage(prev => Math.max(prev - 1, 1));
+    };
+
+    const goToNextPage = () => {
+        setCurrentPage(prev => Math.min(prev + 1, totalPages));
+    };
+
+    const handleItemsPerPageChange = (e) => {
+        setItemsPerPage(Number(e.target.value));
+        setCurrentPage(1);
+    };
+
     return (
         <div className="bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 p-6 rounded-md">
-            <div className="flex justify-between items-center border-b border-gray-300 dark:border-gray-700 pb-4 mb-6">
+            {/* Header with Search, Filters and Actions */}
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 border-b border-gray-300 dark:border-gray-700 pb-4 mb-6">
                 <h2 className="text-2xl font-semibold">Filières et Sections</h2>
-                <button
-                    onClick={openAddFiliereModal}
-                    className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded"
-                    aria-label="Ajouter une filière"
-                >
-                    <Plus size={18} />
-                    <span>Ajouter Filière</span>
-                </button>
+                
+                <div className="flex flex-col sm:flex-row gap-4 w-full lg:w-auto">
+                    {/* Search Input */}
+                    <div className="relative flex-1 sm:flex-none">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <Search size={18} className="text-gray-400" />
+                        </div>
+                        <input
+                            type="text"
+                            placeholder="Rechercher par nom de filière ou section..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            className="pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 w-full sm:w-80 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        />
+                    </div>
+                    
+                    {/* Action Buttons */}
+                    <div className="flex gap-2">
+                        <button
+                            onClick={openAddFiliereModal}
+                            className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded whitespace-nowrap"
+                            aria-label="Ajouter une filière"
+                        >
+                            <Plus size={18} />
+                            <span>Ajouter Filière</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            {/* Results Count */}
+            <div className="mb-4 text-sm text-gray-600 dark:text-gray-400">
+                {totalItems} filière(s) trouvée(s)
             </div>
 
+            {/* Filieres Table */}
             <div className="overflow-x-auto rounded shadow border dark:border-gray-700">
                 <table className="min-w-full table-auto">
                     <thead className="bg-gray-100 dark:bg-gray-800">
                         <tr>
-                            <th className="px-4 py-2 text-left w-12"></th>
-                            <th className="px-4 py-2 text-left">Nom de la Filière</th>
-                            <th className="px-4 py-2 text-left">Sections</th>
-                            <th className="px-4 py-2 text-left">Actions</th>
+                            <th className="px-4 py-3 text-left w-12"></th>
+                            <th className="px-4 py-3 text-left text-sm font-semibold">Nom de la Filière</th>
+                            <th className="px-4 py-3 text-left text-sm font-semibold">Faculté</th>
+                            <th className="px-4 py-3 text-left text-sm font-semibold">Sections</th>
+                            <th className="px-4 py-3 text-left text-sm font-semibold">Actions</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {filieres.map((filiere) => (
+                        {currentFilieres.map((filiere) => (
                             <React.Fragment key={filiere.id_filiere}>
                                 <tr className="border-t border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
-                                    <td className="px-4 py-2">
+                                    <td className="px-4 py-3">
                                         <button
                                             onClick={() => toggleRow(filiere.id_filiere)}
                                             className="text-blue-500 hover:text-blue-700"
@@ -233,13 +310,22 @@ export default function SectionsDisplay({ filieres, facultes }) {
                                             }
                                         </button>
                                     </td>
-                                    <td className="px-4 py-2 font-medium">{filiere.nom_filiere}</td>
-                                    <td className="px-4 py-2">
-                                        <span className="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-1 rounded text-sm">
+                                    <td className="px-4 py-3">
+                                        <div className="flex flex-col">
+                                            <span className="font-semibold text-sm">{filiere.nom_filiere}</span>
+                                        </div>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                        <span className="bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-2 py-1 rounded text-sm">
+                                            {filiere.faculte?.nom_faculte || 'Non assignée'}
+                                        </span>
+                                    </td>
+                                    <td className="px-4 py-3">
+                                        <span className="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-1 rounded text-sm font-medium">
                                             {filiere.sections?.length || 0}
                                         </span>
                                     </td>
-                                    <td className="px-4 py-2">
+                                    <td className="px-4 py-3">
                                         <div className="flex gap-2">
                                             <button
                                                 onClick={() => openAddSectionModal(filiere)}
@@ -269,7 +355,7 @@ export default function SectionsDisplay({ filieres, facultes }) {
 
                                 {expandedRows[filiere.id_filiere] && (
                                     <tr className="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
-                                        <td colSpan="4" className="px-4 py-4">
+                                        <td colSpan="5" className="px-4 py-4">
                                             <div className="ml-8">
                                                 <h3 className="text-lg font-semibold mb-3 text-blue-700 dark:text-blue-400">
                                                     Sections:
@@ -326,6 +412,88 @@ export default function SectionsDisplay({ filieres, facultes }) {
                     </tbody>
                 </table>
             </div>
+
+            {/* No results message */}
+            {filteredFilieres.length === 0 && (
+                <div className="text-center py-12 text-gray-500 dark:text-gray-400">
+                    <p className="text-lg mb-2">Aucune filière trouvée</p>
+                    <p className="text-sm">Essayez de modifier vos critères de recherche ou créez une nouvelle filière</p>
+                </div>
+            )}
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
+                    {/* Items per page selector */}
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm text-gray-600 dark:text-gray-400">Afficher:</span>
+                        <select
+                            value={itemsPerPage}
+                            onChange={handleItemsPerPageChange}
+                            className="border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-700 text-sm"
+                        >
+                            <option value={10}>10</option>
+                            <option value={25}>25</option>
+                            <option value={50}>50</option>
+                            <option value={100}>100</option>
+                        </select>
+                        <span className="text-sm text-gray-600 dark:text-gray-400">par page</span>
+                    </div>
+
+                    {/* Page info */}
+                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                        Page {currentPage} sur {totalPages} - {totalItems} filière(s)
+                    </div>
+
+                    {/* Pagination controls */}
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={goToPreviousPage}
+                            disabled={currentPage === 1}
+                            className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-700"
+                        >
+                            Précédent
+                        </button>
+                        
+                        {/* Page numbers */}
+                        <div className="flex gap-1">
+                            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                                let page;
+                                if (totalPages <= 5) {
+                                    page = i + 1;
+                                } else if (currentPage <= 3) {
+                                    page = i + 1;
+                                } else if (currentPage >= totalPages - 2) {
+                                    page = totalPages - 4 + i;
+                                } else {
+                                    page = currentPage - 2 + i;
+                                }
+                                return (
+                                    <button
+                                        key={page}
+                                        onClick={() => goToPage(page)}
+                                        className={`w-8 h-8 rounded text-sm ${
+                                            currentPage === page
+                                                ? 'bg-blue-500 text-white'
+                                                : 'border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                                        }`}
+                                    >
+                                        {page}
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        <button
+                            onClick={goToNextPage}
+                            disabled={currentPage === totalPages}
+                            className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-700"
+                        >
+                            Suivant
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* Modal */}
             {modalOpen && (

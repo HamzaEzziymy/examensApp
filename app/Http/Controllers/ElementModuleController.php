@@ -10,13 +10,6 @@ class ElementModuleController extends Controller
 {
     public function index()
     {
-        $elements = ElementModule::with('module:id_module,nom_module')
-            ->orderBy('nom_element')
-            ->get();
-
-       return Inertia::render('Academique/ElementsModule/Index', [
-            'elements' => $elements,
-        ]);
     }
 
     public function store(Request $request)
@@ -24,7 +17,7 @@ class ElementModuleController extends Controller
         $validated = $request->validate([
             'id_module'        => ['required', 'exists:modules,id_module'],
             'id_element_parent'=> ['nullable', 'exists:elements_module,id_element'],
-            'code_element'     => ['required', 'string', 'max:20'],
+            'code_element'     => ['required', 'string', 'max:20','unique:elements_module,code_element'],
             'nom_element'      => ['required', 'string', 'max:255'],
             'type_element'     => ['required', 'in:COURS,TP,PRE_CLINIQUE,STAGE_ELEMENT,AUTRE'],
             'coefficient'      => ['required', 'numeric', 'min:0'],
@@ -32,8 +25,7 @@ class ElementModuleController extends Controller
 
         $element = ElementModule::create($validated);
 
-        return Redirect()->route('academique.elements-module.index')
-            ->with('success', 'Élément de module créé.');
+        return Redirect()->route('academique.modules.index');
     }
 
     public function show(ElementModule $elements_module)
@@ -50,7 +42,8 @@ class ElementModuleController extends Controller
         $validated = $request->validate([
             'id_module'        => ['required', 'exists:modules,id_module'],
             'id_element_parent'=> ['nullable', 'exists:elements_module,id_element'],
-            'code_element'     => ['required', 'string', 'max:20'],
+            // 'unique' rule to ignore current element
+            'code_element'     => ['required', 'string', 'max:20', 'unique:elements_module,code_element,' . $elements_module->id_element . ',id_element'],
             'nom_element'      => ['required', 'string', 'max:255'],
             'type_element'     => ['required', 'in:COURS,TP,PRE_CLINIQUE,STAGE_ELEMENT,AUTRE'],
             'coefficient'      => ['required', 'numeric', 'min:0'],
@@ -58,8 +51,7 @@ class ElementModuleController extends Controller
 
         $elements_module->update($validated);
 
-        return Redirect()->route('academique.elements-module.index')
-            ->with('success', 'Élément de module mis à jour.');
+        return Redirect()->route('academique.modules.index');
     }
 
     public function destroy(ElementModule $elements_module)
