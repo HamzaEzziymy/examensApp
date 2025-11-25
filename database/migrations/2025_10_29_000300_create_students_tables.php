@@ -12,6 +12,7 @@ return new class extends Migration {
             $table->string('cne', 20)->unique();
             $table->string('nom', 50);
             $table->string('prenom', 50);
+            $table->string('nasionalite', 50);
             $table->string('mail_academique', 100)->unique();
             $table->string('mail_personnel', 100)->unique()->nullable();
             $table->date('date_naissance')->nullable();
