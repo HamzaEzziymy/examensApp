@@ -1,46 +1,18 @@
-import { Head, Link, usePage } from '@inertiajs/react';
-import { FaArrowLeft, FaArrowRight, FaFileAlt, FaHome, FaPaperclip, FaProjectDiagram, FaTasks, FaTheaterMasks, FaUser } from 'react-icons/fa';
-import { GiCheckboxTree } from "react-icons/gi";
-import { IoDocumentsSharp } from 'react-icons/io5';
+import { Link } from '@inertiajs/react';
 import {
-    CalendarDays,
     GraduationCap,
-    Layers,
-    BookOpen,
-    FolderTree,
-    FileText,
 } from "lucide-react";
-import { useEffect, useState } from 'react';
 
 export default function Header() {
 
-    const navigations = [{
-        name: "Filières",
-        icon: <GraduationCap size={20} />, // Represents study programs or fields
-        href: route("academique.filieres.index"),
-        current: route().current("academique.filieres.index"),
-    },
-    {
-        name: "Niveaux",
-        icon: <Layers size={20} />, // Symbolizes levels/stages
-        href: route("academique.niveaux.index"),
-        current: route().current("academique.niveaux.index"),
-    },
-    // offer de formations
-    {
-        name: "Offres de Formation",
-        icon: <GiCheckboxTree size={20} />, // Represents educational offerings
-        href: route("academique.offres-formations.index"),
-        current: route().current("academique.offres-formations.index"),
-    },
-    {
-        name: "Modules et Éléments",
-        icon: <FolderTree size={20} />, // Represents grouped academic modules
-        href: route("academique.modules.index"),
-        current: route().current("academique.modules.index"),
-    },
+    const navigations = [
+        {
+            name: "Etudiantes",
+            icon: <GraduationCap size={20} />, // Represents study programs or fields
+            href: route("inscriptions.etudiants.index"),
+            current: route().current("inscriptions.etudiants.index"),
+        }
     ];
-
 
     return (
         <header className="flex flex-row justify-center max-w-7xl mx-auto py-2 rounded-md -mt-3 px-4 sm:px-6 lg:px-8 bg-white dark:bg-gray-800 shadow-lg ">

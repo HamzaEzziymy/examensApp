@@ -132,6 +132,7 @@ Route::prefix('personnes')->name('personnes.')->group(function () {
 |=========================*/
 Route::prefix('inscriptions')->name('inscriptions.')->group(function () {
     Route::resources([
+        'etudiants' => EtudiantController::class,
         'administratives' => InscriptionAdministrativeController::class, // inscriptions_administratives
         'pedagogiques' => InscriptionPedagogiqueController::class,    // inscriptions_pedagogiques
         'capitalisations' => CapitalisationController::class,

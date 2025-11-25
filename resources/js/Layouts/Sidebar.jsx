@@ -4,6 +4,7 @@ import ApplicationLogo from '@/Components/ApplicationLogo';
 import { FaHome, FaPaperclip, FaSchool, FaTasks, FaUser } from 'react-icons/fa';
 import { IoDocumentsSharp } from "react-icons/io5";
 import { MdAccountTree, MdFestival } from "react-icons/md";
+import { PiStudent } from "react-icons/pi";
 import { CalendarDays } from 'lucide-react';
 
 
@@ -18,6 +19,12 @@ function Sidebar({ sidebarOpen, setSidebarOpen, mobileMenuOpen, setMobileMenuOpe
             icon: <MdAccountTree size={20} />,
             href: route('academique.filieres.index'),
             current: route().current('academique.*')
+        },
+        {
+            name: 'Inscription des étudiants',
+            icon: <PiStudent size={20} />,
+            href: route('inscriptions.etudiants.index'),
+            current: route().current('inscriptions.*')
         },
         {
             name: 'Examens',
