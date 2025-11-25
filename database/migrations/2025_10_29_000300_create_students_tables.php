@@ -5,7 +5,8 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration {
-    public function up(): void {
+    public function up(): void
+    {
         Schema::create('etudiants', function (Blueprint $table) {
             $table->id('id_etudiant');
             $table->string('cne', 20)->unique();
@@ -29,6 +30,7 @@ return new class extends Migration {
             $table->unsignedBigInteger('id_section')->nullable();
             $table->date('date_inscription');
             $table->string('statut', 30)->default('Active');
+            $table->enum('type_inscription', ['nouveau', 'redoublant', 'transfert']);
             $table->foreign('id_niveau')->references('id_niveau')->on('niveaux')->onDelete('set null');
             $table->foreign('id_etudiant')->references('id_etudiant')->on('etudiants')->onDelete('set null');
             $table->foreign('id_annee')->references('id_annee')->on('annees_universitaires')->onDelete('set null');
@@ -77,7 +79,8 @@ return new class extends Migration {
         });
     }
 
-    public function down(): void {
+    public function down(): void
+    {
         Schema::dropIfExists('stages');
         Schema::dropIfExists('capitalisations');
         Schema::dropIfExists('inscriptions_pedagogiques');
