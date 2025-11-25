@@ -16,20 +16,23 @@ class GradingSeeder extends Seeder
         $enseignants = Enseignant::all();
 
         foreach (Examen::all() as $exam) {
-            // Assign 2 correcteurs per exam
-            $correcteurs = Correcteur::factory()->count(2)->create([
+            // Assign a single correcteur per exam
+            $correcteur = Correcteur::factory()->create([
                 'id_examen'     => $exam->id_examen,
                 'id_enseignant' => $enseignants->random()->id_enseignant ?? null,
                 'statut'        => 'En cours',
             ]);
 
-            // Create notes for anonymats split across correcteurs
-            $anonymats = Anonymat::where('id_examen', $exam->id_examen)->get();
-            foreach ($anonymats as $i => $anon) {
-                $corr = $correcteurs[$i % $correcteurs->count()];
+            // Create notes for a minimal set of anonymats
+            $anonymats = Anonymat::where('id_examen', $exam->id_examen)
+                ->orderBy('id_anonymat')
+                ->limit(10)
+                ->get();
+
+            foreach ($anonymats as $anon) {
                 Note::factory()->create([
                     'id_anonymat'   => $anon->id_anonymat,
-                    'id_correcteur' => $corr->id_correcteur,
+                    'id_correcteur' => $correcteur->id_correcteur,
                     'note'          => fake()->randomFloat(2, 0, 20),
                 ]);
             }

@@ -32,10 +32,10 @@
         }
 
         .date {
-            text-align: left;
+            /* text-align: left; */
             font-size: 12px;
             font-weight: bold;
-            margin-bottom: 20px;
+            /* margin-bottom: 20px; */
         }
 
         h1 {
@@ -163,15 +163,27 @@
             font-weight: 800;
             font-size: 20px;
         }
+        .nbr-et{
+            display: flex;
+            justify-content: space-between;
+            list-style: none;
+        }
+        .date-service{
+            margin-top: 10px;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+        }
     </style>
 </head>
 <body>
     <div class="container" style="padding-right: 30px;">
         <!-- logo -->
         <img src="{{ public_path('/logo.png') }}" alt="Logo" style="top: 20px; left: 20px; width: 100%; height: 70px;">
-        <div class="header" style="margin-top:8px;">Service Examens</div>
-
-        <div class="date">Fès le : {{ now()->format('d/m/Y') }}</div>
+        <div class="date-service">
+            <div class="header">Service Examens</div>
+            <div class="date">Fès le : {{ now()->format('d/m/Y') }}</div>
+        </div>
         
         <h1>PROCÈS VERBAL</h1>
         <h2 class="niveau">{{ $data["niveau"] }}</h2>
@@ -190,7 +202,13 @@
                 <td class="value"></td>
             </tr>
             <tr class="attendance-row">
-                <td colspan="2">Nbre des Étudiants Présents :</td>
+                <td colspan="2">
+                    <ul class='nbr-et'>
+                        <li>Nbre Présents :</li>
+                        <li>|</li>
+                        <li>Nbre total :</li>
+                    </ul>
+                </td>
                 <td colspan="2">Nbre des absents :</td>
             </tr>
         </table>

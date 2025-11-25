@@ -12,7 +12,7 @@ class AnneeUniversitaireFactory extends Factory
     public function definition(): array
     {
         // academic year format: 2025/2026
-        $start = $this->faker->numberBetween(2018, 2028);
+        $start = $this->faker->unique()->numberBetween(2018, 2035);
         $annee = sprintf('%d/%d', $start, $start + 1);
 
         return [

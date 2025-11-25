@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use App\Models\OffreFormation;
 
 class InscriptionPedagogique extends Model
 {
@@ -16,8 +17,12 @@ class InscriptionPedagogique extends Model
     protected $guarded = [];
 
     protected $fillable = [
-        'id_etudiant','id_inscription_admin','id_module',
-        'type_inscription','credits_acquis',
+        'id_etudiant',
+        'id_inscription_admin',
+        'id_module',
+        'id_offre',
+        'type_inscription',
+        'credits_acquis',
     ];
     
     public function etudiant(): BelongsTo
@@ -33,6 +38,11 @@ class InscriptionPedagogique extends Model
     public function module(): BelongsTo
     {
         return $this->belongsTo(Module::class, 'id_module', 'id_module');
+    }
+
+    public function offreFormation(): BelongsTo
+    {
+        return $this->belongsTo(OffreFormation::class, 'id_offre', 'id_offre');
     }
 
     public function capitalisations(): HasMany
@@ -70,4 +80,3 @@ class InscriptionPedagogique extends Model
         return $this->hasMany(Reclamation::class, 'id_inscription_pedagogique', 'id_inscription_pedagogique');
     }
 }
-

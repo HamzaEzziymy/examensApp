@@ -13,7 +13,7 @@ class SemestreFactory extends Factory
     public function definition(): array
     {
         return [
-            'code_semestre'   => 'S' . $this->faker->unique()->numerify('##'),
+            'code_semestre'   => 'S' . $this->faker->unique()->numerify('####'),
             'nom_semestre'    => 'Semestre ' . $this->faker->numberBetween(1, 12),
             'id_niveau'       => Niveau::factory(),
             'ordre'           => $this->faker->numberBetween(1, 12),

@@ -14,47 +14,93 @@ class AnonymatAndAttendanceSeeder extends Seeder
 {
     public function run(): void
     {
-        foreach (Examen::all() as $exam) {
-            // Registrations for the exam's module
+        $exams = Examen::orderBy('id_examen')->limit(2)->get(); // minimal footprint
+
+        foreach ($exams as $exam) {
             $registrations = InscriptionPedagogique::where('id_module', $exam->id_module)
-                ->inRandomOrder()->take(60)->get();
+                ->orderBy('id_inscription_pedagogique')
+                ->limit(5)
+                ->get();
+
+            if ($registrations->isEmpty()) {
+                continue;
+            }
 
             $presentCount = 0;
             $absentCount  = 0;
+            $seq          = 1;
+            $now          = now();
+            $anonRows         = [];
+            $repartitionRows  = [];
+            $pendingAbsences  = [];
 
             foreach ($registrations as $ip) {
-                $anon = Anonymat::factory()->create([
-                    'id_examen'                 => $exam->id_examen,
-                    'id_inscription_pedagogique'=> $ip->id_inscription_pedagogique,
-                ]);
+                $codeAnonymat = sprintf('ANON-%d-%02d', $exam->id_examen, $seq++);
 
-                // repartition record
-                $isPresent = fake()->boolean(90);
-                RepartitionEtudiant::factory()->create([
-                    'id_examen'                 => $exam->id_examen,
-                    'id_inscription_pedagogique'=> $ip->id_inscription_pedagogique,
-                    'code_anonymat'             => $anon->code_anonymat,
+                $anonRows[] = [
+                    'id_examen'                  => $exam->id_examen,
+                    'id_inscription_pedagogique' => $ip->id_inscription_pedagogique,
+                    'code_anonymat'              => $codeAnonymat,
+                    'created_at'                 => $now,
+                    'updated_at'                 => $now,
+                ];
+
+                $isPresent = fake()->boolean(85);
+                $repartitionRows[] = [
+                    'id_examen'                  => $exam->id_examen,
+                    'id_inscription_pedagogique' => $ip->id_inscription_pedagogique,
+                    'code_grille'               => 1,
+                    'code_anonymat'             => $codeAnonymat,
+                    'numero_place'              => 'P-' . str_pad((string) $seq, 2, '0', STR_PAD_LEFT),
                     'present'                   => $isPresent,
-                ]);
+                    'created_at'                => $now,
+                    'updated_at'                => $now,
+                ];
 
                 if ($isPresent) {
                     $presentCount++;
                 } else {
                     $absentCount++;
-                    Absence::factory()->create([
-                        'id_examen'   => $exam->id_examen,
-                        'id_anonymat' => $anon->id_anonymat,
-                    ]);
+                    $pendingAbsences[] = $codeAnonymat;
                 }
             }
 
-            // PV for the exam
-            PvExamen::factory()->create([
-                'id_examen'       => $exam->id_examen,
-                'nombre_presents' => $presentCount,
-                'nombre_absents'  => $absentCount,
-                'incidents_signales' => fake()->boolean(10),
-            ]);
+            if ($anonRows) {
+                Anonymat::insert($anonRows);
+            }
+            if ($repartitionRows) {
+                RepartitionEtudiant::insert($repartitionRows);
+            }
+            if ($pendingAbsences) {
+                $anonymatMap = Anonymat::where('id_examen', $exam->id_examen)
+                    ->whereIn('code_anonymat', $pendingAbsences)
+                    ->pluck('id_anonymat', 'code_anonymat');
+
+                $absenceRows = [];
+                foreach ($pendingAbsences as $code) {
+                    $absenceRows[] = [
+                        'id_examen'    => $exam->id_examen,
+                        'id_anonymat'  => $anonymatMap[$code] ?? null,
+                        'date_absence' => $now->toDateString(),
+                        'motif'        => null,
+                        'justificatif' => null,
+                        'statut'       => 'Non justifiee',
+                        'created_at'   => $now,
+                        'updated_at'   => $now,
+                    ];
+                }
+
+                Absence::insert($absenceRows);
+            }
+
+            PvExamen::updateOrCreate(
+                ['id_examen' => $exam->id_examen],
+                [
+                    'nombre_presents'    => $presentCount,
+                    'nombre_absents'     => $absentCount,
+                    'incidents_signales' => false,
+                ]
+            );
         }
     }
 }

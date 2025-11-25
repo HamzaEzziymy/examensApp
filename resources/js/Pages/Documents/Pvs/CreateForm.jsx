@@ -86,7 +86,7 @@ export default function CreateForm() {
                     >
                         <option value="">Select Niveau</option>
                         <option value="1ère année">1ère année</option>
-                        <option value="2ème année">2ème année</option>
+                        <option value="2ème année medecine dentaire">2ème année medecine dentaire</option>
                         <option value="3ème année">3ème année</option>
                     </select>
                     {errors.niveau && <p className="text-red-500 text-sm mt-1">{errors.niveau}</p>}
@@ -107,6 +107,7 @@ export default function CreateForm() {
                         <option value="Salle A">Salle A</option>
                         <option value="Salle B">Salle B</option>
                         <option value="Salle C">Salle C</option>
+                        <option value="centre d'examen CDIM(2)">centre d'examen CDIM(2)</option>
                     </select>
                     {errors.salle && <p className="text-red-500 text-sm mt-1">{errors.salle}</p>}
                 </div>
@@ -126,6 +127,8 @@ export default function CreateForm() {
                         <option value="Mathématiques">Mathématiques</option>
                         <option value="Informatique">Informatique</option>
                         <option value="Physique">Physique</option>
+                        <option value="Langue étrangère">Langue étrangère</option>
+
                     </select>
                     {errors.module && <p className="text-red-500 text-sm mt-1">{errors.module}</p>}
                 </div>
