@@ -37,9 +37,10 @@ const defaultFormState = (examenId) => ({
     observation: '',
 });
 
-export default function RepartitionIndex({ examens, repartitions, inscriptions, selectedExamenId }) {
+export default function RepartitionIndex({ examens, repartitions, inscriptions, selectedExamenId, salles }) {
     const [editingId, setEditingId] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const [selectedSalles, setSelectedSalles] = useState(() => salles?.map((s) => String(s.id_salle)) || []);
     const { data, setData, post, put, delete: destroy, processing, errors } = useForm(
         defaultFormState(selectedExamenId),
     );
@@ -59,6 +60,10 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         setEditingId(null);
         setSearchTerm('');
     }, [selectedExamenId]);
+
+    useEffect(() => {
+        setSelectedSalles(salles?.map((s) => String(s.id_salle)) || []);
+    }, [salles]);
 
     const handleExamChange = (event) => {
         const value = event.target.value;
@@ -185,6 +190,40 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         });
     };
 
+    const handleAutoAssign = () => {
+        if (!selectedExamenId) {
+            Swal.fire({ icon: 'info', title: 'Choisissez un examen' });
+            return;
+        }
+        if (!selectedSalles.length) {
+            Swal.fire({ icon: 'info', title: 'Choisissez au moins une salle' });
+            return;
+        }
+
+        router.post(
+            route('surveillance.repartition-etudiants.auto'),
+            {
+                id_examen: selectedExamenId,
+                salles: selectedSalles,
+            },
+            {
+                preserveScroll: true,
+                onSuccess: () =>
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Répartition automatique effectuée',
+                        timer: 1200,
+                        showConfirmButton: false,
+                    }),
+                onError: () =>
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Impossible de répartir',
+                    }),
+            },
+        );
+    };
+
     return (
         <AuthenticatedLayout
             header={<h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100">Répartition des étudiants</h2>}
@@ -194,21 +233,49 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
             <ExamHeader />
 
             <div className="mb-6 grid gap-4 rounded-xl bg-white p-4 shadow dark:bg-gray-800 md:grid-cols-3">
-                <div className="md:col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Sélectionnez un examen</label>
-                    <select
-                        value={selectedExamenId ? String(selectedExamenId) : ''}
-                        onChange={handleExamChange}
-                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
+                <div className="md:col-span-2 space-y-3">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Sélectionnez un examen</label>
+                        <select
+                            value={selectedExamenId ? String(selectedExamenId) : ''}
+                            onChange={handleExamChange}
+                            className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
+                        >
+                            <option value="">— Choisir un examen —</option>
+                            {examens.map((examen) => (
+                                <option key={examen.id_examen} value={examen.id_examen}>
+                                    {examen.module?.nom_module ?? 'Module'} • {examen.session_examen?.nom_session ?? 'Session'} •{' '}
+                                    {new Date(examen.date_examen).toLocaleDateString()}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Salles disponibles</label>
+                        <select
+                            multiple
+                            value={selectedSalles}
+                            onChange={(e) => setSelectedSalles(Array.from(e.target.selectedOptions).map((opt) => opt.value))}
+                            className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
+                        >
+                            {salles.map((salle) => (
+                                <option key={salle.id_salle} value={String(salle.id_salle)}>
+                                    {salle.code_salle} • {salle.nom_salle} ({salle.capacite_examens} places)
+                                </option>
+                            ))}
+                        </select>
+                        <p className="mt-1 text-xs text-gray-500">
+                            Répartition alphabétique, parts égales par salle (surplus ajouté à la dernière salle).
+                        </p>
+                    </div>
+                    <button
+                        type="button"
+                        onClick={handleAutoAssign}
+                        className="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+                        disabled={!selectedExamenId}
                     >
-                        <option value="">— Choisir un examen —</option>
-                        {examens.map((examen) => (
-                            <option key={examen.id_examen} value={examen.id_examen}>
-                                {examen.module?.nom_module ?? 'Module'} • {examen.session_examen?.nom_session ?? 'Session'} •{' '}
-                                {new Date(examen.date_examen).toLocaleDateString()}
-                            </option>
-                        ))}
-                    </select>
+                        Répartition automatique
+                    </button>
                 </div>
                 <div className="rounded-lg bg-gray-50 p-4 text-sm text-gray-700 dark:bg-gray-900/40 dark:text-gray-200">
                     {selectedExamen ? (

@@ -172,6 +172,7 @@ Route::prefix('surveillance')->name('surveillance.')->group(function () {
         'incidents' => IncidentExamenController::class,
         'pv-examens' => PvExamenController::class,
     ]);
+    Route::post('repartition-etudiants/auto', [RepartitionEtudiantController::class, 'autoAssign'])->name('repartition-etudiants.auto');
 });
 
 /* =========================

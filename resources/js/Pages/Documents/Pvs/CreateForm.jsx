@@ -127,7 +127,7 @@ export default function CreateForm() {
                         <option value="Mathématiques">Mathématiques</option>
                         <option value="Informatique">Informatique</option>
                         <option value="Physique">Physique</option>
-                        <option value="Langue étrangère">Langue étrangère</option>
+                        <option value="Langues étrangères">Langue étrangère</option>
 
                     </select>
                     {errors.module && <p className="text-red-500 text-sm mt-1">{errors.module}</p>}
