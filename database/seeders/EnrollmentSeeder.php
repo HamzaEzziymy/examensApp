@@ -25,10 +25,10 @@ class EnrollmentSeeder extends Seeder
             );
         }
 
-        // Create a small student cohort across filieres
+        // Create a larger student cohort across filieres
         $filieres = Filiere::all();
         if ($filieres->isEmpty()) {
-            $filieres = Filiere::factory()->count(1)->create();
+            $filieres = Filiere::factory()->count(3)->create();
         }
 
         $niveaux = Niveau::all();
@@ -38,7 +38,7 @@ class EnrollmentSeeder extends Seeder
 
         $students = collect();
         foreach ($filieres as $f) {
-            $count = 5;
+            $count = 40 + fake()->numberBetween(0, 40); // 40-80 students per filiere
             $students = $students->merge(
                 Etudiant::factory()->count($count)->create(['id_filiere' => $f->id_filiere])
             );
@@ -57,7 +57,7 @@ class EnrollmentSeeder extends Seeder
             ]);
 
             // pick some modules from the global catalogue
-            $modules = Module::inRandomOrder()->take(2)->get();
+            $modules = Module::inRandomOrder()->take(4)->get();
             foreach ($modules as $m) {
                 InscriptionPedagogique::factory()->create([
                     'id_etudiant'          => $etd->id_etudiant,

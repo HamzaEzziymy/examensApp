@@ -205,8 +205,8 @@
                 <td colspan="2">
                     <ul class='nbr-et'>
                         <li>Nbre Présents :</li>
-                        <li>|</li>
-                        <li>Nbre total :</li>
+                        <li>| Nbre total :</li>
+                        <li></li>
                     </ul>
                 </td>
                 <td colspan="2">Nbre des absents :</td>

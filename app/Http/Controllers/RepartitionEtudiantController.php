@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Examen;
 use App\Models\InscriptionPedagogique;
 use App\Models\RepartitionEtudiant;
+use App\Models\Salle;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Unique as UniqueRule;
@@ -76,6 +77,7 @@ class RepartitionEtudiantController extends Controller
             'repartitions'     => $repartitions,
             'inscriptions'     => $inscriptions,
             'selectedExamenId' => $selectedExamen?->id_examen,
+            'salles'           => Salle::orderBy('code_salle')->get(['id_salle', 'code_salle', 'nom_salle', 'capacite_examens']),
         ]);
     }
 
@@ -87,7 +89,7 @@ class RepartitionEtudiantController extends Controller
         RepartitionEtudiant::create($validated);
 
         return $this->redirectToIndex((int) $validated['id_examen'])
-            ->with('success', 'Étudiant assigné à l’examen.');
+            ->with('success', 'Etudiant assigne a lexamen.');
     }
 
     public function show(RepartitionEtudiant $repartitionEtudiant)
@@ -108,7 +110,7 @@ class RepartitionEtudiantController extends Controller
         $repartitionEtudiant->update($validated);
 
         return $this->redirectToIndex((int) $validated['id_examen'])
-            ->with('success', 'Répartition mise à jour.');
+            ->with('success', 'Repartition mise a jour.');
     }
 
     public function destroy(RepartitionEtudiant $repartitionEtudiant)
@@ -117,7 +119,88 @@ class RepartitionEtudiantController extends Controller
         $repartitionEtudiant->delete();
 
         return $this->redirectToIndex($examenId)
-            ->with('success', 'Répartition supprimée.');
+            ->with('success', 'Repartition supprimee.');
+    }
+
+    public function autoAssign(Request $request)
+    {
+        $validated = $request->validate([
+            'id_examen' => ['required', 'exists:examens,id_examen'],
+            'salles'    => ['required', 'array', 'min:1'],
+            'salles.*'  => ['exists:salles,id_salle'],
+        ]);
+
+        $examen = Examen::with('module')->findOrFail($validated['id_examen']);
+
+        $salles = Salle::whereIn('id_salle', $validated['salles'])
+            ->orderBy('id_salle')
+            ->get(['id_salle', 'code_salle', 'capacite_examens']);
+
+        if ($salles->isEmpty()) {
+            return back()->with('error', 'Aucune salle valide selectionnee.');
+        }
+
+        $students = InscriptionPedagogique::with(['etudiant:id_etudiant,nom,prenom,cne'])
+            ->where('id_module', $examen->id_module)
+            ->join('etudiants', 'inscriptions_pedagogiques.id_etudiant', '=', 'etudiants.id_etudiant')
+            ->orderByRaw('LOWER(etudiants.nom)')
+            ->orderByRaw('LOWER(etudiants.prenom)')
+            ->orderBy('etudiants.cne')
+            ->get(['inscriptions_pedagogiques.id_inscription_pedagogique', 'inscriptions_pedagogiques.id_etudiant', 'inscriptions_pedagogiques.id_module']);
+
+        $totalStudents = $students->count();
+        $totalCapacity = $salles->sum('capacite_examens');
+
+        if ($totalStudents === 0) {
+            return back()->with('error', 'Aucun etudiant a affecter pour cet examen.');
+        }
+
+        if ($totalCapacity < $totalStudents) {
+            return back()->with('error', 'Capacite totale des salles insuffisante pour tous les etudiants.');
+        }
+
+        $perSalle = intdiv($totalStudents, $salles->count());
+        $remainder = $totalStudents % $salles->count();
+
+        RepartitionEtudiant::where('id_examen', $examen->id_examen)->delete();
+
+        $rows = [];
+        $now = now();
+        $cursor = 0;
+        $grille = 1;
+
+        foreach ($salles->values() as $index => $salle) {
+            $quota = $perSalle + ($index === $salles->count() - 1 ? $remainder : 0);
+            if ($quota === 0) {
+                continue;
+            }
+
+            $slice = $students->slice($cursor, $quota);
+            $cursor += $quota;
+            $place = 1;
+
+            foreach ($slice as $student) {
+                $rows[] = [
+                    'id_examen'                  => $examen->id_examen,
+                    'id_inscription_pedagogique' => $student->id_inscription_pedagogique,
+                    'code_grille'                => $grille,
+                    'code_anonymat'              => sprintf('ANON-%d-%03d', $examen->id_examen, $grille),
+                    'numero_place'               => sprintf('%s-%02d', $salle->code_salle ?? $salle->id_salle, $place),
+                    'present'                    => false,
+                    'created_at'                 => $now,
+                    'updated_at'                 => $now,
+                ];
+                $grille++;
+                $place++;
+            }
+        }
+
+        if (!empty($rows)) {
+            RepartitionEtudiant::insert($rows);
+        }
+
+        return $this->redirectToIndex($examen->id_examen)
+            ->with('success', 'Repartition automatique effectuee.');
     }
 
     private function repartitionRules(Request $request, ?int $repartitionId = null): array
