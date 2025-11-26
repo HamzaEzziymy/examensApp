@@ -3,7 +3,6 @@
 namespace Database\Factories;
 
 use App\Models\Etudiant;
-use App\Models\Filiere;
 use App\Models\Section;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -15,9 +14,6 @@ class EtudiantFactory extends Factory
     {
         $nom = $this->faker->lastName();
         $prenom = $this->faker->firstName();
-        $filiere = Filiere::factory()->create();
-        $section = Section::factory()->create(['id_filiere' => $filiere->id_filiere]);
-
         return [
             'cne'             => strtoupper($this->faker->unique()->bothify('CNE########')),
             'nom'             => $nom,
@@ -27,8 +23,7 @@ class EtudiantFactory extends Factory
             'date_naissance'  => $this->faker->dateTimeBetween('-28 years','-18 years')->format('Y-m-d'),
             'telephone'       => $this->faker->optional()->phoneNumber(),
             'url_photo'       => $this->faker->optional()->imageUrl(300, 300, 'people', true),
-            'id_filiere'      => $filiere->id_filiere,
-            'id_section'      => $section->id_section,
+            'id_section'      => Section::factory()->create()->id_section,
         ];
     }
 }

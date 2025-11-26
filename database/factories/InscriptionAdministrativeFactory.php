@@ -26,7 +26,6 @@ class InscriptionAdministrativeFactory extends Factory
             'id_etudiant'       => Etudiant::factory(),
             'id_annee'          => $anneeId,
             'id_niveau'         => Niveau::factory(),
-            'id_filiere'        => $filiere->id_filiere,
             'id_section'        => $section->id_section,
             'date_inscription'  => $this->faker->date(),
             'statut'            => $this->faker->randomElement(['Active', 'Suspendue', 'Archivee']),
