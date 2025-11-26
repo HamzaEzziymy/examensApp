@@ -12,7 +12,7 @@ class SalleFactory extends Factory
     public function definition(): array
     {
         return [
-            'code_salle'        => strtoupper($this->faker->unique()->bothify('S-###')),
+            'code_salle'        => strtoupper($this->faker->unique()->bothify('S-#####')),
             'nom_salle'         => 'Salle ' . $this->faker->bothify('??-##'),
             'capacite'          => $this->faker->numberBetween(20, 300),
             'capacite_examens'  => $this->faker->numberBetween(15, 250),

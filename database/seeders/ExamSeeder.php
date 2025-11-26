@@ -45,16 +45,19 @@ class ExamSeeder extends Seeder
                 $modulesForSession = array_slice($moduleIds, 0, min(3, count($moduleIds)));
 
                 foreach ($modulesForSession as $modId) {
-                    $salleId = $salles->isNotEmpty()
-                        ? optional($salles->random())->id_salle
-                        : null;
+                    $roomIds = $salles->pluck('id_salle')->shuffle()->take(3)->values();
+                    $primary = $roomIds->first();
 
-                    Examen::factory()->create([
+                    $examen = Examen::factory()->create([
                         'id_session_examen' => $sess->id_session_examen,
                         'id_module'         => $modId,
-                        'id_salle'          => $salleId,
+                        'id_salle'          => $primary,
                         'statut'            => fake()->randomElement(['Planifiee', 'En cours', 'Terminee']),
                     ]);
+
+                    if ($roomIds->isNotEmpty()) {
+                        $examen->salles()->sync($roomIds);
+                    }
                 }
             }
         }

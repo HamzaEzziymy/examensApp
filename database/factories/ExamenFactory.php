@@ -12,6 +12,18 @@ class ExamenFactory extends Factory
 {
     protected $model = Examen::class;
 
+    public function configure()
+    {
+        return $this->afterCreating(function (Examen $examen) {
+            // Attach the primary salle (or a random one) to the pivot so multi-salle is always populated
+            $primarySalleId = $examen->id_salle ?? Salle::inRandomOrder()->value('id_salle');
+            if ($primarySalleId) {
+                $extra = Salle::where('id_salle', '!=', $primarySalleId)->inRandomOrder()->limit(2)->pluck('id_salle');
+                $examen->salles()->sync(array_filter([$primarySalleId, ...$extra]));
+            }
+        });
+    }
+
     public function definition(): array
     {
         $start = $this->faker->dateTimeBetween('-1 months', '+2 months');

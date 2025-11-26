@@ -30,6 +30,7 @@ class ExamenController extends Controller
                 'sessionExamen:id_session_examen,nom_session,type_session',
                 'module:id_module,nom_module,code_module',
                 'salle:id_salle,code_salle,nom_salle,capacite_examens',
+                'salles:id_salle,code_salle,nom_salle,capacite_examens',
             ])
             ->withCount('repartitions')
             ->orderByDesc('date_examen')
@@ -70,11 +71,22 @@ class ExamenController extends Controller
     {
         $validated = $this->validateExamen($request);
 
-        Examen::create($validated);
+        $salles = collect($request->input('salles', []))
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        $validated['id_salle'] = $validated['id_salle'] ?? $salles->first();
+
+        $examen = Examen::create($validated);
+        if ($salles->isNotEmpty()) {
+            $examen->salles()->sync($salles);
+        }
 
         return redirect()
             ->route('examens.examens.index')
-            ->with('success', 'Examen planifié.');
+            ->with('success', 'Examen planifi?.');
     }
 
     public function show(Examen $examen)
@@ -91,11 +103,20 @@ class ExamenController extends Controller
     {
         $validated = $this->validateExamen($request);
 
+        $salles = collect($request->input('salles', []))
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        $validated['id_salle'] = $validated['id_salle'] ?? $salles->first();
+
         $examen->update($validated);
+        $examen->salles()->sync($salles);
 
         return redirect()
             ->route('examens.examens.index')
-            ->with('success', 'Examen mis à jour.');
+            ->with('success', 'Examen mis ? jour.');
     }
 
     public function destroy(Examen $examen)
@@ -104,7 +125,7 @@ class ExamenController extends Controller
 
         return redirect()
             ->route('examens.examens.index')
-            ->with('success', 'Examen supprimé.');
+            ->with('success', 'Examen supprim?.');
     }
 
     private function validateExamen(Request $request): array
@@ -113,6 +134,8 @@ class ExamenController extends Controller
             'id_session_examen' => ['required', 'exists:sessions_examen,id_session_examen'],
             'id_module'         => ['required', 'exists:modules,id_module'],
             'id_salle'          => ['nullable', 'exists:salles,id_salle'],
+            'salles'            => ['nullable', 'array'],
+            'salles.*'          => ['nullable', 'exists:salles,id_salle'],
             'date_examen'       => ['required', 'date'],
             'date_debut'        => ['required', 'date'],
             'date_fin'          => ['required', 'date', 'after:date_debut'],

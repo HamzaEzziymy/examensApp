@@ -24,6 +24,7 @@ class Etudiant extends Model
         'telephone',
         'url_photo',
         'id_filiere',
+        'id_section',
     ];
 
     public function filiere(): BelongsTo

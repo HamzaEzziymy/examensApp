@@ -14,7 +14,7 @@ class FiliereFactory extends Factory
     {
         return [
             'id_faculte'  => Faculte::factory(),
-            'nom_filiere' => $this->faker->unique()->words(3, true),
+            'nom_filiere' => strtoupper($this->faker->unique()->lexify('FILIERE-?????')),
         ];
     }
 }

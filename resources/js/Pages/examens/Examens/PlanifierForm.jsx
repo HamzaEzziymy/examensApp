@@ -1,4 +1,4 @@
-import { useForm } from '@inertiajs/react';
+﻿import { useForm } from '@inertiajs/react';
 import Swal from 'sweetalert2';
 import InputError from '@/Components/InputError';
 
@@ -16,6 +16,7 @@ export default function PlanifierForm({
         id_session_examen: '',
         id_module: '',
         id_salle: '',
+        salles: [],
         date_examen: '',
         date_debut: '',
         date_fin: '',
@@ -31,7 +32,7 @@ export default function PlanifierForm({
                 onSuccess?.();
                 Swal.fire({
                     icon: 'success',
-                    title: 'Examen planifié',
+                    title: 'Examen planifie',
                     timer: 1500,
                     showConfirmButton: false,
                 });
@@ -49,13 +50,13 @@ export default function PlanifierForm({
                         onChange={(e) => setData('id_session_examen', e.target.value)}
                         className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
                     >
-                        <option value="">Sélectionner</option>
+                        <option value="">Selectionner</option>
                         {sessions.map((session) => (
                             <option key={session.id_session_examen} value={session.id_session_examen}>
-                                {session.nom_session} •{' '}
+                                {session.nom_session} -{' '}
                                 {session.date_session_examen
                                     ? new Date(session.date_session_examen).toLocaleDateString()
-                                    : 'Date à confirmer'}
+                                    : 'Date a confirmer'}
                             </option>
                         ))}
                     </select>
@@ -68,10 +69,10 @@ export default function PlanifierForm({
                         onChange={(e) => setData('id_module', e.target.value)}
                         className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
                     >
-                        <option value="">Sélectionner</option>
+                        <option value="">Selectionner</option>
                         {modules.map((module) => (
                             <option key={module.id_module} value={module.id_module}>
-                                {module.code_module} • {module.nom_module}
+                                {module.code_module} - {module.nom_module}
                             </option>
                         ))}
                     </select>
@@ -80,20 +81,20 @@ export default function PlanifierForm({
             </div>
 
             <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Salle</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Salles (multi)</label>
                 <select
-                    value={data.id_salle}
-                    onChange={(e) => setData('id_salle', e.target.value)}
+                    multiple
+                    value={data.salles}
+                    onChange={(e) => setData('salles', Array.from(e.target.selectedOptions).map((opt) => opt.value))}
                     className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
                 >
-                    <option value="">Non assignée</option>
                     {salles.map((salle) => (
-                        <option key={salle.id_salle} value={salle.id_salle}>
-                            {salle.code_salle} • Capacité {salle.capacite_examens}
+                        <option key={salle.id_salle} value={String(salle.id_salle)}>
+                            {salle.code_salle} - Capacite {salle.capacite_examens}
                         </option>
                     ))}
                 </select>
-                <InputError message={errors.id_salle} className="mt-1" />
+                <InputError message={errors.salles} className="mt-1" />
             </div>
 
             <div className="grid gap-4 sm:grid-cols-3">
@@ -108,7 +109,7 @@ export default function PlanifierForm({
                     <InputError message={errors.date_examen} className="mt-1" />
                 </div>
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Début</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Debut</label>
                     <input
                         type="datetime-local"
                         value={data.date_debut}
@@ -152,7 +153,7 @@ export default function PlanifierForm({
                     value={data.description}
                     onChange={(e) => setData('description', e.target.value)}
                     className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
-                    placeholder="Consignes, matériel requis, etc."
+                    placeholder="Consignes, materiel requis, etc."
                 />
                 <InputError message={errors.description} className="mt-1" />
             </div>

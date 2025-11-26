@@ -16,7 +16,7 @@ class SectionFactory extends Factory
 
         return [
             'id_filiere'  => Filiere::factory(),
-            'nom_section' => 'Section ' . $langue . ' ' . ucfirst($this->faker->unique()->word()),
+            'nom_section' => 'Section ' . $langue . ' ' . ucfirst($this->faker->unique()->lexify('??????')),
             'langue'      => $langue,
         ];
     }

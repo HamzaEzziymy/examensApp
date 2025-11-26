@@ -140,8 +140,12 @@ class RepartitionEtudiantController extends Controller
             return back()->with('error', 'Aucune salle valide selectionnee.');
         }
 
+        $activeYearId = \App\Models\AnneeUniversitaire::where('est_active', true)->latest('date_debut')->value('id_annee');
+
         $students = InscriptionPedagogique::with(['etudiant:id_etudiant,nom,prenom,cne'])
-            ->where('id_module', $examen->id_module)
+            ->where('inscriptions_pedagogiques.id_module', $examen->id_module)
+            ->join('inscriptions_administratives', 'inscriptions_pedagogiques.id_inscription_admin', '=', 'inscriptions_administratives.id_inscription_admin')
+            ->when($activeYearId, fn ($q) => $q->where('inscriptions_administratives.id_annee', $activeYearId))
             ->join('etudiants', 'inscriptions_pedagogiques.id_etudiant', '=', 'etudiants.id_etudiant')
             ->orderByRaw('LOWER(etudiants.nom)')
             ->orderByRaw('LOWER(etudiants.prenom)')

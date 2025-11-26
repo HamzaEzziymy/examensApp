@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
 class Examen extends Model
 {
@@ -45,6 +46,12 @@ class Examen extends Model
     public function salle(): BelongsTo
     {
         return $this->belongsTo(Salle::class, 'id_salle', 'id_salle');
+    }
+
+    public function salles(): BelongsToMany
+    {
+        return $this->belongsToMany(Salle::class, 'exam_salle', 'id_examen', 'id_salle')
+            ->withTimestamps();
     }
 
     public function surveillances(): HasMany

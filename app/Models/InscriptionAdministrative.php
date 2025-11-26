@@ -20,8 +20,10 @@ class InscriptionAdministrative extends Model
         'id_annee',
         'id_niveau',
         'id_filiere',
+        'id_section',
         'date_inscription',
         'statut',
+        'type_inscription',
     ];
     
     public function etudiant(): BelongsTo

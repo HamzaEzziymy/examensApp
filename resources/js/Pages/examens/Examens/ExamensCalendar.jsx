@@ -30,6 +30,7 @@ const buildPayload = (source, overrides = {}) => ({
     id_session_examen: overrides.id_session_examen ?? source.id_session_examen ?? '',
     id_module: overrides.id_module ?? source.id_module ?? '',
     id_salle: overrides.id_salle ?? source.id_salle ?? '',
+    salles: overrides.salles ?? source.salles ?? [],
     date_examen: overrides.date_examen ?? toInputDate(source.date_examen ?? source.date_debut),
     date_debut: overrides.date_debut ?? source.date_debut ?? source.date_examen,
     date_fin: overrides.date_fin ?? source.date_fin ?? source.date_debut,
@@ -45,6 +46,7 @@ export default function ExamensCalendar({ examens, sessions, modules, salles, st
         id_session_examen: '',
         id_module: '',
         id_salle: '',
+        salles: [],
         date_examen: '',
         date_debut: '',
         date_fin: '',
@@ -78,6 +80,7 @@ export default function ExamensCalendar({ examens, sessions, modules, salles, st
             id_session_examen: examen.id_session_examen ?? '',
             id_module: examen.id_module ?? '',
             id_salle: examen.id_salle ?? '',
+            salles: (examen.salles || []).map((s) => String(s.id_salle)),
             date_examen: toInputDate(examen.date_examen ?? examen.date_debut),
             date_debut: toInputDateTime(examen.date_debut),
             date_fin: toInputDateTime(examen.date_fin),
@@ -277,20 +280,22 @@ export default function ExamensCalendar({ examens, sessions, modules, salles, st
                             </div>
 
                             <div>
-                                <label className="text-sm font-medium text-gray-700 dark:text-gray-200">Salle</label>
+                                <label className="text-sm font-medium text-gray-700 dark:text-gray-200">Salles (multi)</label>
                                 <select
-                                    value={data.id_salle}
-                                    onChange={(event) => setData('id_salle', event.target.value)}
+                                    multiple
+                                    value={data.salles}
+                                    onChange={(event) =>
+                                        setData('salles', Array.from(event.target.selectedOptions).map((opt) => opt.value))
+                                    }
                                     className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
                                 >
-                                    <option value="">Non assignee</option>
                                     {salles.map((salle) => (
-                                        <option key={salle.id_salle} value={salle.id_salle}>
+                                        <option key={salle.id_salle} value={String(salle.id_salle)}>
                                             {salle.code_salle} - {salle.nom_salle}
                                         </option>
                                     ))}
                                 </select>
-                                <InputError message={errors.id_salle} className="mt-1" />
+                                <InputError message={errors.salles} className="mt-1" />
                             </div>
 
                             <div>

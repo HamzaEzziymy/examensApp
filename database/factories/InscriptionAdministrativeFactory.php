@@ -19,13 +19,18 @@ class InscriptionAdministrativeFactory extends Factory
             ?? AnneeUniversitaire::latest('date_debut')->value('id_annee')
             ?? AnneeUniversitaire::factory()->create()->id_annee;
 
+        $filiere = Filiere::factory()->create();
+        $section = \App\Models\Section::factory()->create(['id_filiere' => $filiere->id_filiere]);
+
         return [
             'id_etudiant'       => Etudiant::factory(),
             'id_annee'          => $anneeId,
             'id_niveau'         => Niveau::factory(),
-            'id_filiere'        => Filiere::factory(),
+            'id_filiere'        => $filiere->id_filiere,
+            'id_section'        => $section->id_section,
             'date_inscription'  => $this->faker->date(),
             'statut'            => $this->faker->randomElement(['Active', 'Suspendue', 'Archivee']),
+            'type_inscription'  => $this->faker->randomElement(['nouveau', 'redoublant', 'transfert']),
         ];
     }
 }

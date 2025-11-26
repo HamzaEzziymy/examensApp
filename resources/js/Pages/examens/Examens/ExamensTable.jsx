@@ -53,6 +53,7 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
         id_session_examen: '',
         id_module: '',
         id_salle: '',
+        salles: [],
         date_examen: '',
         date_debut: '',
         date_fin: '',
@@ -66,6 +67,7 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
             id_session_examen: examen.id_session_examen ?? '',
             id_module: examen.id_module ?? '',
             id_salle: examen.id_salle ?? '',
+            salles: (examen.salles || []).map((s) => String(s.id_salle)),
             date_examen: toInputDate(examen.date_examen),
             date_debut: toInputDateTime(examen.date_debut),
             date_fin: toInputDateTime(examen.date_fin),
@@ -327,20 +329,20 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
 
                             <div className="grid gap-4 sm:grid-cols-3">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Salle</label>
-                                    <select
-                                        value={data.id_salle}
-                                        onChange={(e) => setData('id_salle', e.target.value)}
-                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
-                                    >
-                                        <option value="">Non assignée</option>
-                                        {salles.map((salle) => (
-                                            <option key={salle.id_salle} value={salle.id_salle}>
-                                                {salle.code_salle}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    <InputError message={errors.id_salle} className="mt-1" />
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Salles (multi)</label>
+                                <select
+                                    multiple
+                                    value={data.salles}
+                                    onChange={(e) => setData('salles', Array.from(e.target.selectedOptions).map((opt) => opt.value))}
+                                    className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
+                                >
+                                    {salles.map((salle) => (
+                                        <option key={salle.id_salle} value={String(salle.id_salle)}>
+                                            {salle.code_salle}
+                                        </option>
+                                    ))}
+                                </select>
+                                <InputError message={errors.salles} className="mt-1" />
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Date</label>

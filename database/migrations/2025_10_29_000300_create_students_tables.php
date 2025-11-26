@@ -17,7 +17,9 @@ return new class extends Migration {
             $table->date('date_naissance')->nullable();
             $table->string('telephone', 20)->nullable();
             $table->string('url_photo', 255)->nullable();
+            $table->unsignedBigInteger('id_filiere')->nullable();
             $table->unsignedBigInteger('id_section')->nullable();
+            $table->foreign('id_filiere')->references('id_filiere')->on('filieres')->onDelete('set null');
             $table->foreign('id_section')->references('id_section')->on('sections')->onDelete('set null');
             $table->timestamps();
         });
@@ -27,6 +29,7 @@ return new class extends Migration {
             $table->unsignedBigInteger('id_etudiant')->nullable();
             $table->unsignedBigInteger('id_annee')->nullable();
             $table->unsignedBigInteger('id_niveau')->nullable();
+            $table->unsignedBigInteger('id_filiere')->nullable();
             $table->unsignedBigInteger('id_section')->nullable();
             $table->date('date_inscription');
             $table->string('statut', 30)->default('Active');
@@ -34,6 +37,7 @@ return new class extends Migration {
             $table->foreign('id_niveau')->references('id_niveau')->on('niveaux')->onDelete('set null');
             $table->foreign('id_etudiant')->references('id_etudiant')->on('etudiants')->onDelete('set null');
             $table->foreign('id_annee')->references('id_annee')->on('annees_universitaires')->onDelete('set null');
+            $table->foreign('id_filiere')->references('id_filiere')->on('filieres')->onDelete('set null');
             $table->foreign('id_section')->references('id_section')->on('sections')->onDelete('set null');
             $table->timestamps();
         });
@@ -42,10 +46,14 @@ return new class extends Migration {
             $table->id('id_inscription_pedagogique');
             $table->unsignedBigInteger('id_inscription_admin')->nullable();
             $table->unsignedBigInteger('id_offre')->nullable();
+            $table->unsignedBigInteger('id_etudiant')->nullable();
+            $table->unsignedBigInteger('id_module')->nullable();
             $table->enum('type_inscription', ['Normal', 'Credit', 'Anticipe']);
             $table->integer('credits_acquis')->default(0);
             $table->foreign('id_inscription_admin')->references('id_inscription_admin')->on('inscriptions_administratives')->onDelete('set null');
             $table->foreign('id_offre')->references('id_offre')->on('offre_formation')->onDelete('set null');
+            $table->foreign('id_etudiant')->references('id_etudiant')->on('etudiants')->onDelete('set null');
+            $table->foreign('id_module')->references('id_module')->on('modules')->onDelete('set null');
             $table->timestamps();
         });
 
