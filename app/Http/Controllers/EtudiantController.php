@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Controllers\Controller;
 use App\Models\Etudiant;
 use App\Models\Filiere;
+use App\Models\Section;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -15,12 +16,12 @@ class EtudiantController extends Controller
      */
     public function index()
     {
-        $students = Etudiant::with('filiere')->get();
-        $filieres = Filiere::all();
+        $students = Etudiant::with('sections')->get();
+        $sections = Section::all();
         return Inertia::render('GestionsEtudiantes/Etudiantes/Index',
             [
                 'students'=> $students,
-                'filieres'=> $filieres
+                'sections'=> $sections
             ]);
     }
 

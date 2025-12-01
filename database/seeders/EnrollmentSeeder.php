@@ -40,7 +40,6 @@ class EnrollmentSeeder extends Seeder
             $count = 200 + fake()->numberBetween(0, 200); // 40-80 students per filiere
             $students = $students->merge(
                 Etudiant::factory()->count($count)->create([
-                    'id_filiere' => $f->id_filiere,
                     'id_section' => $section->id_section,
                 ])
             );
@@ -66,7 +65,6 @@ class EnrollmentSeeder extends Seeder
                 'id_etudiant' => $etd->id_etudiant,
                 'id_annee'    => $activeYear->id_annee,
                 'id_niveau'   => $niveau->id_niveau,
-                'id_filiere'  => $etd->id_filiere,
                 'id_section'  => $etd->id_section,
                 'statut'      => 'Active',
                 'type_inscription' => 'nouveau',

@@ -28,6 +28,7 @@
         "@fullcalendar/interaction": "^6.1.15",
         "@fullcalendar/react": "^6.1.15",
         "@fullcalendar/timegrid": "^6.1.15",
+        "lodash": "^4.17.21",
         "lucide-react": "^0.552.0",
         "puppeteer": "^24.25.0",
         "react-icons": "^5.5.0",

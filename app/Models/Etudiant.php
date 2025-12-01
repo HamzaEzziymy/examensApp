@@ -27,9 +27,9 @@ class Etudiant extends Model
         'id_section',
     ];
 
-    public function filiere(): BelongsTo
+    public function sections(): BelongsTo
     {
-        return $this->belongsTo(Filiere::class, 'id_filiere', 'id_filiere');
+        return $this->belongsTo(Section::class, 'id_section', 'id_section');
     }
 
     public function inscriptionsAdministratives(): HasMany

@@ -4,7 +4,8 @@ import React from 'react'
 import Header from '../Header'
 import Display from './Display';
 
-function Index({ students, filieres }) {
+function Index({ students, sections }) {
+  console.log(students);
 
   return (
     <AuthenticatedLayout
@@ -19,7 +20,7 @@ function Index({ students, filieres }) {
       <div className="p-4 rounded-lg">
         <Display
           students={students}
-          filieres={filieres}
+          sections={sections}
         />
       </div>
 
