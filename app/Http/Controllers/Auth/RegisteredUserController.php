@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Models\Faculte;
 use App\Models\User;
+use App\Models\Filiere;
+use App\Models\AnneeUniversitaire;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -41,6 +43,17 @@ class RegisteredUserController extends Controller
             'name' => $request->name,
             'email' => $request->email,
             'password' => Hash::make($request->password),
+        ]);
+
+        // Assign a random filiere and the active academic year to the new user
+        $filiere = Filiere::inRandomOrder()->first() ?? Filiere::factory()->create();
+        $annee = AnneeUniversitaire::where('est_active', true)->first()
+            ?? AnneeUniversitaire::factory()->create(['est_active' => true]);
+
+        // Create the user_filiere_annee pivot entry
+        $selectFiliereAnnee = $user->userFiliereAnnees()->create([
+            'id_filiere' => $filiere->id_filiere,
+            'id_annee' => $annee->id_annee,
         ]);
 
         event(new Registered($user));

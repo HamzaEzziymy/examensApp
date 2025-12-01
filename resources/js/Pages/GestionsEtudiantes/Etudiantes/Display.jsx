@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { router } from '@inertiajs/react';
-import { Search, Plus, Upload, Download, Edit, Trash2, Filter, X, FileSpreadsheet, Users, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, Plus, Upload, Download, Edit, Trash2, Filter, X, FileSpreadsheet, Users, ChevronLeft, ChevronRight, Eye } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 // Inertia props from controller
@@ -19,7 +19,6 @@ const StudentDataTable = ({
   const [itemsPerPage, setItemsPerPage] = useState(25);
   const [selectedStudents, setSelectedStudents] = useState([]);
 
-  console.log(sections);
   // Form state for adding student
   const [formData, setFormData] = useState({
     cne: '',
@@ -254,16 +253,16 @@ const StudentDataTable = ({
             <div className="mt-4 p-4 bg-gray-50 rounded-lg">
               <div className="grid grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Section</label>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">filiere (Section)</label>
                   <select
                     value={selectedSection}
                     onChange={(e) => setSelectedSection(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="">Toutes les sections</option>
+                    <option value="">Toutes les filieres (sections)</option>
                     {sections.map(section => (
                       <option key={section.id_section} value={section.id_section}>
-                        {section.nom_section}
+                        {section.filiere.nom_filiere} ({section.nom_section})
                       </option>
                     ))}
                   </select>
@@ -311,7 +310,7 @@ const StudentDataTable = ({
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Nom Complet</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Email Académique</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Téléphone</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Section</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase"> Filiere (Section)</th>
                   <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
                 </tr>
               </thead>
@@ -333,14 +332,15 @@ const StudentDataTable = ({
                     <td className="px-6 py-4 text-sm text-gray-600">{student.mail_academique}</td>
                     <td className="px-6 py-4 text-sm text-gray-600">{student.telephone || '-'}</td>
                     <td className="px-6 py-4 text-sm text-gray-600">
-                      {sections.find(s => s.id_section === student.id_section)?.nom_section || '-'}
+                      {/* {sections.find(s => s.id_section === student.id_section)?.nom_section || '-'} */}
+                      {student.sections.filiere.nom_filiere} ({student.sections.nom_section})
                     </td>
                     <td className="px-6 py-4 text-right text-sm font-medium">
                       <button
-                        onClick={() => router.visit(`/etudiants/${student.id_etudiant}/edit`)}
+                        // onClick={() => router.visit(`/etudiants/${student.id_etudiant}/edit`)}
                         className="text-blue-600 hover:text-blue-900 mr-3"
                       >
-                        <Edit className="w-4 h-4 inline" />
+                        <Eye className="w-4 h-4 inline" />
                       </button>
                       <button
                         onClick={() => handleDelete(student.id_etudiant)}
@@ -370,7 +370,7 @@ const StudentDataTable = ({
                 <div className="flex gap-2">
                   {/* select items per page */}
                   <select
-                    className="px-5 py-1 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
+                    className="px-8 py-1 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
                     value={itemsPerPage}
                     onChange={(e) => {
                       setItemsPerPage(parseInt(e.target.value));
@@ -476,17 +476,17 @@ const StudentDataTable = ({
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Section</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">filiére (Section)</label>
                     <select
                       name="id_section"
                       value={formData.id_section}
                       onChange={handleInputChange}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     >
-                      <option value="">Sélectionner une section</option>
+                      <option value="">--Sélectionner une filière (section)--</option>
                       {sections.map(section => (
                         <option key={section.id_section} value={section.id_section}>
-                          {section.nom_section}
+                          {section.filiere.nom_filiere} ({section.nom_section})
                         </option>
                       ))}
                     </select>

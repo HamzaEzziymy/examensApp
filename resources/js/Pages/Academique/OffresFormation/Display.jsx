@@ -130,8 +130,12 @@ export default function Display({
                     });
                 },
                 onError: () => {
-                    // Swal.fire('Erreur', 'Une erreur est survenue', 'error');
-                    console.log(offreForm.errors);
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Une erreur est survenue',
+                        showConfirmButton: false,
+                        timer: 1500
+                    });
                 }
             })
             : offreForm.put(route('academique.offres-formations.update', offreForm.data.id_offre), {

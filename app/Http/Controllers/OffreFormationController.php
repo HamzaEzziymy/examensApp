@@ -8,6 +8,7 @@ use App\Models\Module;
 use App\Models\OffreFormation;
 use App\Models\Section;
 use App\Models\Semestre;
+use App\Models\UserFiliereAnnee;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 
@@ -18,13 +19,30 @@ class OffreFormationController extends Controller
      */
     public function index()
     {
+        $userAuthId = auth()->user()->id;
+        $filiereAnnee = UserFiliereAnnee::where('user_id', $userAuthId)->first();
+        if($filiereAnnee){
+            $userFiliereId = $filiereAnnee->id_filiere;
+            $userAnneeId = $filiereAnnee->id_annee;
+        }else{
+            $userFiliereId = 0;
+            $userAnneeId = 0;
+        }
+
         $offresFormation = OffreFormation::with([
             'module.elements',
             'semestre.niveau',
             'section.filiere',
             'anneeUniversitaire',
             'coordinateur'
-        ])->get();
+        ])
+            ->whereHas('section.filiere', function ($query) use ($userFiliereId) {
+                $query->where('id_filiere', $userFiliereId);
+            })
+            ->whereHas('anneeUniversitaire', function ($query) use ($userAnneeId) {
+                $query->where('id_annee', $userAnneeId);
+            })
+            ->get();
 
         $sections = Section::with('filiere')->get();
         // order semestre by code_niveau
@@ -36,17 +54,19 @@ class OffreFormationController extends Controller
         $modules = Module::orderBy('nom_module')->get();
         $cordinateurs = Enseignant::orderBy('nom')->get();
         $anneeUniversitaires = AnneeUniversitaire::orderByDesc('date_debut')->get();
-        
 
-        return Inertia::render('Academique/OffresFormation/Index',
-        [
-            'offresFormation' => $offresFormation,
-            'sections' => $sections,
-            'semestres' => $Semestres,
-            'modules' => $modules,
-            'coordinateurs' => $cordinateurs,
-            'anneeUniversitaires' => $anneeUniversitaires,
-        ]);
+
+        return Inertia::render(
+            'Academique/OffresFormation/Index',
+            [
+                'offresFormation' => $offresFormation,
+                'sections' => $sections,
+                'semestres' => $Semestres,
+                'modules' => $modules,
+                'coordinateurs' => $cordinateurs,
+                'anneeUniversitaires' => $anneeUniversitaires,
+            ]
+        );
     }
 
     /**

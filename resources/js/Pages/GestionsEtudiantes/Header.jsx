@@ -2,6 +2,7 @@ import { Link } from '@inertiajs/react';
 import {
     GraduationCap,
 } from "lucide-react";
+import { FaRegAddressCard } from "react-icons/fa";
 
 export default function Header() {
 
@@ -11,7 +12,13 @@ export default function Header() {
             icon: <GraduationCap size={20} />, // Represents study programs or fields
             href: route("inscriptions.etudiants.index"),
             current: route().current("inscriptions.etudiants.index"),
-        }
+        },
+        {
+            name:"Inscriptions Administratives",
+            icon: <FaRegAddressCard size={20} />, // Represents administrative registrations
+            href: route("inscriptions.administratives.index"),
+            current: route().current("inscriptions.administratives.index"),
+        },
     ];
 
     return (
