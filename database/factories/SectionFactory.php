@@ -13,9 +13,14 @@ class SectionFactory extends Factory
     public function definition(): array
     {
         $langue = $this->faker->randomElement(['FR', 'EN', 'AR']);
+        $filiereId = Filiere::inRandomOrder()->value('id_filiere');
+
+        if (! $filiereId) {
+            throw new \RuntimeException('No filiere available; seed CoreAcademicSeeder first.');
+        }
 
         return [
-            'id_filiere'  => Filiere::factory(),
+            'id_filiere'  => $filiereId,
             'nom_section' => 'Section ' . $langue . ' ' . ucfirst($this->faker->unique()->lexify('??????')),
             'langue'      => $langue,
         ];

@@ -25,10 +25,12 @@ class CoreAcademicSeeder extends Seeder
             $activeData + ['est_active' => true]
         );
 
-        // Facultés -> Filières -> Sections
+        // Facultes -> 3 Filieres -> Sections
         $faculte = Faculte::factory()->create();
-        $filiere = Filiere::factory()->create(['id_faculte' => $faculte->id_faculte]);
-        $section = Section::factory()->create(['id_filiere' => $filiere->id_filiere]);
+        $filieres = Filiere::factory()->count(3)->create(['id_faculte' => $faculte->id_faculte]);
+        $sections = $filieres->map(function ($filiere) {
+            return Section::factory()->create(['id_filiere' => $filiere->id_filiere]);
+        });
 
         // Two niveaux -> one semestre each
         $niveaux = Niveau::factory()->count(2)->create();
@@ -44,7 +46,7 @@ class CoreAcademicSeeder extends Seeder
             );
         }
 
-        // Modules & éléments
+        // Modules & elements
         $modules = Module::factory()->count(3)->create();
         foreach ($modules as $module) {
             ElementModule::factory()->count(1)->create([
@@ -57,6 +59,7 @@ class CoreAcademicSeeder extends Seeder
 
         // Offres de formation: one per module on first semestre/section
         $semestre = $semestres->first();
+        $section = $sections->first();
         foreach ($modules as $module) {
             OffreFormation::updateOrCreate(
                 [

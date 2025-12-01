@@ -19,7 +19,6 @@ class AnonymatAndAttendanceSeeder extends Seeder
         foreach ($exams as $exam) {
             $registrations = InscriptionPedagogique::where('id_module', $exam->id_module)
                 ->orderBy('id_inscription_pedagogique')
-                ->limit(5)
                 ->get();
 
             if ($registrations->isEmpty()) {

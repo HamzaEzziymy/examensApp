@@ -16,35 +16,28 @@ class EnrollmentSeeder extends Seeder
     public function run(): void
     {
         $activeYear = AnneeUniversitaire::where('est_active', true)->latest('date_debut')->first();
-
         if (! $activeYear) {
-            $activeData = AnneeUniversitaire::factory()->active()->make(['est_active' => true])->toArray();
-            $activeYear = AnneeUniversitaire::updateOrCreate(
-                ['annee_univ' => $activeData['annee_univ']],
-                $activeData + ['est_active' => true]
-            );
+            throw new \RuntimeException('Active academic year missing; run CoreAcademicSeeder first.');
         }
 
-        // Create a larger student cohort across filieres
-        $filieres = Filiere::all();
+        $filieres = Filiere::query()->take(3)->get();
         if ($filieres->isEmpty()) {
-            $filieres = Filiere::factory()->count(3)->create();
+            throw new \RuntimeException('No filieres found; run CoreAcademicSeeder first.');
         }
 
         $niveaux = Niveau::all();
         if ($niveaux->isEmpty()) {
-            $niveaux = Niveau::factory()->count(2)->create();
+            throw new \RuntimeException('No niveaux found; run CoreAcademicSeeder first.');
         }
 
         $students = collect();
         foreach ($filieres as $f) {
-            $sections = $f->sections ?? collect();
-            if ($sections->isEmpty()) {
-                $sections = \App\Models\Section::factory()->count(1)->create(['id_filiere' => $f->id_filiere]);
+            $section = $f->sections()->inRandomOrder()->first();
+            if (! $section) {
+                continue;
             }
-            $section = $sections->first();
 
-            $count = 40 + fake()->numberBetween(0, 40); // 40-80 students per filiere
+            $count = 200 + fake()->numberBetween(0, 200); // 40-80 students per filiere
             $students = $students->merge(
                 Etudiant::factory()->count($count)->create([
                     'id_section' => $section->id_section,
@@ -58,11 +51,10 @@ class EnrollmentSeeder extends Seeder
             $niveau = $niveaux->random();
 
             // ensure a section for the student's filiere
-            $sections = $f->sections ?? collect();
-            if ($sections->isEmpty()) {
-                $sections = \App\Models\Section::factory()->count(1)->create(['id_filiere' => $f->id_filiere]);
+            $section = $etd->section ?? $etd->filiere?->sections()->inRandomOrder()->first();
+            if (! $section) {
+                continue;
             }
-            $section = $sections->first();
 
             // offres for this section and active year
             $offres = \App\Models\OffreFormation::where('id_section', $section->id_section)
