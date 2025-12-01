@@ -130,6 +130,20 @@ class ExamenController extends Controller
 
     private function validateExamen(Request $request): array
     {
+        // Normalize salles to a flat list of IDs (handles array-of-objects input)
+        $request->merge([
+            'salles' => collect($request->input('salles', []))
+                ->map(function ($salle) {
+                    if (is_array($salle)) {
+                        return $salle['id_salle'] ?? $salle['id'] ?? $salle['value'] ?? null;
+                    }
+                    return $salle;
+                })
+                ->filter()
+                ->values()
+                ->all(),
+        ]);
+
         return $request->validate([
             'id_session_examen' => ['required', 'exists:sessions_examen,id_session_examen'],
             'id_module'         => ['required', 'exists:modules,id_module'],

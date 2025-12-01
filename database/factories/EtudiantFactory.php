@@ -15,8 +15,6 @@ class EtudiantFactory extends Factory
     {
         $nom = $this->faker->lastName();
         $prenom = $this->faker->firstName();
-        $filiere = Filiere::factory()->create();
-        $section = Section::factory()->create(['id_filiere' => $filiere->id_filiere]);
 
         return [
             'cne'             => strtoupper($this->faker->unique()->bothify('CNE########')),
@@ -27,8 +25,27 @@ class EtudiantFactory extends Factory
             'date_naissance'  => $this->faker->dateTimeBetween('-28 years','-18 years')->format('Y-m-d'),
             'telephone'       => $this->faker->optional()->phoneNumber(),
             'url_photo'       => $this->faker->optional()->imageUrl(300, 300, 'people', true),
-            'id_filiere'      => $filiere->id_filiere,
-            'id_section'      => $section->id_section,
+            'id_filiere'      => null,
+            'id_section'      => null,
         ];
+    }
+
+    public function configure()
+    {
+        return $this->afterMaking(function (Etudiant $etudiant) {
+            if (! $etudiant->id_filiere) {
+                $etudiant->id_filiere = Filiere::inRandomOrder()->value('id_filiere');
+            }
+
+            if (! $etudiant->id_section && $etudiant->id_filiere) {
+                $etudiant->id_section = Section::where('id_filiere', $etudiant->id_filiere)
+                    ->inRandomOrder()
+                    ->value('id_section');
+            }
+
+            if (! $etudiant->id_filiere || ! $etudiant->id_section) {
+                throw new \RuntimeException('Core academic data missing; seed CoreAcademicSeeder first.');
+            }
+        });
     }
 }
