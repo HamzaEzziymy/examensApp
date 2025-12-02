@@ -3,6 +3,7 @@
 namespace App\Http\Middleware;
 
 use App\Models\Faculte;
+use App\Models\UserFiliereAnnee;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 use App\Models\Filiere;
@@ -36,9 +37,12 @@ class HandleInertiaRequests extends Middleware
             ...parent::share($request),
             'auth' => [
                 'user' => $request->user(),
+                // Load user's filieres and annees via pivot table; use load() on the model instance
+                'user_filiere_annee' => $request->user() ? $request->user()->load(['filieres', 'anneesUniv']) : null,
+
             ],
             'filieres' => function () {
-                return Filiere::all();
+                return Filiere::orderBy('nom_filiere')->get();
             },
             'anneeUniv' => function () {
                 return AnneeUniversitaire::all();

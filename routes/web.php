@@ -5,6 +5,7 @@ use App\Http\Controllers\OffreFormationController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\DocumentController;
 use App\Http\Controllers\SectionController;
+use App\Http\Controllers\SelectFiliereAnneeController;
 use App\Models\Section;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
@@ -91,6 +92,7 @@ Route::withoutMiddleware([MiddlewareVerifyCsrfToken::class])->group(function () 
 
     Route::prefix('configuration')->name('configuration.')->group(function () {
         Route::resources([
+            'select-filiere-annee' => SelectFiliereAnneeController::class,
             'faculte' => FaculteController::class,
             'annees-universitaires' => AnneeUniversitaireController::class,
         ]);

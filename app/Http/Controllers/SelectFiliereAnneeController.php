@@ -2,27 +2,18 @@
 
 namespace App\Http\Controllers;
 
-use App\Http\Controllers\Controller;
-use App\Models\Etudiant;
-use App\Models\Filiere;
-use App\Models\Section;
+use App\Models\User;
+use App\Models\UserFiliereAnnee;
 use Illuminate\Http\Request;
-use Inertia\Inertia;
 
-class EtudiantController extends Controller
+class SelectFiliereAnneeController extends Controller
 {
     /**
      * Display a listing of the resource.
      */
     public function index()
     {
-        $students = Etudiant::with('sections', 'sections.filiere')->get();
-        $sections = Section::with('filiere')->get();
-        return Inertia::render('GestionsEtudiantes/Etudiantes/Index',
-            [
-                'students'=> $students,
-                'sections'=> $sections
-            ]);
+        //
     }
 
     /**
@@ -38,7 +29,7 @@ class EtudiantController extends Controller
      */
     public function store(Request $request)
     {
-        //
+
     }
 
     /**
@@ -62,7 +53,17 @@ class EtudiantController extends Controller
      */
     public function update(Request $request, string $id)
     {
-        //
+
+        //if exests, update else create
+        $validated = $request->validate([
+            'id_filiere' => ['required', 'exists:filieres,id_filiere'],
+            'id_annee' => ['required', 'exists:annees_universitaires,id_annee'],
+        ]);
+
+        $id_ = $request->id;
+        $userFiliereAnnee = UserFiliereAnnee::find($id_);
+        $userFiliereAnnee->update($validated);
+        return redirect()->back();
     }
 
     /**

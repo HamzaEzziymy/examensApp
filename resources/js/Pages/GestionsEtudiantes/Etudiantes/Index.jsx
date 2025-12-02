@@ -5,7 +5,6 @@ import Header from '../Header'
 import Display from './Display';
 
 function Index({ students, sections }) {
-  console.log(students);
 
   return (
     <AuthenticatedLayout
