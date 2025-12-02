@@ -38,7 +38,10 @@ class HandleInertiaRequests extends Middleware
             'auth' => [
                 'user' => $request->user(),
                 // Load user's filieres and annees via pivot table; use load() on the model instance
-                'user_filiere_annee' => $request->user() ? $request->user()->load(['filieres', 'anneesUniv']) : null,
+                'user_filiere_annee' => UserFiliereAnnee::with('filiere', 'anneeUniv')
+                    ->where('user_id', $request->user()->id)
+                    ->get()
+                    ->first(),
 
             ],
             'filieres' => function () {

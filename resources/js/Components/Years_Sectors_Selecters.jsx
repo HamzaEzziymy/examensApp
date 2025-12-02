@@ -1,28 +1,19 @@
-
-import React, { useState, useEffect } from "react";
-import { usePage, router, useForm } from "@inertiajs/react";
+import React, { useEffect } from "react";
+import { usePage, useForm } from "@inertiajs/react";
 import { toast, ToastContainer } from "react-toastify";
 
 export default function YearsSectorsSelecters() {
     const { filieres, anneeUniv, auth } = usePage().props;
-    const userAnnee = auth.user_filiere_annee.annees_univ[0]?.id_annee;
-    const userFiliere = auth.user_filiere_annee.filieres[0]?.id_filiere;
+    const userAnnee = auth.user_filiere_annee.annee_univ?.id_annee;
+    const userFiliere = auth.user_filiere_annee.filiere?.id_filiere;
 
-    const form2 = useForm({
+    // Use Inertia's useForm hook
+    const { data, setData, put, processing, isDirty, reset } = useForm({
         id: auth.user_filiere_annee.id,
         user_id: auth.user.id,
         id_filiere: userFiliere || "",
         id_annee: userAnnee || "",
     });
-    const [form, setForm] = useState({
-        id: auth.user_filiere_annee.id,
-        user_id: auth.user.id,
-        id_filiere: userFiliere || "",
-        id_annee: userAnnee || "",
-    });
-
-    const [processing, setProcessing] = useState(false);
-    const [hasChanges, setHasChanges] = useState(false);
 
     // Check if current selection matches user's saved selection
     const isCurrentSelection = (type, id) => {
@@ -32,34 +23,27 @@ export default function YearsSectorsSelecters() {
         return id === userAnnee;
     };
 
-    // Track changes
-    useEffect(() => {
-        const changed = form.id_filiere !== userFiliere || form.id_annee !== userAnnee;
-        setHasChanges(changed);
-    }, [form.id_filiere, form.id_annee, userFiliere, userAnnee]);
-
     const handleSubmit = (e) => {
         if (e) {
             e.preventDefault();
         }
         
-        // Prevent submission if either value is empty or no changes made
-        if (!form.id_filiere || !form.id_annee || processing || !hasChanges) {
+        // Prevent submission if either value is empty, processing, or no changes
+        if (!data.id_filiere || !data.id_annee || processing || !isDirty) {
             return;
         }
 
-        setProcessing(true);
-        router.put("/configuration/select-filiere-annee/update", form, {
+        // Use Inertia's put method
+        put("/configuration/select-filiere-annee/update", {
             preserveScroll: true,
             onSuccess: () => {
-                setProcessing(false);
-                setHasChanges(false);
-                //do toast success
                 toast.success("Selection updated successfully!");
+                // Reset the form to mark it as clean (no changes)
+                reset();
             },
             onError: (errors) => {
                 console.error("Submission error:", errors);
-                setProcessing(false);
+                toast.error("Failed to update selection");
             },
         });
     };
@@ -80,10 +64,8 @@ export default function YearsSectorsSelecters() {
             {/* Academic Year Selector */}
             <div className="relative">
                 <select
-                    value={form.id_annee}
-                    onChange={(e) =>
-                        setForm({ ...form, id_annee: e.target.value })
-                    }
+                    value={data.id_annee}
+                    onChange={(e) => setData('id_annee', e.target.value)}
                     disabled={processing}
                     className="block w-full rounded-lg border-0 bg-gray-100 py-2 pl-3 pr-10 text-sm font-medium text-gray-900 shadow-sm 
                     ring-1 ring-inset ring-gray-300 
@@ -103,10 +85,8 @@ export default function YearsSectorsSelecters() {
             {/* Filiere Selector */}
             <div className="relative">
                 <select
-                    value={form.id_filiere}
-                    onChange={(e) =>
-                        setForm({ ...form, id_filiere: e.target.value })
-                    }
+                    value={data.id_filiere}
+                    onChange={(e) => setData('id_filiere', e.target.value)}
                     disabled={processing}
                     className="block w-full rounded-lg border-0 bg-gray-100 py-2 pl-3 pr-10 text-sm font-medium text-gray-900 shadow-sm 
                     ring-1 ring-inset ring-gray-300 
@@ -127,7 +107,7 @@ export default function YearsSectorsSelecters() {
             <div className="relative">
                 <button
                     onClick={handleSubmit}
-                    disabled={processing || !form.id_filiere || !form.id_annee || !hasChanges}
+                    disabled={processing || !data.id_filiere || !data.id_annee || !isDirty}
                     className="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-sm 
                     hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2
                     dark:bg-indigo-500 dark:hover:bg-indigo-600

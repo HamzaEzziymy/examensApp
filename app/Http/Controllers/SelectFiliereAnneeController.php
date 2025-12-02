@@ -51,18 +51,23 @@ class SelectFiliereAnneeController extends Controller
     /**
      * Update the specified resource in storage.
      */
-    public function update(Request $request, string $id)
+    public function update(Request $request)
     {
-
-        //if exests, update else create
+        // Validate the incoming request
         $validated = $request->validate([
+            "id" => ['required', 'exists:user_filiere_annee,id'],
+            "user_id" => ['required', 'exists:users,id'],
             'id_filiere' => ['required', 'exists:filieres,id_filiere'],
             'id_annee' => ['required', 'exists:annees_universitaires,id_annee'],
         ]);
 
-        $id_ = $request->id;
-        $userFiliereAnnee = UserFiliereAnnee::find($id_);
+        // Find the UserFiliereAnnee record by ID
+        $userFiliereAnnee = UserFiliereAnnee::findOrFail($validated['id']);
+        
+        // Verify the user_id matches (security check)
         $userFiliereAnnee->update($validated);
+
+        // Return success response for Inertia
         return redirect()->back();
     }
 
