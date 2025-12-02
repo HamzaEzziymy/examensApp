@@ -15,12 +15,14 @@ class EtudiantFactory extends Factory
     {
         $nom = $this->faker->lastName();
         $prenom = $this->faker->firstName();
+        // Suffix large enough to avoid exhausting Faker's unique pool
+        $uniqueSuffix = $this->faker->unique()->regexify('[a-z0-9]{6}');
         return [
             'cne'             => strtoupper($this->faker->unique()->bothify('CNE########')),
             'nom'             => $nom,
             'prenom'          => $prenom,
-            'mail_academique' => strtolower($prenom.'.'.$nom).'@etu.univ.example.ma',
-            'mail_personnel'  => $this->faker->optional()->safeEmail(),
+            'mail_academique' => strtolower($prenom.'.'.$nom.'.'.$uniqueSuffix).'@etu.univ.example.ma',
+            'mail_personnel'  => $this->faker->boolean(70) ? $this->faker->unique()->safeEmail() : null,
             'date_naissance'  => $this->faker->dateTimeBetween('-28 years','-18 years')->format('Y-m-d'),
             'telephone'       => $this->faker->optional()->phoneNumber(),
             'url_photo'       => $this->faker->optional()->imageUrl(300, 300, 'people', true),
