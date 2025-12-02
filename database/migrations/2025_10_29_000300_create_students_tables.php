@@ -12,12 +12,18 @@ return new class extends Migration {
             $table->string('cne', 20)->unique();
             $table->string('nom', 50);
             $table->string('prenom', 50);
+<<<<<<< HEAD
+=======
+            // Coordonn\u00e9es mail sont utiles pour l\u2019administratif et l\u2019acc\u00e8s aux comptes
+>>>>>>> 1ae5618cf3568965df4db5bdcc94e78c17132d50
             $table->string('mail_academique', 100)->unique();
             $table->string('mail_personnel', 100)->unique()->nullable();
             $table->date('date_naissance')->nullable();
             $table->string('telephone', 20)->nullable();
             $table->string('url_photo', 255)->nullable();
+            $table->unsignedBigInteger('id_filiere')->nullable();
             $table->unsignedBigInteger('id_section')->nullable();
+            $table->foreign('id_filiere')->references('id_filiere')->on('filieres')->onDelete('set null');
             $table->foreign('id_section')->references('id_section')->on('sections')->onDelete('set null');
             $table->timestamps();
         });

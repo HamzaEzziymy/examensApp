@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\Etudiant;
+use App\Models\Filiere;
 use App\Models\Section;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -14,35 +15,37 @@ class EtudiantFactory extends Factory
     {
         $nom = $this->faker->lastName();
         $prenom = $this->faker->firstName();
-<<<<<<< HEAD
-
-=======
->>>>>>> c7bb9f81d263335978bd09bd5b7d8ce074229967
+        // Suffix large enough to avoid exhausting Faker's unique pool
+        $uniqueSuffix = $this->faker->unique()->regexify('[a-z0-9]{6}');
         return [
             'cne'             => strtoupper($this->faker->unique()->bothify('CNE########')),
             'nom'             => $nom,
             'prenom'          => $prenom,
-            'mail_academique' => strtolower($prenom.'.'.$nom).'@etu.univ.example.ma',
-            'mail_personnel'  => $this->faker->optional()->safeEmail(),
+            'mail_academique' => strtolower($prenom.'.'.$nom.'.'.$uniqueSuffix).'@etu.univ.example.ma',
+            'mail_personnel'  => $this->faker->boolean(70) ? $this->faker->unique()->safeEmail() : null,
             'date_naissance'  => $this->faker->dateTimeBetween('-28 years','-18 years')->format('Y-m-d'),
             'telephone'       => $this->faker->optional()->phoneNumber(),
             'url_photo'       => $this->faker->optional()->imageUrl(300, 300, 'people', true),
-<<<<<<< HEAD
             'id_filiere'      => null,
             'id_section'      => null,
-=======
-            'id_section'      => Section::factory()->create()->id_section,
->>>>>>> c7bb9f81d263335978bd09bd5b7d8ce074229967
         ];
     }
 
     public function configure()
     {
         return $this->afterMaking(function (Etudiant $etudiant) {
+            // Align filiere/section if one of them is provided
+            if ($etudiant->id_section && ! $etudiant->id_filiere) {
+                $etudiant->id_filiere = Section::where('id_section', $etudiant->id_section)
+                    ->value('id_filiere');
+            }
+
+            // Fallback: pick any filiere if still missing
             if (! $etudiant->id_filiere) {
                 $etudiant->id_filiere = Filiere::inRandomOrder()->value('id_filiere');
             }
 
+            // Ensure section belongs to chosen filiere
             if (! $etudiant->id_section && $etudiant->id_filiere) {
                 $etudiant->id_section = Section::where('id_filiere', $etudiant->id_filiere)
                     ->inRandomOrder()
