@@ -3,6 +3,7 @@ import {
     GraduationCap,
 } from "lucide-react";
 import { FaRegAddressCard } from "react-icons/fa";
+import { IoDocumentAttachSharp } from 'react-icons/io5';
 
 export default function Header() {
 
@@ -19,6 +20,12 @@ export default function Header() {
             href: route("inscriptions.administratives.index"),
             current: route().current("inscriptions.administratives.index"),
         },
+        {
+            name: "Inscriptions Pedagogiques",
+            icon: <IoDocumentAttachSharp size={20} />, // Represents academic registrations
+            href: route("inscriptions.pedagogiques.index"),
+            current: route().current("inscriptions.pedagogiques.index"),
+        }
     ];
 
     return (

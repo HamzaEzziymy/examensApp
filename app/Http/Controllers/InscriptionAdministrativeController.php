@@ -3,7 +3,9 @@
 namespace App\Http\Controllers;
 
 use App\Http\Controllers\Controller;
+use App\Models\InscriptionAdministrative;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 
 class InscriptionAdministrativeController extends Controller
 {
@@ -12,7 +14,17 @@ class InscriptionAdministrativeController extends Controller
      */
     public function index()
     {
-        //
+        // inscriptions= {inscriptions}
+        //     students = {students}
+        //     annees = {annees}
+        //     niveaux = {niveaux}
+        //     sections = {sections}
+        $inscriptions = InscriptionAdministrative::with("niveau", "anneeUniversitaire", "etudiant", "filiere")->get();
+        
+        return Inertia::render("GestionsEtudiantes/InscriptionsAdministratives/Index",
+    [
+        "inscriptions" => $inscriptions,
+    ]);
     }
 
     /**

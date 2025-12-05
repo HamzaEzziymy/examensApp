@@ -33,15 +33,21 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
+        if(! empty($request->user())){
+            $user_filiere_annee = UserFiliereAnnee::with('filiere', 'anneeUniv')
+                    ->where('user_id', $request->user()->id)
+                    ->get()
+                    ->first();
+        }else{
+            $user_filiere_annee = null;
+        }
+
         return [
             ...parent::share($request),
             'auth' => [
                 'user' => $request->user(),
                 // Load user's filieres and annees via pivot table; use load() on the model instance
-                'user_filiere_annee' => UserFiliereAnnee::with('filiere', 'anneeUniv')
-                    ->where('user_id', $request->user()->id)
-                    ->get()
-                    ->first(),
+                'user_filiere_annee' => $user_filiere_annee,
 
             ],
             'filieres' => function () {
