@@ -6,7 +6,6 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
-use App\Models\Filiere;
 
 class InscriptionAdministrative extends Model
 {
@@ -19,7 +18,6 @@ class InscriptionAdministrative extends Model
         'id_etudiant',
         'id_annee',
         'id_niveau',
-        'id_filiere',
         'id_section',
         'date_inscription',
         'statut',
@@ -41,9 +39,9 @@ class InscriptionAdministrative extends Model
         return $this->belongsTo(Niveau::class, 'id_niveau', 'id_niveau');
     }
 
-    public function filiere(): BelongsTo
+    public function section(): BelongsTo
     {
-        return $this->belongsTo(Filiere::class, 'id_filiere', 'id_filiere');
+        return $this->belongsTo(Section::class, 'id_section', 'id_section');
     }
 
     public function inscriptionsPedagogiques(): HasMany

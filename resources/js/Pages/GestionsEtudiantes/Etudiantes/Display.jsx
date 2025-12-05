@@ -333,7 +333,7 @@ const StudentDataTable = ({
                     <td className="px-6 py-4 text-sm text-gray-600">{student.telephone || '-'}</td>
                     <td className="px-6 py-4 text-sm text-gray-600">
                       {/* {sections.find(s => s.id_section === student.id_section)?.nom_section || '-'} */}
-                      {student.sections.filiere.nom_filiere} ({student.sections.nom_section})
+                      {student.section.filiere.nom_filiere} ({student.section.nom_section})
                     </td>
                     <td className="px-6 py-4 text-right text-sm font-medium">
                       <button

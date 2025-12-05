@@ -3,7 +3,6 @@
 namespace Database\Factories;
 
 use App\Models\Etudiant;
-use App\Models\Filiere;
 use App\Models\Section;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
@@ -26,7 +25,6 @@ class EtudiantFactory extends Factory
             'date_naissance'  => $this->faker->dateTimeBetween('-28 years','-18 years')->format('Y-m-d'),
             'telephone'       => $this->faker->optional()->phoneNumber(),
             'url_photo'       => $this->faker->optional()->imageUrl(300, 300, 'people', true),
-            'id_filiere'      => null,
             'id_section'      => null,
         ];
     }
@@ -34,25 +32,12 @@ class EtudiantFactory extends Factory
     public function configure()
     {
         return $this->afterMaking(function (Etudiant $etudiant) {
-            // Align filiere/section if one of them is provided
-            if ($etudiant->id_section && ! $etudiant->id_filiere) {
-                $etudiant->id_filiere = Section::where('id_section', $etudiant->id_section)
-                    ->value('id_filiere');
+            // If no section provided, pick a random one
+            if (! $etudiant->id_section) {
+                $etudiant->id_section = Section::inRandomOrder()->value('id_section');
             }
 
-            // Fallback: pick any filiere if still missing
-            if (! $etudiant->id_filiere) {
-                $etudiant->id_filiere = Filiere::inRandomOrder()->value('id_filiere');
-            }
-
-            // Ensure section belongs to chosen filiere
-            if (! $etudiant->id_section && $etudiant->id_filiere) {
-                $etudiant->id_section = Section::where('id_filiere', $etudiant->id_filiere)
-                    ->inRandomOrder()
-                    ->value('id_section');
-            }
-
-            if (! $etudiant->id_filiere || ! $etudiant->id_section) {
+            if (! $etudiant->id_section) {
                 throw new \RuntimeException('Core academic data missing; seed CoreAcademicSeeder first.');
             }
         });

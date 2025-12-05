@@ -5,7 +5,6 @@ namespace Database\Factories;
 use App\Models\InscriptionAdministrative;
 use App\Models\Etudiant;
 use App\Models\AnneeUniversitaire;
-use App\Models\Filiere;
 use App\Models\Niveau;
 use App\Models\Section;
 use Illuminate\Support\Facades\DB;
@@ -28,7 +27,6 @@ class InscriptionAdministrativeFactory extends Factory
             'id_etudiant'       => null,
             'id_annee'          => $anneeId,
             'id_niveau'         => null,
-            'id_filiere'        => null,
             'id_section'        => null,
             'date_inscription'  => $this->faker->date(),
             'statut'            => $this->faker->randomElement(['Active', 'Suspendue', 'Archivee']),
@@ -41,18 +39,12 @@ class InscriptionAdministrativeFactory extends Factory
         return $this->afterMaking(function (InscriptionAdministrative $ia) {
             $etudiant = $ia->id_etudiant ? Etudiant::find($ia->id_etudiant) : null;
 
-            if (! $ia->id_filiere) {
-                $ia->id_filiere = $etudiant?->id_filiere ?? Filiere::inRandomOrder()->value('id_filiere');
-            }
-
             if (! $ia->id_section) {
-                $ia->id_section = $etudiant?->id_section
-                    ?? Section::where('id_filiere', $ia->id_filiere)->inRandomOrder()->value('id_section');
+                $ia->id_section = $etudiant?->id_section ?? Section::inRandomOrder()->value('id_section');
             }
 
             if (! $ia->id_etudiant) {
                 $student = Etudiant::factory()->create([
-                    'id_filiere' => $ia->id_filiere,
                     'id_section' => $ia->id_section,
                 ]);
                 $ia->id_etudiant = $student->id_etudiant;
@@ -62,7 +54,7 @@ class InscriptionAdministrativeFactory extends Factory
                 $ia->id_niveau = Niveau::inRandomOrder()->value('id_niveau');
             }
 
-            if (! $ia->id_filiere || ! $ia->id_section || ! $ia->id_niveau) {
+            if (! $ia->id_section || ! $ia->id_niveau) {
                 throw new \RuntimeException('Core academic data missing; seed CoreAcademicSeeder first.');
             }
         });

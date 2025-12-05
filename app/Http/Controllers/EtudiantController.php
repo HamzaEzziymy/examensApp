@@ -16,7 +16,8 @@ class EtudiantController extends Controller
      */
     public function index()
     {
-        $students = Etudiant::with('sections', 'sections.filiere')->get();
+        $students = Etudiant::with('section', 'section.filiere')->get();
+        
         $sections = Section::with('filiere')->get();
         return Inertia::render('GestionsEtudiantes/Etudiantes/Index',
             [

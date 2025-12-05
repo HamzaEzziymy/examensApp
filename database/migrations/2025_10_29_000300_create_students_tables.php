@@ -17,9 +17,7 @@ return new class extends Migration {
             $table->date('date_naissance')->nullable();
             $table->string('telephone', 20)->nullable();
             $table->string('url_photo', 255)->nullable();
-            $table->unsignedBigInteger('id_filiere')->nullable();
             $table->unsignedBigInteger('id_section')->nullable();
-            $table->foreign('id_filiere')->references('id_filiere')->on('filieres')->onDelete('set null');
             $table->foreign('id_section')->references('id_section')->on('sections')->onDelete('set null');
             $table->timestamps();
         });
@@ -29,7 +27,6 @@ return new class extends Migration {
             $table->unsignedBigInteger('id_etudiant')->nullable();
             $table->unsignedBigInteger('id_annee')->nullable();
             $table->unsignedBigInteger('id_niveau')->nullable();
-            $table->unsignedBigInteger('id_filiere')->nullable();
             $table->unsignedBigInteger('id_section')->nullable();
             $table->date('date_inscription');
             $table->string('statut', 30)->default('Active');
@@ -37,7 +34,6 @@ return new class extends Migration {
             $table->foreign('id_niveau')->references('id_niveau')->on('niveaux')->onDelete('set null');
             $table->foreign('id_etudiant')->references('id_etudiant')->on('etudiants')->onDelete('set null');
             $table->foreign('id_annee')->references('id_annee')->on('annees_universitaires')->onDelete('set null');
-            $table->foreign('id_filiere')->references('id_filiere')->on('filieres')->onDelete('set null');
             $table->foreign('id_section')->references('id_section')->on('sections')->onDelete('set null');
             $table->timestamps();
         });

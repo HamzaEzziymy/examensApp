@@ -7,7 +7,6 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use App\Models\Section;
-use App\Models\Filiere;
 
 class Etudiant extends Model
 {
@@ -25,7 +24,6 @@ class Etudiant extends Model
         'date_naissance',
         'telephone',
         'url_photo',
-        'id_filiere',
         'id_section',
     ];
 
@@ -33,11 +31,6 @@ class Etudiant extends Model
     public function section(): BelongsTo
     {
         return $this->belongsTo(Section::class, 'id_section', 'id_section');
-    }
-
-    public function filiere(): BelongsTo
-    {
-        return $this->belongsTo(Filiere::class, 'id_filiere', 'id_filiere');
     }
 
     public function inscriptionsAdministratives(): HasMany

@@ -44,7 +44,6 @@ class EnrollmentSeeder extends Seeder
             $students = $students->merge(
                 Etudiant::factory()->count($count)->create([
                     'id_section' => $section->id_section,
-                    'id_filiere' => $filiere->id_filiere,
                 ])
             );
         }
@@ -67,7 +66,6 @@ class EnrollmentSeeder extends Seeder
                 'id_annee'    => $activeYear->id_annee,
                 'id_niveau'   => $niveau->id_niveau,
                 'id_section'  => $section->id_section,
-                'id_filiere'  => $etd->id_filiere,
                 'statut'      => 'Active',
                 'type_inscription' => 'nouveau',
             ]);

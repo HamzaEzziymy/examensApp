@@ -5,7 +5,6 @@ import Header from '../Header'
 import Display from './Display';
 
 function Index({ inscriptions, students, annees, niveaux, sections }) {
-  console.log(inscriptions);
 
   return (
     <AuthenticatedLayout
