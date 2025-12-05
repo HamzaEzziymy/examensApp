@@ -41,10 +41,16 @@ const defaultFormState = (examenId) => ({
 export default function RepartitionIndex({ examens, repartitions, inscriptions, selectedExamenId, salles }) {
     const [editingId, setEditingId] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
-    const [selectedSalles, setSelectedSalles] = useState(() => salles?.map((s) => String(s.id_salle)) || []);
-    const { data, setData, post, put, delete: destroy, processing, errors } = useForm(
-        defaultFormState(selectedExamenId),
-    );
+    const [columns, setColumns] = useState({
+        cne: true,
+        etudiant: true,
+        grille: true,
+        place: true,
+        anonymat: true,
+        presence: true,
+    });
+    const [presenceFilled, setPresenceFilled] = useState(true);
+    const { data, setData, post, put, delete: destroy, processing, errors } = useForm(defaultFormState(selectedExamenId));
 
     const selectedExamen = useMemo(
         () => examens.find((examen) => examen.id_examen === selectedExamenId),
@@ -61,10 +67,6 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         setEditingId(null);
         setSearchTerm('');
     }, [selectedExamenId]);
-
-    useEffect(() => {
-        setSelectedSalles(salles?.map((s) => String(s.id_salle)) || []);
-    }, [salles]);
 
     const handleExamChange = (event) => {
         const value = event.target.value;
@@ -84,12 +86,28 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         [repartitions],
     );
 
-    const availableCapacity = useMemo(
-        () => salles.reduce((total, salle) => total + (salle.capacite_examens || 0), 0),
-        [salles],
-    );
-
     const studentCount = inscriptions.length;
+    const salleUsage = useMemo(() => {
+        if (!selectedExamen) return [];
+        return (selectedExamen.salles || []).map((salle, index) => {
+            const capacity = salle.capacite_examens ?? salle.capacite ?? 0;
+            const usage = repartitions.filter((item) => {
+                const grilleMatch = Number(item.code_grille) === index + 1;
+                const codeMatch =
+                    item.numero_place && salle.code_salle
+                        ? String(item.numero_place).includes(String(salle.code_salle))
+                        : false;
+                return grilleMatch || codeMatch;
+            }).length;
+            const percent = capacity ? Math.min(100, Math.round((usage / capacity) * 100)) : null;
+            return {
+                code: salle.code_salle || `Salle ${index + 1}`,
+                capacity,
+                usage,
+                percent,
+            };
+        });
+    }, [selectedExamen, repartitions]);
 
     const availableInscriptions = inscriptions.filter((inscription) => {
         if (!assignedIds.has(inscription.id_inscription_pedagogique)) {
@@ -198,38 +216,27 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         });
     };
 
-    const handleAutoAssign = () => {
+    const handleExport = () => {
         if (!selectedExamenId) {
             Swal.fire({ icon: 'info', title: 'Choisissez un examen' });
             return;
         }
-        if (!selectedSalles.length) {
-            Swal.fire({ icon: 'info', title: 'Choisissez au moins une salle' });
+        const selectedColumns = Object.entries(columns)
+            .filter(([, checked]) => checked)
+            .map(([key]) => key);
+
+        if (selectedColumns.length === 0) {
+            Swal.fire({ icon: 'info', title: 'Choisissez au moins une colonne' });
             return;
         }
 
-        router.post(
-            route('surveillance.repartition-etudiants.auto'),
-            {
-                id_examen: selectedExamenId,
-                salles: selectedSalles,
-            },
-            {
-                preserveScroll: true,
-                onSuccess: () =>
-                    Swal.fire({
-                        icon: 'success',
-                        title: 'Répartition automatique effectuée',
-                        timer: 1200,
-                        showConfirmButton: false,
-                    }),
-                onError: () =>
-                    Swal.fire({
-                        icon: 'error',
-                        title: 'Impossible de répartir',
-                    }),
-            },
-        );
+        const baseUrl = route('surveillance.repartition-etudiants.export', selectedExamenId);
+        const params = new URLSearchParams();
+        selectedColumns.forEach((col) => params.append('columns[]', col));
+        params.append('presence_filled', presenceFilled ? '1' : '0');
+        const url = params.toString() ? `${baseUrl}?${params.toString()}` : baseUrl;
+
+        window.open(url, '_blank');
     };
 
     return (
@@ -257,34 +264,6 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                             ))}
                         </select>
                     </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">
-                            Salles disponibles (creneau libre)
-                        </label>
-                        <select
-                            multiple
-                            value={selectedSalles}
-                            onChange={(e) => setSelectedSalles(Array.from(e.target.selectedOptions).map((opt) => opt.value))}
-                            className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
-                        >
-                            {salles.map((salle) => (
-                                <option key={salle.id_salle} value={String(salle.id_salle)}>
-                                    {salle.code_salle} - {salle.nom_salle} ({salle.capacite_examens} places)
-                                </option>
-                            ))}
-                        </select>
-                        <p className="mt-1 text-xs text-gray-500">
-                            Les salles listees sont libres sur le meme creneau que l'examen selectionne (salles deja assignees a cet examen incluses).
-                        </p>
-                    </div>
-                    <button
-                        type="button"
-                        onClick={handleAutoAssign}
-                        className="inline-flex items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
-                        disabled={!selectedExamenId}
-                    >
-                        Repartition automatique
-                    </button>
                 </div>
                 <div className="rounded-lg bg-gray-50 p-4 text-sm text-gray-700 dark:bg-gray-900/40 dark:text-gray-200">
                     {selectedExamen ? (
@@ -299,31 +278,65 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                     <div className="text-base font-semibold text-gray-800 dark:text-gray-100">{studentCount}</div>
                                 </div>
                                 <div className="rounded-md bg-white/60 p-2 dark:bg-gray-800/60">
-                                    <div className="text-gray-500">Places disponibles (salles libres)</div>
-                                    <div className="text-base font-semibold text-gray-800 dark:text-gray-100">{availableCapacity}</div>
-                                </div>
-                                <div className="rounded-md bg-white/60 p-2 dark:bg-gray-800/60">
-                                    <div className="text-gray-500">Affectations</div>
+                                    <div className="text-gray-500">Repartitions existantes</div>
                                     <div className="text-base font-semibold text-gray-800 dark:text-gray-100">
-                                        {selectedExamen.repartitions_count} / {selectedExamen.salle?.capacite_examens ?? '--'}
+                                        {repartitions.length} / {studentCount}
                                     </div>
                                 </div>
-                                <div className="rounded-md bg-white/60 p-2 dark:bg-gray-800/60">
-                                    <div className="text-gray-500">Salles affectees</div>
-                                    <div className="text-base font-semibold text-gray-800 dark:text-gray-100 space-y-1">
-                                        {selectedExamen.salles && selectedExamen.salles.length > 0 ? (
-                                            selectedExamen.salles.map((salle) => (
-                                                <div key={salle.id_salle}>
-                                                    {salle.code_salle} - {salle.nom_salle} ({salle.capacite_examens} places)
-                                                </div>
-                                            ))
-                                        ) : selectedExamen.salle ? (
-                                            <div>
-                                                {selectedExamen.salle.code_salle} - {selectedExamen.salle.nom_salle} ({selectedExamen.salle.capacite_examens} places)
+                            </div>
+                            {salleUsage.length > 0 && (
+                                <div className="mt-3 space-y-2 text-xs">
+                                    <div className="text-gray-600 dark:text-gray-300 font-semibold">Salles &amp; capacites</div>
+                                    {salleUsage.map((salle) => (
+                                        <div key={salle.code} className="flex items-center justify-between rounded-md bg-white/70 p-2 dark:bg-gray-800/60">
+                                            <div className="font-semibold">{salle.code}</div>
+                                            <div className="text-gray-700 dark:text-gray-200">
+                                                {salle.usage} / {salle.capacity || '—'}
+                                                {salle.percent !== null && ` (${salle.percent}%)`}
                                             </div>
-                                        ) : (
-                                            <div>Non definies</div>
-                                        )}
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            <div className="mt-3">
+                                <button
+                                    type="button"
+                                    onClick={handleExport}
+                                    className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+                                    disabled={!selectedExamenId}
+                                >
+                                    Exporter en PDF
+                                </button>
+                                <div className="mt-3 space-y-1 text-xs text-gray-600 dark:text-gray-300">
+                                    <div className="font-semibold text-gray-700 dark:text-gray-100">Colonnes</div>
+                                    <div className="flex flex-wrap gap-3">
+                                        {[
+                                            { key: 'cne', label: 'CNE' },
+                                            { key: 'etudiant', label: 'Etudiant' },
+                                            { key: 'grille', label: 'Grille' },
+                                            { key: 'place', label: 'Place' },
+                                            { key: 'anonymat', label: 'Anonymat' },
+                                            { key: 'presence', label: 'Presence' },
+                                        ].map(({ key, label }) => (
+                                            <label key={key} className="inline-flex items-center gap-2">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={columns[key]}
+                                                    onChange={() =>
+                                                        setColumns((prev) => ({ ...prev, [key]: !prev[key] }))
+                                                    }
+                                                />
+                                                <span>{label}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+                                    <div className="mt-2 flex items-center gap-2">
+                                        <input
+                                            type="checkbox"
+                                            checked={presenceFilled}
+                                            onChange={() => setPresenceFilled((prev) => !prev)}
+                                        />
+                                        <span>Remplir la colonne presence</span>
                                     </div>
                                 </div>
                             </div>
@@ -587,6 +600,9 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         </AuthenticatedLayout>
     );
 }
+
+
+
 
 
 

@@ -9,17 +9,32 @@ use App\Models\Anonymat;
 use App\Models\RepartitionEtudiant;
 use App\Models\Absence;
 use App\Models\PvExamen;
+use App\Models\AnneeUniversitaire;
 
 class AnonymatAndAttendanceSeeder extends Seeder
 {
     public function run(): void
     {
-        $exams = Examen::orderBy('id_examen')->limit(2)->get(); // minimal footprint
+        $exams = Examen::orderBy('id_examen')->get();
+        $activeYearId = AnneeUniversitaire::where('est_active', true)->latest('date_debut')->value('id_annee');
 
         foreach ($exams as $exam) {
-            $registrations = InscriptionPedagogique::where('id_module', $exam->id_module)
-                ->orderBy('id_inscription_pedagogique')
-                ->get();
+            $exam->load([
+                'sessionExamen:id_session_examen,id_filiere,type_session,nom_session',
+                'sessionExamen.filiere:id_filiere,nom_filiere',
+                'module.offresFormation.semestre.niveau',
+                'salle:id_salle,code_salle',
+                'salles:id_salle,code_salle',
+            ]);
+
+            $registrations = InscriptionPedagogique::query()
+                ->where('inscriptions_pedagogiques.id_module', $exam->id_module)
+                ->when($activeYearId, function ($query) use ($activeYearId) {
+                    $query->join('inscriptions_administratives', 'inscriptions_administratives.id_inscription_admin', '=', 'inscriptions_pedagogiques.id_inscription_admin')
+                        ->where('inscriptions_administratives.id_annee', $activeYearId);
+                })
+                ->orderBy('inscriptions_pedagogiques.id_inscription_pedagogique')
+                ->get(['inscriptions_pedagogiques.id_inscription_pedagogique']);
 
             if ($registrations->isEmpty()) {
                 continue;
@@ -32,35 +47,64 @@ class AnonymatAndAttendanceSeeder extends Seeder
             $anonRows         = [];
             $repartitionRows  = [];
             $pendingAbsences  = [];
+            $filiereCode = $this->filiereCode($exam);
+            $niveauCode  = $this->niveauCode($exam);
+            $sessionCode = $this->sessionCode($exam);
+            $rooms = $exam->salles->isNotEmpty()
+                ? $exam->salles
+                : collect([$exam->salle]->filter());
 
-            foreach ($registrations as $ip) {
-                $codeAnonymat = sprintf('ANON-%d-%02d', $exam->id_examen, $seq++);
+            $registrations = $registrations->values();
+            $remaining = $registrations->count();
+            $roomCount = $rooms->count() ?: 1;
+            $offset = 0;
 
-                $anonRows[] = [
-                    'id_examen'                  => $exam->id_examen,
-                    'id_inscription_pedagogique' => $ip->id_inscription_pedagogique,
-                    'code_anonymat'              => $codeAnonymat,
-                    'created_at'                 => $now,
-                    'updated_at'                 => $now,
-                ];
+            foreach ($rooms as $index => $salle) {
+                $capacity = $salle->capacite_examens ?? $salle->capacite ?? $remaining;
+                $roomsLeft = $roomCount - $index;
+                $take = min($capacity, (int) ceil($remaining / $roomsLeft));
 
-                $isPresent = fake()->boolean(85);
-                $repartitionRows[] = [
-                    'id_examen'                  => $exam->id_examen,
-                    'id_inscription_pedagogique' => $ip->id_inscription_pedagogique,
-                    'code_grille'               => 1,
-                    'code_anonymat'             => $codeAnonymat,
-                    'numero_place'              => 'P-' . str_pad((string) $seq, 2, '0', STR_PAD_LEFT),
-                    'present'                   => $isPresent,
-                    'created_at'                => $now,
-                    'updated_at'                => $now,
-                ];
+                $slice = $registrations->slice($offset, $take);
+                $offset += $slice->count();
+                $remaining -= $slice->count();
 
-                if ($isPresent) {
-                    $presentCount++;
-                } else {
-                    $absentCount++;
-                    $pendingAbsences[] = $codeAnonymat;
+                $seat = 1;
+                $seatPrefix = substr($salle->code_salle ?? 'S', 0, 4);
+                $salleCode = $index + 1;
+
+                foreach ($slice as $ip) {
+                    $codeAnonymat = sprintf('ANON-%d-%03d', $exam->id_examen, $seq);
+                    $grilleCode  = (int) sprintf('%d%d%d%d%03d', $filiereCode, $niveauCode, $sessionCode, $salleCode, $seat);
+
+                    $anonRows[] = [
+                        'id_examen'                  => $exam->id_examen,
+                        'id_inscription_pedagogique' => $ip->id_inscription_pedagogique,
+                        'code_anonymat'              => $codeAnonymat,
+                        'created_at'                 => $now,
+                        'updated_at'                 => $now,
+                    ];
+
+                    $isPresent = fake()->boolean(85);
+                    $repartitionRows[] = [
+                        'id_examen'                  => $exam->id_examen,
+                        'id_inscription_pedagogique' => $ip->id_inscription_pedagogique,
+                        'code_grille'               => $grilleCode,
+                        'code_anonymat'             => $codeAnonymat,
+                        'numero_place'              => sprintf('%s-%03d', $seatPrefix, $seat),
+                        'present'                   => $isPresent,
+                        'created_at'                => $now,
+                        'updated_at'                => $now,
+                    ];
+
+                    if ($isPresent) {
+                        $presentCount++;
+                    } else {
+                        $absentCount++;
+                        $pendingAbsences[] = $codeAnonymat;
+                    }
+
+                    $seq++;
+                    $seat++;
                 }
             }
 
@@ -101,5 +145,63 @@ class AnonymatAndAttendanceSeeder extends Seeder
                 ]
             );
         }
+    }
+
+    private function filiereCode(Examen $examen): int
+    {
+        $filiere = $examen->sessionExamen->filiere ?? null;
+        $name = strtolower($filiere->nom_filiere ?? '');
+
+        $byName = match (true) {
+            str_contains($name, 'med')  => 1,
+            str_contains($name, 'phar') => 2,
+            str_contains($name, 'dent') => 3,
+            default                     => null,
+        };
+
+        if ($byName !== null) {
+            return $byName;
+        }
+
+        return match ($filiere->id_filiere ?? null) {
+            1 => 1,
+            2 => 2,
+            3 => 3,
+            default => 0,
+        };
+    }
+
+    private function niveauCode(Examen $examen): int
+    {
+        $module = $examen->module;
+        if (! $module) {
+            return 0;
+        }
+
+        $offre = $module->offresFormation->first();
+        $niveau = $offre?->semestre?->niveau;
+
+        if (! $niveau) {
+            return 0;
+        }
+
+        if (is_numeric($niveau->ordre)) {
+            $ord = (int) $niveau->ordre;
+            return ($ord >= 1 && $ord <= 5) ? $ord : 0;
+        }
+
+        return 0;
+    }
+
+    private function sessionCode(Examen $examen): int
+    {
+        $session = $examen->sessionExamen;
+        $value = strtolower($session->type_session ?? $session->nom_session ?? '');
+
+        if (str_contains($value, 'ratt')) {
+            return 2;
+        }
+
+        return 1;
     }
 }

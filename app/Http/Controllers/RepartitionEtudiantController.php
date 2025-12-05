@@ -4,21 +4,18 @@ namespace App\Http\Controllers;
 
 use App\Models\Examen;
 use App\Models\InscriptionPedagogique;
-use App\Models\OffreFormation;
-use App\Models\Semestre;
 use App\Models\RepartitionEtudiant;
 use App\Models\Salle;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\Rules\Unique as UniqueRule;
 use Inertia\Inertia;
+use Spatie\LaravelPdf\Facades\Pdf;
 
 class RepartitionEtudiantController extends Controller
 {
     public function index(Request $request)
     {
-        $selectedExamenId = $request->filled('examen') ? (int) $request->input('examen') : null;
+        $selectedExamenId = $request->integer('examen');
 
         $examens = Examen::with([
                 'module:id_module,nom_module,code_module',
@@ -39,8 +36,7 @@ class RepartitionEtudiantController extends Controller
                 'statut',
             ]);
 
-        $selectedExamen = $examens->firstWhere('id_examen', $selectedExamenId);
-        $availableSalles = $this->availableSallesForExam($selectedExamen);
+        $selectedExamen = $examens->firstWhere('id_examen', $selectedExamenId) ?? $examens->first();
 
         $repartitions = RepartitionEtudiant::with([
                 'inscriptionPedagogique:id_inscription_pedagogique,id_etudiant,id_module',
@@ -62,39 +58,41 @@ class RepartitionEtudiantController extends Controller
                 'observation',
             ]);
 
-        $inscriptions = InscriptionPedagogique::with([
-                'etudiant:id_etudiant,nom,prenom,cne',
-                'module:id_module,nom_module',
-            ])
-            ->when(
-                $selectedExamen,
-                fn ($query) => $query->where('id_module', $selectedExamen->id_module)
-            )
-            ->orderBy('id_inscription_pedagogique')
-            ->get([
-                'id_inscription_pedagogique',
-                'id_etudiant',
-                'id_module',
-            ]);
+        $inscriptions = $selectedExamen
+            ? InscriptionPedagogique::with([
+                    'etudiant:id_etudiant,nom,prenom,cne',
+                    'module:id_module,nom_module,code_module',
+                ])
+                ->where('id_module', $selectedExamen->id_module)
+                ->orderBy('id_inscription_pedagogique')
+                ->get([
+                    'id_inscription_pedagogique',
+                    'id_etudiant',
+                    'id_module',
+                ])
+            : collect();
+
+        $salles = Salle::orderBy('code_salle')
+            ->get(['id_salle', 'code_salle', 'nom_salle', 'capacite_examens']);
 
         return Inertia::render('examens/Repartition/Index', [
             'examens'          => $examens,
             'repartitions'     => $repartitions,
             'inscriptions'     => $inscriptions,
             'selectedExamenId' => $selectedExamen?->id_examen,
-            'salles'           => $availableSalles,
+            'salles'           => $salles,
         ]);
     }
 
     public function store(Request $request)
     {
-        $validated = $request->validate($this->repartitionRules($request));
+        $validated = $request->validate($this->rules($request));
         $validated['present'] = $request->boolean('present');
 
         RepartitionEtudiant::create($validated);
 
         return $this->redirectToIndex((int) $validated['id_examen'])
-            ->with('success', 'Etudiant assigne a lexamen.');
+            ->with('success', 'Ligne ajoutee.');
     }
 
     public function show(RepartitionEtudiant $repartitionEtudiant)
@@ -109,13 +107,13 @@ class RepartitionEtudiantController extends Controller
 
     public function update(Request $request, RepartitionEtudiant $repartitionEtudiant)
     {
-        $validated = $request->validate($this->repartitionRules($request, $repartitionEtudiant->id_repartition));
+        $validated = $request->validate($this->rules($request, $repartitionEtudiant->id_repartition));
         $validated['present'] = $request->boolean('present');
 
         $repartitionEtudiant->update($validated);
 
         return $this->redirectToIndex((int) $validated['id_examen'])
-            ->with('success', 'Repartition mise a jour.');
+            ->with('success', 'Ligne mise a jour.');
     }
 
     public function destroy(RepartitionEtudiant $repartitionEtudiant)
@@ -124,163 +122,10 @@ class RepartitionEtudiantController extends Controller
         $repartitionEtudiant->delete();
 
         return $this->redirectToIndex($examenId)
-            ->with('success', 'Repartition supprimee.');
+            ->with('success', 'Ligne supprimee.');
     }
 
-    public function autoAssign(Request $request)
-    {
-        $validated = $request->validate([
-            'id_examen' => ['required', 'exists:examens,id_examen'],
-            'salles'    => ['required', 'array', 'min:1'],
-            'salles.*'  => ['exists:salles,id_salle'],
-        ]);
-
-        $examen = Examen::with(['module', 'sessionExamen'])->findOrFail($validated['id_examen']);
-
-        $selectedSalleIds = collect($validated['salles'])->map(fn ($id) => (int) $id)->values();
-
-        $salles = Salle::whereIn('id_salle', $selectedSalleIds)
-            ->get(['id_salle', 'code_salle', 'capacite_examens'])
-            ->sortBy(fn ($salle) => $selectedSalleIds->search($salle->id_salle))
-            ->values();
-
-        if ($salles->isEmpty()) {
-            return back()->with('error', 'Aucune salle valide selectionnee.');
-        }
-
-        $activeYearId = \App\Models\AnneeUniversitaire::where('est_active', true)->latest('date_debut')->value('id_annee');
-
-        // Persist selected rooms on the exam (main + pivot)
-        $examen->salles()->sync($selectedSalleIds);
-        if (! $examen->id_salle) {
-            $examen->id_salle = $selectedSalleIds->first();
-            $examen->save();
-        }
-
-        $filiereId = $examen->sessionExamen?->id_filiere;
-        $allowedSectionIds = collect();
-        $allowedNiveauIds = collect();
-
-        if ($activeYearId) {
-            $offres = OffreFormation::query()
-                ->where('id_module', $examen->id_module)
-                ->where('id_annee', $activeYearId)
-                ->get(['id_section', 'id_semestre']);
-
-            $allowedSectionIds = $offres->pluck('id_section')->filter()->unique();
-
-            $semestreIds = $offres->pluck('id_semestre')->filter()->unique();
-            if ($semestreIds->isNotEmpty()) {
-                $allowedNiveauIds = Semestre::whereIn('id_semestre', $semestreIds)
-                    ->pluck('id_niveau')
-                    ->filter()
-                    ->unique();
-            }
-        }
-
-        $students = InscriptionPedagogique::with(['etudiant:id_etudiant,nom,prenom,cne'])
-            ->where('inscriptions_pedagogiques.id_module', $examen->id_module)
-            ->join('inscriptions_administratives', 'inscriptions_pedagogiques.id_inscription_admin', '=', 'inscriptions_administratives.id_inscription_admin')
-            ->when($activeYearId, fn ($q) => $q->where('inscriptions_administratives.id_annee', $activeYearId))
-            ->when($allowedNiveauIds->isNotEmpty(), fn ($q) => $q->whereIn('inscriptions_administratives.id_niveau', $allowedNiveauIds))
-            ->when($allowedSectionIds->isNotEmpty(), fn ($q) => $q->whereIn('inscriptions_administratives.id_section', $allowedSectionIds))
-            ->when($filiereId && $allowedSectionIds->isEmpty(), fn ($q) => $q->where('inscriptions_administratives.id_filiere', $filiereId))
-            ->join('etudiants', 'inscriptions_pedagogiques.id_etudiant', '=', 'etudiants.id_etudiant')
-            ->orderByRaw('LOWER(etudiants.nom)')
-            ->orderByRaw('LOWER(etudiants.prenom)')
-            ->orderBy('etudiants.cne')
-            ->get(['inscriptions_pedagogiques.id_inscription_pedagogique', 'inscriptions_pedagogiques.id_etudiant', 'inscriptions_pedagogiques.id_module']);
-
-        $totalStudents = $students->count();
-        $totalCapacity = $salles->sum(fn ($salle) => max(0, (int) $salle->capacite_examens));
-
-        if ($totalStudents === 0) {
-            return back()->with('error', 'Aucun etudiant a affecter pour cet examen.');
-        }
-
-        // Detect students already planned on overlapping exams the same day
-        $studentIds = $students->pluck('id_etudiant')->filter()->unique();
-        if ($studentIds->isNotEmpty()) {
-            $start = $examen->date_debut;
-            $end   = $examen->date_fin;
-
-            $conflicts = RepartitionEtudiant::query()
-                ->join('inscriptions_pedagogiques as ip2', 'ip2.id_inscription_pedagogique', '=', 'repartition_etudiants.id_inscription_pedagogique')
-                ->join('etudiants as etd', 'etd.id_etudiant', '=', 'ip2.id_etudiant')
-                ->join('examens as ex', 'ex.id_examen', '=', 'repartition_etudiants.id_examen')
-                ->whereIn('ip2.id_etudiant', $studentIds)
-                ->where('repartition_etudiants.id_examen', '!=', $examen->id_examen)
-                ->whereDate('ex.date_examen', $examen->date_examen)
-                ->where(function ($query) use ($start, $end) {
-                    $query->whereBetween('ex.date_debut', [$start, $end])
-                        ->orWhereBetween('ex.date_fin', [$start, $end])
-                        ->orWhere(function ($q) use ($start, $end) {
-                            $q->where('ex.date_debut', '<=', $start)
-                                ->where('ex.date_fin', '>=', $end);
-                        });
-                })
-                ->select('etd.cne')
-                ->distinct()
-                ->get();
-
-            if ($conflicts->isNotEmpty()) {
-                $list = $conflicts->pluck('cne')->take(5)->implode(', ');
-                $more = $conflicts->count() > 5 ? '...' : '';
-                return back()->with('error', "Etudiants deja planifies sur un autre examen a ce creneau: {$list}{$more}");
-            }
-        }
-
-        if ($totalCapacity < $totalStudents) {
-            return back()->with('error', "Capacite insuffisante: {$totalStudents} etudiants pour {$totalCapacity} places. Ajoutez des salles.");
-        }
-
-        RepartitionEtudiant::where('id_examen', $examen->id_examen)->delete();
-
-        $rows = [];
-        $now = now();
-        $grille = 1;
-        $studentIndex = 0;
-
-        foreach ($salles as $salle) {
-            $capacity = max(0, (int) $salle->capacite_examens);
-            if ($capacity === 0) {
-                continue;
-            }
-
-            for ($seat = 1; $seat <= $capacity && $studentIndex < $totalStudents; $seat++) {
-                $student = $students[$studentIndex];
-                $rows[] = [
-                    'id_examen'                  => $examen->id_examen,
-                    'id_inscription_pedagogique' => $student->id_inscription_pedagogique,
-                    'code_grille'                => $grille,
-                    'code_anonymat'              => sprintf('ANON-%d-%03d', $examen->id_examen, $grille),
-                    'numero_place'               => $this->seatLabel($salle->code_salle ?? (string) $salle->id_salle, $seat),
-                    'present'                    => false,
-                    'created_at'                 => $now,
-                    'updated_at'                 => $now,
-                ];
-                $grille++;
-                $studentIndex++;
-            }
-
-            if ($studentIndex >= $totalStudents) {
-                break;
-            }
-        }
-
-        if ($studentIndex < $totalStudents) {
-            return back()->with('error', "Capacite insuffisante: {$totalStudents} etudiants pour {$totalCapacity} places. Ajoutez des salles.");
-        }
-
-        if (!empty($rows)) {
-            RepartitionEtudiant::insert($rows);
-        }
-
-        return $this->redirectToIndex($examen->id_examen)
-            ->with('success', 'Repartition automatique effectuee.');
-    }
-
-    private function repartitionRules(Request $request, ?int $repartitionId = null): array
+    private function rules(Request $request, ?int $ignoreId = null): array
     {
         $examenId = (int) $request->input('id_examen');
 
@@ -289,25 +134,25 @@ class RepartitionEtudiantController extends Controller
             'id_inscription_pedagogique' => [
                 'required',
                 'exists:inscriptions_pedagogiques,id_inscription_pedagogique',
-                $this->uniquePerExamen('id_inscription_pedagogique', $examenId, $repartitionId),
+                $this->uniquePerExam('id_inscription_pedagogique', $examenId, $ignoreId),
             ],
             'code_grille' => [
                 'required',
                 'integer',
                 'min:1',
-                $this->uniquePerExamen('code_grille', $examenId, $repartitionId),
+                $this->uniquePerExam('code_grille', $examenId, $ignoreId),
             ],
             'code_anonymat' => [
                 'nullable',
                 'string',
                 'max:20',
-                $this->uniquePerExamen('code_anonymat', $examenId, $repartitionId),
+                $this->uniquePerExam('code_anonymat', $examenId, $ignoreId),
             ],
             'numero_place' => [
                 'nullable',
                 'string',
-                'max:10',
-                $this->uniquePerExamen('numero_place', $examenId, $repartitionId),
+                'max:20',
+                $this->uniquePerExam('numero_place', $examenId, $ignoreId),
             ],
             'present' => ['sometimes', 'boolean'],
             'heure_arrivee' => ['nullable'],
@@ -316,7 +161,7 @@ class RepartitionEtudiantController extends Controller
         ];
     }
 
-    private function uniquePerExamen(string $column, int $examenId, ?int $ignoreId = null): UniqueRule
+    private function uniquePerExam(string $column, int $examenId, ?int $ignoreId = null): Rule
     {
         return Rule::unique('repartition_etudiants', $column)
             ->where(fn ($query) => $query->where('id_examen', $examenId))
@@ -325,68 +170,71 @@ class RepartitionEtudiantController extends Controller
 
     private function redirectToIndex(?int $examenId = null)
     {
-        $params = [];
-
-        if ($examenId) {
-            $params['examen'] = $examenId;
-        }
+        $params = $examenId ? ['examen' => $examenId] : [];
 
         return redirect()->route('surveillance.repartition-etudiants.index', $params);
     }
 
-    private function availableSallesForExam(?Examen $examen)
+    public function export(Request $request, Examen $examen)
     {
-        $baseQuery = Salle::orderBy('code_salle')
-            ->select(['id_salle', 'code_salle', 'nom_salle', 'capacite_examens']);
+        $repartitions = RepartitionEtudiant::with([
+                'inscriptionPedagogique:id_inscription_pedagogique,id_etudiant',
+                'inscriptionPedagogique.etudiant:id_etudiant,nom,prenom,cne',
+            ])
+            ->where('id_examen', $examen->id_examen)
+            ->orderBy('code_grille')
+            ->orderBy('numero_place')
+            ->get();
 
-        if (! $examen) {
-            return $baseQuery->get();
+        if ($repartitions->isEmpty()) {
+            return back()->with('error', 'Aucune repartition pour cet examen.');
         }
 
-        $start = $examen->date_debut;
-        $end   = $examen->date_fin;
+        $presentCount = $repartitions->where('present', true)->count();
+        $total = $repartitions->count();
 
-        $overlap = function ($query) use ($start, $end) {
-            $query->whereBetween('examens.date_debut', [$start, $end])
-                ->orWhereBetween('examens.date_fin', [$start, $end])
-                ->orWhere(function ($q) use ($start, $end) {
-                    $q->where('examens.date_debut', '<=', $start)
-                        ->where('examens.date_fin', '>=', $end);
-                });
-        };
+        $examen->load([
+            'module:id_module,nom_module,code_module',
+            'sessionExamen:id_session_examen,nom_session',
+            'salle:id_salle,code_salle,nom_salle',
+            'module.offresFormation.section.filiere',
+            'module.offresFormation.semestre.niveau',
+        ]);
 
-        $occupiedDirect = Examen::query()
-            ->where('id_examen', '!=', $examen->id_examen)
-            ->whereDate('date_examen', $examen->date_examen)
-            ->where($overlap)
-            ->pluck('id_salle');
+        $offre = $examen->module->offresFormation->first();
+        $niveauName = $offre?->semestre?->niveau?->nom_niveau;
+        $filiereName = $offre?->section?->filiere?->nom_filiere;
+        $niveauFiliere = trim(
+            ($niveauName ?? '') .
+            ($niveauName && $filiereName ? ' - ' : '') .
+            ($filiereName ?? '')
+        );
 
-        $occupiedPivot = DB::table('exam_salle')
-            ->join('examens', 'examens.id_examen', '=', 'exam_salle.id_examen')
-            ->where('examens.id_examen', '!=', $examen->id_examen)
-            ->whereDate('examens.date_examen', $examen->date_examen)
-            ->where($overlap)
-            ->pluck('exam_salle.id_salle');
+        $allowedColumns = ['cne', 'etudiant', 'grille', 'place', 'anonymat', 'presence'];
+        $columns = $request->input('columns', $allowedColumns);
+        $columns = array_values(array_intersect($allowedColumns, (array) $columns));
+        if (empty($columns)) {
+            $columns = $allowedColumns;
+        }
 
-        $occupiedIds = $occupiedDirect->merge($occupiedPivot)->filter()->unique();
-        $currentExamSalleIds = collect([$examen->id_salle])
-            ->merge($examen->salles->pluck('id_salle') ?? collect())
-            ->filter()
-            ->unique();
+        $presenceFilled = $request->boolean('presence_filled', true);
 
-        return $baseQuery
-            ->where(function ($query) use ($occupiedIds, $currentExamSalleIds) {
-                $query->whereNotIn('id_salle', $occupiedIds)
-                    ->orWhereIn('id_salle', $currentExamSalleIds);
-            })
-            ->get();
-    }
+        $payload = [
+            'examen'         => $examen,
+            'repartitions'   => $repartitions,
+            'presentCount'   => $presentCount,
+            'absentCount'    => $total - $presentCount,
+            'total'          => $total,
+            'generatedAt'    => now(),
+            'niveauFiliere'  => $niveauFiliere,
+            'columns'        => $columns,
+            'presenceFilled' => $presenceFilled,
+        ];
 
-    private function seatLabel(string $codeSalle, int $seat): string
-    {
-        $roomPart = substr($codeSalle, 0, 6);
-        $label = sprintf('%s-%03d', $roomPart, $seat);
+        $filename = sprintf('repartition-%s-%s.pdf', $examen->module->code_module ?? 'examen', $examen->id_examen);
 
-        return substr($label, 0, 10);
+        return Pdf::view('pdfs.repartition', $payload)
+            ->format('a4')
+            ->download($filename);
     }
 }
