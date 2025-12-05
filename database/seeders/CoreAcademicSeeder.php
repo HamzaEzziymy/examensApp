@@ -46,33 +46,36 @@ class CoreAcademicSeeder extends Seeder
             );
         }
 
-        // Modules & elements
-        $modules = Module::factory()->count(3)->create();
-        foreach ($modules as $module) {
-            ElementModule::factory()->count(1)->create([
-                'id_module' => $module->id_module,
-            ]);
-        }
-
         // Enseignants pour coordonner les offres
         $enseignants = Enseignant::factory()->count(3)->create();
 
-        // Offres de formation: one per module on first semestre/section
-        $semestre = $semestres->first();
-        $section = $sections->first();
-        foreach ($modules as $module) {
-            OffreFormation::updateOrCreate(
-                [
-                    'id_module'   => $module->id_module,
-                    'id_semestre' => $semestre->id_semestre,
-                    'id_section'  => $section->id_section,
-                    'id_annee'    => $active->id_annee,
-                ],
-                [
-                    'id_coordinateur' => optional($enseignants->random())->id_enseignant,
-                    'nom_affiche'     => $module->nom_module,
-                ]
-            );
+        // Modules & elements
+        $semestreIds = $semestres->pluck('id_semestre');
+        foreach ($sections as $section) {
+            // Give each section its own set of modules to avoid all filieres sharing the same trio
+            $modules = Module::factory()->count(4)->create();
+
+            foreach ($modules as $index => $module) {
+                ElementModule::factory()->count(1)->create([
+                    'id_module' => $module->id_module,
+                ]);
+
+                // Spread modules across available semestres for a bit of variety
+                $semestreId = $semestreIds[$index % $semestreIds->count()] ?? $semestreIds->first();
+
+                OffreFormation::updateOrCreate(
+                    [
+                        'id_module'   => $module->id_module,
+                        'id_semestre' => $semestreId,
+                        'id_section'  => $section->id_section,
+                        'id_annee'    => $active->id_annee,
+                    ],
+                    [
+                        'id_coordinateur' => optional($enseignants->random())->id_enseignant,
+                        'nom_affiche'     => $module->nom_module,
+                    ]
+                );
+            }
         }
     }
 }

@@ -86,6 +86,25 @@
             </div>
         @endif
 
+    @php
+        $groups = $salleGroups ?? collect([[
+            'salle' => $examen->salle,
+            'rows' => $repartitions,
+            'present' => $presentCount,
+            'absent' => $absentCount,
+            'total' => $total,
+            'salle_index' => 1,
+        ]]);
+    @endphp
+
+    @foreach($groups as $group)
+        <div style="width: 100%; margin-top: 10px; margin-bottom: 6px; font-size: 13px; font-weight: bold;">
+            Salle {{ $group['salle']->code_salle ?? ('#'.$group['salle_index']) }}
+            @if($group['salle']?->capacite_examens || $group['salle']?->capacite)
+                (Capacite: {{ $group['salle']->capacite_examens ?? $group['salle']->capacite }})
+            @endif
+            — Etudiants: {{ $group['total'] }} | Presents: {{ $group['present'] }} | Absents: {{ $group['absent'] }}
+        </div>
         <table>
             <thead>
                 <tr>
@@ -111,7 +130,7 @@
                 </tr>
             </thead>
             <tbody>
-                @foreach($repartitions as $index => $rep)
+                @foreach($group['rows'] as $index => $rep)
                     <tr>
                         <td class="text-center">{{ $index + 1 }}</td>
                         @if($showCne)
@@ -136,6 +155,7 @@
                 @endforeach
             </tbody>
         </table>
+    @endforeach
 
         <div style="width: 100%; text-align: right; font-size: 11px; margin-top: 8px;">
             Genere le {{ $generatedAt->format('d/m/Y H:i') }}
@@ -147,5 +167,4 @@
     </div>
 </body>
 </html>
-
 

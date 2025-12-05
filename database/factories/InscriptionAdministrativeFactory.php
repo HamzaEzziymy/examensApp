@@ -8,6 +8,7 @@ use App\Models\AnneeUniversitaire;
 use App\Models\Filiere;
 use App\Models\Niveau;
 use App\Models\Section;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 class InscriptionAdministrativeFactory extends Factory
@@ -26,14 +27,9 @@ class InscriptionAdministrativeFactory extends Factory
         return [
             'id_etudiant'       => null,
             'id_annee'          => $anneeId,
-<<<<<<< HEAD
             'id_niveau'         => null,
             'id_filiere'        => null,
             'id_section'        => null,
-=======
-            'id_niveau'         => Niveau::factory(),
-            'id_section'        => $section->id_section,
->>>>>>> c7bb9f81d263335978bd09bd5b7d8ce074229967
             'date_inscription'  => $this->faker->date(),
             'statut'            => $this->faker->randomElement(['Active', 'Suspendue', 'Archivee']),
             'type_inscription'  => $this->faker->randomElement(['nouveau', 'redoublant', 'transfert']),

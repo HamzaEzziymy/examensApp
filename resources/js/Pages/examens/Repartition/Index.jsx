@@ -89,10 +89,17 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
     const studentCount = inscriptions.length;
     const salleUsage = useMemo(() => {
         if (!selectedExamen) return [];
+        const salleFromGrille = (code) => {
+            if (code === null || code === undefined) return null;
+            const str = String(code).padStart(7, '0'); // f n s salle + seat(3)
+            const digit = Number(str.charAt(3));
+            return Number.isNaN(digit) ? null : digit;
+        };
         return (selectedExamen.salles || []).map((salle, index) => {
             const capacity = salle.capacite_examens ?? salle.capacite ?? 0;
             const usage = repartitions.filter((item) => {
-                const grilleMatch = Number(item.code_grille) === index + 1;
+                const salleDigit = salleFromGrille(item.code_grille);
+                const grilleMatch = salleDigit === index + 1 || Number(item.code_grille) === index + 1;
                 const codeMatch =
                     item.numero_place && salle.code_salle
                         ? String(item.numero_place).includes(String(salle.code_salle))
@@ -600,7 +607,6 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         </AuthenticatedLayout>
     );
 }
-
 
 
 

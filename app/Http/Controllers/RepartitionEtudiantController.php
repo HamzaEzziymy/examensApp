@@ -72,8 +72,9 @@ class RepartitionEtudiantController extends Controller
                 ])
             : collect();
 
-        $salles = Salle::orderBy('code_salle')
-            ->get(['id_salle', 'code_salle', 'nom_salle', 'capacite_examens']);
+        $salles = $selectedExamen
+            ? $selectedExamen->salles
+            : collect();
 
         return Inertia::render('examens/Repartition/Index', [
             'examens'          => $examens,
@@ -197,6 +198,7 @@ class RepartitionEtudiantController extends Controller
             'module:id_module,nom_module,code_module',
             'sessionExamen:id_session_examen,nom_session',
             'salle:id_salle,code_salle,nom_salle',
+            'salles:id_salle,code_salle,nom_salle,capacite_examens,capacite',
             'module.offresFormation.section.filiere',
             'module.offresFormation.semestre.niveau',
         ]);
@@ -219,6 +221,26 @@ class RepartitionEtudiantController extends Controller
 
         $presenceFilled = $request->boolean('presence_filled', true);
 
+        $salles = $examen->salles->values();
+        $salleGroups = $repartitions
+            ->groupBy(function ($rep) {
+                $str = str_pad((string) ($rep->code_grille ?? ''), 7, '0', STR_PAD_LEFT);
+                $digit = (int) ($str[3] ?? 1);
+                return $digit >= 1 ? $digit : 1;
+            })
+            ->map(function ($rows, $salleIndex) use ($salles) {
+                $salle = $salles[$salleIndex - 1] ?? null;
+                return [
+                    'salle'       => $salle,
+                    'rows'        => $rows,
+                    'present'     => $rows->where('present', true)->count(),
+                    'total'       => $rows->count(),
+                    'absent'      => $rows->count() - $rows->where('present', true)->count(),
+                    'salle_index' => (int) $salleIndex,
+                ];
+            })
+            ->values();
+
         $payload = [
             'examen'         => $examen,
             'repartitions'   => $repartitions,
@@ -229,6 +251,7 @@ class RepartitionEtudiantController extends Controller
             'niveauFiliere'  => $niveauFiliere,
             'columns'        => $columns,
             'presenceFilled' => $presenceFilled,
+            'salleGroups'    => $salleGroups,
         ];
 
         $filename = sprintf('repartition-%s-%s.pdf', $examen->module->code_module ?? 'examen', $examen->id_examen);

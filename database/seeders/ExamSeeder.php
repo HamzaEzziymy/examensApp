@@ -42,7 +42,10 @@ class ExamSeeder extends Seeder
             }
 
             foreach ($sessions as $sess) {
-                $modulesForSession = array_slice($moduleIds, 0, min(3, count($moduleIds)));
+                $modulesForSession = collect($moduleIds)
+                    ->shuffle()
+                    ->take(min(4, count($moduleIds)))
+                    ->all();
 
                 foreach ($modulesForSession as $modId) {
                     $roomIds = $salles->pluck('id_salle')->shuffle()->take(3)->values();

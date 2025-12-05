@@ -217,11 +217,18 @@ class ExamenController extends Controller
         $rooms = $salles->values();
         $roomCount = $rooms->count() ?: 1;
         $offset = 0;
+        $totalStudents = $registrations->count();
+        if ($rooms->count() > 1) {
+            $firstCap = $rooms->first()->capacite_examens ?? $rooms->first()->capacite ?? 0;
+            if ($firstCap >= $totalStudents) {
+                $rooms = collect([$rooms->first()]);
+                $roomCount = 1;
+            }
+        }
 
         foreach ($rooms as $index => $salle) {
             $capacity = $salle->capacite_examens ?? $salle->capacite ?? $remaining;
-            $roomsLeft = $roomCount - $index;
-            $take = min($capacity, (int) ceil($remaining / $roomsLeft));
+            $take = min($capacity > 0 ? $capacity : $remaining, $remaining);
 
             $slice = $registrations->slice($offset, $take);
             $offset += $slice->count();

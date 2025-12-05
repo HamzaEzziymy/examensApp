@@ -23,8 +23,8 @@ class AnonymatAndAttendanceSeeder extends Seeder
                 'sessionExamen:id_session_examen,id_filiere,type_session,nom_session',
                 'sessionExamen.filiere:id_filiere,nom_filiere',
                 'module.offresFormation.semestre.niveau',
-                'salle:id_salle,code_salle',
-                'salles:id_salle,code_salle',
+                'salle:id_salle,code_salle,capacite_examens,capacite',
+                'salles:id_salle,code_salle,capacite_examens,capacite',
             ]);
 
             $registrations = InscriptionPedagogique::query()
@@ -54,6 +54,14 @@ class AnonymatAndAttendanceSeeder extends Seeder
                 ? $exam->salles
                 : collect([$exam->salle]->filter());
 
+            $rooms = $rooms->values();
+            if ($rooms->count() > 1) {
+                $firstCap = $rooms->first()->capacite_examens ?? $rooms->first()->capacite ?? 0;
+                if ($firstCap >= $registrations->count()) {
+                    $rooms = collect([$rooms->first()]);
+                }
+            }
+
             $registrations = $registrations->values();
             $remaining = $registrations->count();
             $roomCount = $rooms->count() ?: 1;
@@ -61,8 +69,7 @@ class AnonymatAndAttendanceSeeder extends Seeder
 
             foreach ($rooms as $index => $salle) {
                 $capacity = $salle->capacite_examens ?? $salle->capacite ?? $remaining;
-                $roomsLeft = $roomCount - $index;
-                $take = min($capacity, (int) ceil($remaining / $roomsLeft));
+                $take = min($capacity > 0 ? $capacity : $remaining, $remaining);
 
                 $slice = $registrations->slice($offset, $take);
                 $offset += $slice->count();
