@@ -138,7 +138,7 @@ const StudentDataTable = ({
       return;
     }
 
-    router.post('/etudiants/bulk-import', { students: importPreview }, {
+    router.post('/inscriptions/inscriptions', { students: importPreview }, {
       onSuccess: () => {
         setShowImportModal(false);
         setImportFile(null);
@@ -160,7 +160,6 @@ const StudentDataTable = ({
         mail_personnel: 'jean@gmail.com',
         date_naissance: '2000-01-15',
         telephone: '0612345678',
-        id_section: '1'
       }
     ];
 
@@ -259,10 +258,12 @@ const StudentDataTable = ({
                     onChange={(e) => setSelectedSection(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="">Toutes les filieres (sections)</option>
+                    <option value="">Toutes les filières</option>
                     {sections.map(section => (
                       <option key={section.id_section} value={section.id_section}>
-                        {section.filiere.nom_filiere} ({section.nom_section})
+                        {section.filiere?.nom_filiere 
+                          ? `${section.filiere.nom_filiere} (${section.nom_section})`
+                          : section.nom_section}
                       </option>
                     ))}
                   </select>
@@ -332,8 +333,9 @@ const StudentDataTable = ({
                     <td className="px-6 py-4 text-sm text-gray-600">{student.mail_academique}</td>
                     <td className="px-6 py-4 text-sm text-gray-600">{student.telephone || '-'}</td>
                     <td className="px-6 py-4 text-sm text-gray-600">
-                      {/* {sections.find(s => s.id_section === student.id_section)?.nom_section || '-'} */}
-                      {student.section.filiere.nom_filiere} ({student.section.nom_section})
+                      {student.section?.filiere?.nom_filiere 
+                        ? `${student.section.filiere.nom_filiere} (${student.section.nom_section})`
+                        : student.section?.nom_section || '-'}
                     </td>
                     <td className="px-6 py-4 text-right text-sm font-medium">
                       <button
@@ -483,10 +485,12 @@ const StudentDataTable = ({
                       onChange={handleInputChange}
                       className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     >
-                      <option value="">--Sélectionner une filière (section)--</option>
+                      <option value="">--Sélectionner une filière--</option>
                       {sections.map(section => (
                         <option key={section.id_section} value={section.id_section}>
-                          {section.filiere.nom_filiere} ({section.nom_section})
+                          {section.filiere?.nom_filiere 
+                            ? `${section.filiere.nom_filiere} (${section.nom_section})`
+                            : section.nom_section}
                         </option>
                       ))}
                     </select>

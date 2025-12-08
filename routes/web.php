@@ -140,6 +140,10 @@ Route::prefix('inscriptions')->name('inscriptions.')->group(function () {
         'capitalisations' => CapitalisationController::class,
         'stages' => StageController::class,
     ]);
+    
+    // Bulk delete for administrative inscriptions
+    Route::post('administratives/bulk-destroy', [InscriptionAdministrativeController::class, 'bulkDestroy'])
+        ->name('administratives.bulk-destroy');
 });
 
 /* =========================
