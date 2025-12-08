@@ -56,6 +56,20 @@ class AnonymatAndAttendanceSeeder extends Seeder
 
             $rooms = $rooms->values();
             if ($rooms->count() > 1) {
+                $ordered = collect();
+                $remainingSeats = $registrations->count();
+                foreach ($rooms as $room) {
+                    $ordered->push($room);
+                    $cap = $room->capacite_examens ?? $room->capacite ?? 0;
+                    $remainingSeats -= $cap;
+                    if ($remainingSeats <= 0) {
+                        break;
+                    }
+                }
+                $rooms = $ordered;
+            }
+
+            if ($rooms->first()) {
                 $firstCap = $rooms->first()->capacite_examens ?? $rooms->first()->capacite ?? 0;
                 if ($firstCap >= $registrations->count()) {
                     $rooms = collect([$rooms->first()]);
@@ -69,7 +83,9 @@ class AnonymatAndAttendanceSeeder extends Seeder
 
             foreach ($rooms as $index => $salle) {
                 $capacity = $salle->capacite_examens ?? $salle->capacite ?? $remaining;
-                $take = min($capacity > 0 ? $capacity : $remaining, $remaining);
+                $roomsLeft = $roomCount - $index;
+                $balancedTake = (int) ceil($remaining / max(1, $roomsLeft));
+                $take = min($capacity > 0 ? $capacity : $remaining, $balancedTake, $remaining);
 
                 $slice = $registrations->slice($offset, $take);
                 $offset += $slice->count();

@@ -215,20 +215,41 @@ class ExamenController extends Controller
         $registrations = $registrations->values();
         $remaining = $registrations->count();
         $rooms = $salles->values();
-        $roomCount = $rooms->count() ?: 1;
         $offset = 0;
         $totalStudents = $registrations->count();
+
+        // Keep only as many salles as needed to cover everyone
         if ($rooms->count() > 1) {
+            $ordered = collect();
+            $remainingSeats = $totalStudents;
+            foreach ($rooms as $room) {
+                $ordered->push($room);
+                $cap = $room->capacite_examens ?? $room->capacite ?? 0;
+                $remainingSeats -= $cap;
+                if ($remainingSeats <= 0) {
+                    break;
+                }
+            }
+            $rooms = $ordered;
+        }
+
+        // If first salle is enough, stick to it
+        if ($rooms->first()) {
             $firstCap = $rooms->first()->capacite_examens ?? $rooms->first()->capacite ?? 0;
             if ($firstCap >= $totalStudents) {
                 $rooms = collect([$rooms->first()]);
-                $roomCount = 1;
             }
         }
 
+        $roomCount = $rooms->count() ?: 1;
+        $remaining = $totalStudents;
+        $offset = 0;
+
         foreach ($rooms as $index => $salle) {
             $capacity = $salle->capacite_examens ?? $salle->capacite ?? $remaining;
-            $take = min($capacity > 0 ? $capacity : $remaining, $remaining);
+            $roomsLeft = $roomCount - $index;
+            $balancedTake = (int) ceil($remaining / max(1, $roomsLeft));
+            $take = min($capacity > 0 ? $capacity : $remaining, $balancedTake, $remaining);
 
             $slice = $registrations->slice($offset, $take);
             $offset += $slice->count();
