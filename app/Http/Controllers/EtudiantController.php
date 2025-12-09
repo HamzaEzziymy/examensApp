@@ -59,8 +59,7 @@ class EtudiantController extends Controller
         $validated = $request->validate($rules);
         Etudiant::create($validated);
 
-        return redirect()->route('personnes.etudiants.index')
-            ->with('success', 'Étudiant ajouté avec succès.');
+        return redirect()->route('personnes.etudiants.index');
     }
 
     /**
@@ -74,7 +73,6 @@ class EtudiantController extends Controller
         $errors = [];
 
         DB::beginTransaction();
-        try {
             foreach ($studentsData as $index => $data) {
                 $validator = Validator::make($data, [
                     'cne' => 'required|string|max:20|unique:etudiants,cne',
@@ -95,27 +93,14 @@ class EtudiantController extends Controller
                         'cne' => $data['cne'] ?? '',
                         'errors' => $validator->errors()->all()
                     ];
-                    continue;
+                }else {
+                    // Create student
+                    Etudiant::create($validator->validated());
+                    $created++;
                 }
-
-                Etudiant::create($validator->validated());
-                $created++;
             }
-
-            DB::commit();
-
-            $message = "Import terminé: {$created} étudiants créés";
-            if ($skipped > 0) {
-                $message .= ", {$skipped} ignorés (erreurs de validation)";
-            }
-
-            return redirect()->route('personnes.etudiants.index')
-                ->with('success', $message)
-                ->with('import_errors', $errors);
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return back()->withErrors(['error' => 'Erreur lors de l\'import: ' . $e->getMessage()]);
-        }
+        DB::commit();
+        return redirect()->route('inscriptions.etudiants.index');
     }
 
     /**

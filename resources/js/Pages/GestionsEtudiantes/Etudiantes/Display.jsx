@@ -1,6 +1,8 @@
-import React, { useState, useMemo } from 'react';
-import { router } from '@inertiajs/react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { router, usePage } from '@inertiajs/react';
 import { Search, Plus, Upload, Download, Edit, Trash2, Filter, X, FileSpreadsheet, Users, ChevronLeft, ChevronRight, Eye } from 'lucide-react';
+import { ToastContainer, toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 import * as XLSX from 'xlsx';
 
 // Inertia props from controller
@@ -11,13 +13,12 @@ const StudentDataTable = ({
 }) => {
   const [students, setStudents] = useState(initialStudents);
   const [searchTerm, setSearchTerm] = useState(initialFilters.search || '');
-  const [selectedSection, setSelectedSection] = useState(initialFilters.section || '');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
-  const [showFilters, setShowFilters] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(25);
   const [selectedStudents, setSelectedStudents] = useState([]);
+  const [formErrors, setFormErrors] = useState({});
 
   // Form state for adding student
   const [formData, setFormData] = useState({
@@ -36,6 +37,28 @@ const StudentDataTable = ({
   const [importFile, setImportFile] = useState(null);
   const [importPreview, setImportPreview] = useState([]);
   const [importErrors, setImportErrors] = useState([]);
+  const [selectedImportSection, setSelectedImportSection] = useState('');
+
+  // Server flash messages and import errors
+  const { flash } = usePage().props;
+  // Normalize server import errors: accept array or object { error: { ... } }
+  const serverImportErrors = useMemo(() => {
+    const raw = flash?.import_errors;
+    if (!raw) return [];
+    if (Array.isArray(raw)) return raw;
+    // shape: { error: { row, cne, errors } }
+    if (raw.error) return [raw.error];
+    // shape: { errors: [...] } or other
+    if (raw.errors && Array.isArray(raw.errors)) return raw.errors;
+    // fallback: wrap raw in array
+    return [raw];
+  }, [flash?.import_errors]);
+
+  useEffect(() => {
+    if (flash?.success) {
+      toast.success(flash.success);
+    }
+  }, [flash?.success]);
 
   // Filter and search students
   const filteredStudents = useMemo(() => {
@@ -45,12 +68,9 @@ const StudentDataTable = ({
         student.nom?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         student.prenom?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         student.mail_academique?.toLowerCase().includes(searchTerm.toLowerCase());
-      
-      const matchesSection = !selectedSection || student.id_section === parseInt(selectedSection);
-      
-      return matchesSearch && matchesSection;
+      return matchesSearch;
     });
-  }, [students, searchTerm, selectedSection]);
+  }, [students, searchTerm]);
 
   // Pagination
   const totalPages = Math.ceil(filteredStudents.length / itemsPerPage);
@@ -67,7 +87,7 @@ const StudentDataTable = ({
 
   // Submit single student
   const handleSubmit = () => {
-    router.post('/etudiants', formData, {
+    router.post('/inscriptions/etudiants', formData, {
       onSuccess: () => {
         setShowAddModal(false);
         setFormData({
@@ -75,6 +95,14 @@ const StudentDataTable = ({
           mail_academique: '', mail_personnel: '', date_naissance: '',
           telephone: '', id_section: ''
         });
+        setFormErrors({});
+        // rederect to refresh the list
+        router.visit('/inscriptions/etudiants');
+        toast.success('Étudiant ajouté avec succès');
+      }
+      ,
+      onError: (errors) => {
+        setFormErrors(errors || {});
       }
     });
   };
@@ -138,12 +166,22 @@ const StudentDataTable = ({
       return;
     }
 
-    router.post('/inscriptions/inscriptions', { students: importPreview }, {
+    const studentsPayload = importPreview.map((s) => ({
+      ...s,
+      id_section: selectedImportSection || s.id_section || '',
+    }));
+
+    router.post('/inscriptions/etudiants', { students: studentsPayload }, {
       onSuccess: () => {
         setShowImportModal(false);
         setImportFile(null);
         setImportPreview([]);
         setImportErrors([]);
+        router.visit('/inscriptions/etudiants');
+        toast.success('Étudiants ajoutés avec succès');
+      },
+      onError: (errors) => {  
+        console.error('Form errors:', errors);
       }
     });
   };
@@ -172,7 +210,7 @@ const StudentDataTable = ({
   // Delete student
   const handleDelete = (id) => {
     if (confirm('Êtes-vous sûr de vouloir supprimer cet étudiant ?')) {
-      router.delete(`/etudiants/${id}`);
+      router.delete(`/inscriptions/etudiants/${id}`);
     }
   };
 
@@ -194,6 +232,7 @@ const StudentDataTable = ({
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="mx-auto">
+        <ToastContainer position="top-right" autoClose={3000} />
         {/* Header */}
         <div className="bg-white rounded-lg shadow-sm p-6 mb-6">
           <div className="flex items-center justify-between mb-6">
@@ -217,7 +256,7 @@ const StudentDataTable = ({
                 Import Excel
               </button>
               <button
-                onClick={() => setShowAddModal(true)}
+                onClick={() => { setFormErrors({}); setShowAddModal(true); }}
                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
               >
                 <Plus className="w-4 h-4" />
@@ -238,40 +277,27 @@ const StudentDataTable = ({
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
-            <button
-              onClick={() => setShowFilters(!showFilters)}
-              className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-            >
-              <Filter className="w-4 h-4" />
-              Filtres
-            </button>
           </div>
 
-          {/* Filters Panel */}
-          {showFilters && (
-            <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">filiere (Section)</label>
-                  <select
-                    value={selectedSection}
-                    onChange={(e) => setSelectedSection(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">Toutes les filières</option>
-                    {sections.map(section => (
-                      <option key={section.id_section} value={section.id_section}>
-                        {section.filiere?.nom_filiere 
-                          ? `${section.filiere.nom_filiere} (${section.nom_section})`
-                          : section.nom_section}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            </div>
-          )}
+          
         </div>
+
+        {/* Server Import Errors Banner */}
+        {serverImportErrors.length > 0 && (
+          <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+            <h3 className="text-yellow-800 font-medium mb-2">Erreurs d\'import depuis le serveur:</h3>
+            <div className="space-y-1 text-sm text-yellow-800">
+              {serverImportErrors.slice(0, 50).map((err, i) => (
+                <div key={i}>
+                  Ligne {err.row} {err.cne ? `(CNE: ${err.cne})` : ''}: {Array.isArray(err.errors) ? err.errors.join(', ') : err.errors}
+                </div>
+              ))}
+              {serverImportErrors.length > 50 && (
+                <div className="text-yellow-700">... et {serverImportErrors.length - 50} autres</div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Stats */}
         <div className="grid grid-cols-4 gap-4 mb-6">
@@ -466,108 +492,132 @@ const StudentDataTable = ({
               </div>
               <div className="p-6">
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">CNE *</label>
-                    <input
-                      type="text"
-                      name="cne"
-                      value={formData.cne}
-                      onChange={handleInputChange}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">filiére (Section)</label>
-                    <select
-                      name="id_section"
-                      value={formData.id_section}
-                      onChange={handleInputChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    >
-                      <option value="">--Sélectionner une filière--</option>
-                      {sections.map(section => (
-                        <option key={section.id_section} value={section.id_section}>
-                          {section.filiere?.nom_filiere 
-                            ? `${section.filiere.nom_filiere} (${section.nom_section})`
-                            : section.nom_section}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Nom *</label>
-                    <input
-                      type="text"
-                      name="nom"
-                      value={formData.nom}
-                      onChange={handleInputChange}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Prénom *</label>
-                    <input
-                      type="text"
-                      name="prenom"
-                      value={formData.prenom}
-                      onChange={handleInputChange}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Email Académique *</label>
-                    <input
-                      type="email"
-                      name="mail_academique"
-                      value={formData.mail_academique}
-                      onChange={handleInputChange}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Email Personnel</label>
-                    <input
-                      type="email"
-                      name="mail_personnel"
-                      value={formData.mail_personnel}
-                      onChange={handleInputChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Nationalité</label>
-                    <input
-                      type="text"
-                      name="nationalite"
-                      value={formData.nationalite}
-                      onChange={handleInputChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Date de Naissance</label>
-                    <input
-                      type="date"
-                      name="date_naissance"
-                      value={formData.date_naissance}
-                      onChange={handleInputChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Téléphone</label>
-                    <input
-                      type="tel"
-                      name="telephone"
-                      value={formData.telephone}
-                      onChange={handleInputChange}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                    />
-                  </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">CNE *</label>
+                  <input
+                    type="text"
+                    name="cne"
+                    value={formData.cne}
+                    onChange={handleInputChange}
+                    required
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${formErrors.cne ? 'border-red-500' : 'border-gray-300'}`}
+                  />
+                  {formErrors.cne && (
+                    <p className="mt-1 text-sm text-red-600">{formErrors.cne}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">filiére (Section)</label>
+                  <select
+                    name="id_section"
+                    value={formData.id_section}
+                    onChange={handleInputChange}
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${formErrors.id_section ? 'border-red-500' : 'border-gray-300'}`}
+                  >
+                    <option value="">--Sélectionner une filière--</option>
+                    {sections.map(section => (
+                      <option key={section.id_section} value={section.id_section}>
+                        {section.filiere?.nom_filiere 
+                          ? `${section.filiere.nom_filiere} (${section.nom_section})`
+                          : section.nom_section}
+                      </option>
+                    ))}
+                  </select>
+                  {formErrors.id_section && (
+                    <p className="mt-1 text-sm text-red-600">{formErrors.id_section}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Nom *</label>
+                  <input
+                    type="text"
+                    name="nom"
+                    value={formData.nom}
+                    onChange={handleInputChange}
+                    required
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${formErrors.nom ? 'border-red-500' : 'border-gray-300'}`}
+                  />
+                  {formErrors.nom && (
+                    <p className="mt-1 text-sm text-red-600">{formErrors.nom}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Prénom *</label>
+                  <input
+                    type="text"
+                    name="prenom"
+                    value={formData.prenom}
+                    onChange={handleInputChange}
+                    required
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${formErrors.prenom ? 'border-red-500' : 'border-gray-300'}`}
+                  />
+                  {formErrors.prenom && (
+                    <p className="mt-1 text-sm text-red-600">{formErrors.prenom}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Email Académique *</label>
+                  <input
+                    type="email"
+                    name="mail_academique"
+                    value={formData.mail_academique}
+                    onChange={handleInputChange}
+                    required
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${formErrors.mail_academique ? 'border-red-500' : 'border-gray-300'}`}
+                  />
+                  {formErrors.mail_academique && (
+                    <p className="mt-1 text-sm text-red-600">{formErrors.mail_academique}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Email Personnel</label>
+                  <input
+                    type="email"
+                    name="mail_personnel"
+                    value={formData.mail_personnel}
+                    onChange={handleInputChange}
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${formErrors.mail_personnel ? 'border-red-500' : 'border-gray-300'}`}
+                  />
+                  {formErrors.mail_personnel && (
+                    <p className="mt-1 text-sm text-red-600">{formErrors.mail_personnel}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Nationalité</label>
+                  <input
+                    type="text"
+                    name="nationalite"
+                    value={formData.nationalite}
+                    onChange={handleInputChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Date de Naissance</label>
+                  <input
+                    type="date"
+                    name="date_naissance"
+                    value={formData.date_naissance}
+                    onChange={handleInputChange}
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${formErrors.date_naissance ? 'border-red-500' : 'border-gray-300'}`}
+                  />
+                  {formErrors.date_naissance && (
+                    <p className="mt-1 text-sm text-red-600">{formErrors.date_naissance}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Téléphone</label>
+                  <input
+                    type="tel"
+                    name="telephone"
+                    value={formData.telephone}
+                    onChange={handleInputChange}
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${formErrors.telephone ? 'border-red-500' : 'border-gray-300'}`}
+                  />
+                  {formErrors.telephone && (
+                    <p className="mt-1 text-sm text-red-600">{formErrors.telephone}</p>
+                  )}
+                </div>
                 </div>
                 <div className="mt-6 flex justify-end gap-3">
                   <button
@@ -599,20 +649,41 @@ const StudentDataTable = ({
                 </button>
               </div>
               <div className="p-6">
-                <div className="mb-6">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Sélectionner un fichier Excel
-                  </label>
-                  <input
-                    type="file"
-                    accept=".xlsx,.xls"
-                    onChange={handleFileSelect}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg"
-                  />
-                  <p className="mt-2 text-sm text-gray-600">
-                    Colonnes requises: cne, nom, prenom, mail_academique
-                  </p>
-                </div>
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Sélectionner un fichier Excel
+                </label>
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={handleFileSelect}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg"
+                />
+                <p className="mt-2 text-sm text-gray-600">
+                  Colonnes requises: cne, nom, prenom, mail_academique
+                </p>
+              </div>
+
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Affecter une filière (Section) à l\'import</label>
+                <select
+                  value={selectedImportSection}
+                  onChange={(e) => setSelectedImportSection(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">--Aucune (utiliser id_section du fichier)--</option>
+                  {sections.map(section => (
+                    <option key={section.id_section} value={section.id_section}>
+                      {section.filiere?.nom_filiere 
+                        ? `${section.filiere.nom_filiere} (${section.nom_section})`
+                        : section.nom_section}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-2 text-xs text-gray-500">
+                  Si vous choisissez une section ici, elle sera appliquée à tous les étudiants importés.
+                </p>
+              </div>
 
                 {importErrors.length > 0 && (
                   <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
