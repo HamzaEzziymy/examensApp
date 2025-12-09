@@ -246,6 +246,16 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         window.open(url, '_blank');
     };
 
+    const handleCollectiveExport = () => {
+        if (!selectedExamenId) {
+            Swal.fire({ icon: 'info', title: 'Choisissez un examen' });
+            return;
+        }
+
+        const url = route('surveillance.repartition-etudiants.export-collective', selectedExamenId);
+        window.open(url, '_blank');
+    };
+
     return (
         <AuthenticatedLayout
             header={<h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100">Repartition des etudiants</h2>}
@@ -313,6 +323,14 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                     disabled={!selectedExamenId}
                                 >
                                     Exporter en PDF
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleCollectiveExport}
+                                    className="ml-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-60"
+                                    disabled={!selectedExamenId}
+                                >
+                                    Presence collective (PDF)
                                 </button>
                                 <div className="mt-3 space-y-1 text-xs text-gray-600 dark:text-gray-300">
                                     <div className="font-semibold text-gray-700 dark:text-gray-100">Colonnes</div>
@@ -607,7 +625,6 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         </AuthenticatedLayout>
     );
 }
-
 
 
 

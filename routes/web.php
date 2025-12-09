@@ -177,6 +177,8 @@ Route::prefix('surveillance')->name('surveillance.')->group(function () {
 
     Route::get('repartition-etudiants/{examen}/export', [RepartitionEtudiantController::class, 'export'])
         ->name('repartition-etudiants.export');
+    Route::get('repartition-etudiants/{examen}/export-collective', [RepartitionEtudiantController::class, 'exportCollective'])
+        ->name('repartition-etudiants.export-collective');
 });
 
 /* =========================
