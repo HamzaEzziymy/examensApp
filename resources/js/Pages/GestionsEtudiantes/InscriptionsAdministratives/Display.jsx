@@ -349,6 +349,7 @@ const Display = ({
   // Export to Excel
   const handleExport = () => {
     const dataToExport = filteredInscriptions.map(inscription => ({
+      'ID': inscription.id_inscription_admin || '',
       'CNE': inscription.etudiant?.cne || '',
       'Nom': inscription.etudiant?.nom || '',
       'Prénom': inscription.etudiant?.prenom || '',

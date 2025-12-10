@@ -17,27 +17,21 @@ class InscriptionPedagogique extends Model
     protected $guarded = [];
 
     protected $fillable = [
-        'id_etudiant',
         'id_inscription_admin',
-        'id_module',
         'id_offre',
         'type_inscription',
         'credits_acquis',
     ];
     
-    public function etudiant(): BelongsTo
-    {
-        return $this->belongsTo(Etudiant::class, 'id_etudiant', 'id_etudiant');
-    }
-
     public function inscriptionAdministrative(): BelongsTo
     {
         return $this->belongsTo(InscriptionAdministrative::class, 'id_inscription_admin', 'id_inscription_admin');
     }
 
-    public function module(): BelongsTo
+    // Compatibility accessor: return the student via the administrative inscription
+    public function getEtudiantAttribute()
     {
-        return $this->belongsTo(Module::class, 'id_module', 'id_module');
+        return $this->inscriptionAdministrative?->etudiant;
     }
 
     public function offreFormation(): BelongsTo

@@ -9,7 +9,6 @@ function Index({
   inscriptions_administratives,
   offres_formation,
   etudiants,
-  module
 }) {
 
   return (
@@ -28,7 +27,6 @@ function Index({
           inscriptions_administratives={inscriptions_administratives}
           offres_formation={offres_formation}
           etudiants={etudiants}
-          module={module}
         />
       </div>
 

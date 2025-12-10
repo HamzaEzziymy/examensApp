@@ -141,9 +141,15 @@ Route::prefix('inscriptions')->name('inscriptions.')->group(function () {
         'stages' => StageController::class,
     ]);
     
-    // Bulk delete for administrative inscriptions
+    // Bulk operations for administrative inscriptions
     Route::post('administratives/bulk-destroy', [InscriptionAdministrativeController::class, 'bulkDestroy'])
         ->name('administratives.bulk-destroy');
+    
+    // Bulk operations for pedagogical inscriptions
+    Route::post('pedagogiques/bulk-store', [InscriptionPedagogiqueController::class, 'bulkStore'])
+        ->name('pedagogiques.bulk-store');
+    Route::post('pedagogiques/bulk-destroy', [InscriptionPedagogiqueController::class, 'bulkDestroy'])
+        ->name('pedagogiques.bulk-destroy');
 });
 
 /* =========================

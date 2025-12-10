@@ -28,7 +28,8 @@ class AnonymatAndAttendanceSeeder extends Seeder
             ]);
 
             $registrations = InscriptionPedagogique::query()
-                ->where('inscriptions_pedagogiques.id_module', $exam->id_module)
+                ->join('offre_formation', 'offre_formation.id_offre', '=', 'inscriptions_pedagogiques.id_offre')
+                ->where('offre_formation.id_module', $exam->id_module)
                 ->when($activeYearId, function ($query) use ($activeYearId) {
                     $query->join('inscriptions_administratives', 'inscriptions_administratives.id_inscription_admin', '=', 'inscriptions_pedagogiques.id_inscription_admin')
                         ->where('inscriptions_administratives.id_annee', $activeYearId);

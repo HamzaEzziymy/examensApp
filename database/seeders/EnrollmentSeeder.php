@@ -80,9 +80,7 @@ class EnrollmentSeeder extends Seeder
             foreach ($modules as $module) {
                 $offre = $offres->firstWhere('id_module', $module->id_module);
                 InscriptionPedagogique::factory()->create([
-                    'id_etudiant'          => $etd->id_etudiant,
                     'id_inscription_admin' => $ia->id_inscription_admin,
-                    'id_module'            => $module->id_module,
                     'id_offre'             => $offre->id_offre ?? null,
                     'type_inscription'     => fake()->randomElement(['Normal','Credit']),
                 ]);
