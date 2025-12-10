@@ -8,6 +8,7 @@ use App\Models\InscriptionAdministrative;
 use App\Models\InscriptionPedagogique;
 use App\Models\Module;
 use App\Models\OffreFormation;
+use App\Models\UserFiliereAnnee;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Illuminate\Support\Facades\Validator;
@@ -19,26 +20,64 @@ class InscriptionPedagogiqueController extends Controller
      */
     public function index()
     {
-        // Load all inscriptions with relationships - frontend handles pagination
-        $inscriptions_pedagogiques = InscriptionPedagogique::with([
+        // Get user's selected filiere and year
+        $userFiliereAnnee = auth()->user()->userFiliereAnnees()->first();
+        $selectedFiliere = $userFiliereAnnee ? $userFiliereAnnee->id_filiere : null;
+        $selectedAnnee = $userFiliereAnnee ? $userFiliereAnnee->id_annee : null;
+        
+        // Build query for pedagogical inscriptions
+        $inscriptionsQuery = InscriptionPedagogique::with([
             'inscriptionAdministrative.etudiant',
             'inscriptionAdministrative.anneeUniversitaire',
+            'inscriptionAdministrative.section.filiere',
             'offreFormation.module',
             'offreFormation.semestre.niveau'
-        ])->orderBy('created_at', 'desc')->get();
+        ])->orderBy('created_at', 'desc');
+        
+        // Apply filiere filter if a specific filiere is selected
+        if ($selectedFiliere && $selectedFiliere !== 'all') {
+            $inscriptionsQuery->whereHas('inscriptionAdministrative.section.filiere', function ($query) use ($selectedFiliere) {
+                $query->where('id_filiere', $selectedFiliere);
+            });
+        }
+        
+        // Apply year filter if a specific year is selected
+        if ($selectedAnnee && $selectedAnnee !== 'all') {
+            $inscriptionsQuery->whereHas('inscriptionAdministrative', function ($query) use ($selectedAnnee) {
+                $query->where('id_annee', $selectedAnnee);
+            });
+        }
+        
+        $inscriptions_pedagogiques = $inscriptionsQuery->get();
 
-        // Load supporting data for forms
+        // Filter supporting data based on selections
         $offres_formation = OffreFormation::with([
             'module', 
             'semestre.niveau'
         ])->get();
         
-        $inscriptions_administratives = InscriptionAdministrative::with('etudiant')
-            ->orderBy('created_at', 'desc')
-            ->get();
+        // Filter administrative inscriptions
+        $inscriptionsAdminQuery = InscriptionAdministrative::with(['etudiant', 'section.filiere'])
+            ->orderBy('created_at', 'desc');
+        if ($selectedFiliere && $selectedFiliere !== 'all') {
+            $inscriptionsAdminQuery->whereHas('section.filiere', function ($query) use ($selectedFiliere) {
+                $query->where('id_filiere', $selectedFiliere);
+            });
+        }
+        if ($selectedAnnee && $selectedAnnee !== 'all') {
+            $inscriptionsAdminQuery->where('id_annee', $selectedAnnee);
+        }
+        $inscriptions_administratives = $inscriptionsAdminQuery->get();
 
-        // Load students for import functionality
-        $etudiants = Etudiant::select('id_etudiant', 'cne', 'nom', 'prenom')->get();
+        // Filter students for import functionality
+        $etudiantsQuery = Etudiant::select('id_etudiant', 'cne', 'nom', 'prenom')
+            ->with('section.filiere');
+        if ($selectedFiliere && $selectedFiliere !== 'all') {
+            $etudiantsQuery->whereHas('section.filiere', function ($query) use ($selectedFiliere) {
+                $query->where('id_filiere', $selectedFiliere);
+            });
+        }
+        $etudiants = $etudiantsQuery->get();
 
         return Inertia::render('GestionsEtudiantes/InscriptionsPedagogiques/Index', [
             'inscriptions_pedagogiques' => $inscriptions_pedagogiques,

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Etudiant;
 use App\Models\Filiere;
 use App\Models\Section;
+use App\Models\UserFiliereAnnee;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
@@ -20,12 +21,32 @@ class EtudiantController extends Controller
      */
     public function index()
     {
-        $students = Etudiant::with('section.filiere')
+        // Get user's selected filiere and year
+        $userFiliereAnnee = auth()->user()->userFiliereAnnees()->first();
+        $selectedFiliere = $userFiliereAnnee ? $userFiliereAnnee->id_filiere : null;
+        
+        // Build query for students
+        $studentsQuery = Etudiant::with('section.filiere')
             ->orderBy('nom')
-            ->orderBy('prenom')
-            ->get();
+            ->orderBy('prenom');
+        
+        // Apply filiere filter if a specific filiere is selected (not "all")
+        if ($selectedFiliere && $selectedFiliere !== 'all') {
+            $studentsQuery->whereHas('section.filiere', function ($query) use ($selectedFiliere) {
+                $query->where('id_filiere', $selectedFiliere);
+            });
+        }
+        
+        $students = $studentsQuery->get();
 
-        $sections = Section::with('filiere')->get();
+        // Filter sections based on selected filiere
+        $sectionsQuery = Section::with('filiere');
+        if ($selectedFiliere && $selectedFiliere !== 'all') {
+            $sectionsQuery->whereHas('filiere', function ($query) use ($selectedFiliere) {
+                $query->where('id_filiere', $selectedFiliere);
+            });
+        }
+        $sections = $sectionsQuery->get();
         
         return Inertia::render('GestionsEtudiantes/Etudiantes/Index', [
             'students' => $students,

@@ -4,23 +4,46 @@ import { toast, ToastContainer } from "react-toastify";
 
 export default function YearsSectorsSelecters() {
     const { filieres, anneeUniv, auth } = usePage().props;
-    const userAnnee = auth.user_filiere_annee.annee_univ?.id_annee;
-    const userFiliere = auth.user_filiere_annee.filiere?.id_filiere;
+    
+    // Get the current user selection, handling "all" values
+    const userAnnee = auth.user_filiere_annee?.id_annee || 'all';
+    const userFiliere = auth.user_filiere_annee?.id_filiere || 'all';
 
     // Use Inertia's useForm hook
-    const { data, setData, put, processing, isDirty, reset } = useForm({
-        id: auth.user_filiere_annee.id,
-        user_id: auth.user.id,
-        id_filiere: userFiliere || "",
-        id_annee: userAnnee || "",
+    const { data, setData, put, processing, isDirty, reset, setDefaults } = useForm({
+        id: auth.user_filiere_annee?.id || '',
+        user_id: auth.user?.id || '',
+        id_filiere: userFiliere,
+        id_annee: userAnnee,
     });
 
-    // Check if current selection matches user's saved selection
+    // Update form data when props change (after successful save)
+    useEffect(() => {
+        const newUserAnnee = auth.user_filiere_annee?.id_annee || 'all';
+        const newUserFiliere = auth.user_filiere_annee?.id_filiere || 'all';
+        
+        setData({
+            id: auth.user_filiere_annee?.id || '',
+            user_id: auth.user?.id || '',
+            id_filiere: newUserFiliere,
+            id_annee: newUserAnnee,
+        });
+        
+        // Update the form defaults to prevent isDirty from being true after update
+        setDefaults({
+            id: auth.user_filiere_annee?.id || '',
+            user_id: auth.user?.id || '',
+            id_filiere: newUserFiliere,
+            id_annee: newUserAnnee,
+        });
+    }, [auth.user_filiere_annee]);
+
+    // Check if current selection matches the form data (current selection)
     const isCurrentSelection = (type, id) => {
         if (type === 'filiere') {
-            return id === userFiliere;
+            return id === data.id_filiere;
         }
-        return id === userAnnee;
+        return id === data.id_annee;
     };
 
     const handleSubmit = (e) => {
@@ -36,14 +59,12 @@ export default function YearsSectorsSelecters() {
         // Use Inertia's put method
         put("/configuration/select-filiere-annee/update", {
             preserveScroll: true,
+            preserveState: false, // Allow state to be updated with new data
             onSuccess: () => {
                 toast.success("Selection updated successfully!");
-                // Reset the form to mark it as clean (no changes)
-                reset();
             },
             onError: (errors) => {
-                console.error("Submission error:", errors);
-                toast.error("Failed to update selection");
+                toast.error('error')
             },
         });
     };
@@ -73,6 +94,10 @@ export default function YearsSectorsSelecters() {
                     dark:bg-gray-700 dark:text-gray-100 dark:ring-gray-600
                     disabled:opacity-50 disabled:cursor-not-allowed"
                 >
+                    <option value="all">
+                        {isCurrentSelection('annee', 'all') ? '✓ ' : ''}
+                        Toutes les années
+                    </option>
                     {anneeUniv.map((annee) => (
                         <option key={annee.id_annee} value={annee.id_annee}>
                             {isCurrentSelection('annee', annee.id_annee) ? '✓ ' : ''}
@@ -94,6 +119,10 @@ export default function YearsSectorsSelecters() {
                     dark:bg-gray-700 dark:text-gray-100 dark:ring-gray-600
                     disabled:opacity-50 disabled:cursor-not-allowed"
                 >
+                    <option value="all">
+                        {isCurrentSelection('filiere', 'all') ? '✓ ' : ''}
+                        Toutes les filières
+                    </option>
                     {filieres.map((f) => (
                         <option key={f.id_filiere} value={f.id_filiere}>
                             {isCurrentSelection('filiere', f.id_filiere) ? '✓ ' : ''}

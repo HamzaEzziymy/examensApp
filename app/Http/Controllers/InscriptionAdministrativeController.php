@@ -8,6 +8,7 @@ use App\Models\Etudiant;
 use App\Models\AnneeUniversitaire;
 use App\Models\Niveau;
 use App\Models\Section;
+use App\Models\UserFiliereAnnee;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -20,21 +21,61 @@ class InscriptionAdministrativeController extends Controller
      */
     public function index(Request $request)
     {
-        $inscriptions = InscriptionAdministrative::with([
+        // Get user's selected filiere and year
+        $userFiliereAnnee = auth()->user()->userFiliereAnnees()->first();
+        $selectedFiliere = $userFiliereAnnee ? $userFiliereAnnee->id_filiere : null;
+        $selectedAnnee = $userFiliereAnnee ? $userFiliereAnnee->id_annee : null;
+        
+        // Build query for inscriptions
+        $inscriptionsQuery = InscriptionAdministrative::with([
             'niveau',
             'anneeUniversitaire',
             'etudiant',
             'section.filiere'
-        ])->orderBy('created_at', 'desc')->get();
+        ])->orderBy('created_at', 'desc');
+        
+        // Apply filiere filter if a specific filiere is selected
+        if ($selectedFiliere && $selectedFiliere !== 'all') {
+            $inscriptionsQuery->whereHas('section.filiere', function ($query) use ($selectedFiliere) {
+                $query->where('id_filiere', $selectedFiliere);
+            });
+        }
+        
+        // Apply year filter if a specific year is selected
+        if ($selectedAnnee && $selectedAnnee !== 'all') {
+            $inscriptionsQuery->where('id_annee', $selectedAnnee);
+        }
+        
+        $inscriptions = $inscriptionsQuery->get();
 
-        $students = Etudiant::with('section.filiere')
+        // Filter students based on selected filiere
+        $studentsQuery = Etudiant::with('section.filiere')
             ->orderBy('nom')
-            ->orderBy('prenom')
-            ->get();
+            ->orderBy('prenom');
+        if ($selectedFiliere && $selectedFiliere !== 'all') {
+            $studentsQuery->whereHas('section.filiere', function ($query) use ($selectedFiliere) {
+                $query->where('id_filiere', $selectedFiliere);
+            });
+        }
+        $students = $studentsQuery->get();
 
-        $annees = AnneeUniversitaire::orderBy('annee_univ', 'desc')->get();
+        // Filter years - show all if "all" is selected, otherwise show selected year
+        $anneesQuery = AnneeUniversitaire::orderBy('annee_univ', 'desc');
+        if ($selectedAnnee && $selectedAnnee !== 'all') {
+            $anneesQuery->where('id_annee', $selectedAnnee);
+        }
+        $annees = $anneesQuery->get();
+        
         $niveaux = Niveau::orderBy('ordre')->get();
-        $sections = Section::with('filiere')->get();
+        
+        // Filter sections based on selected filiere
+        $sectionsQuery = Section::with('filiere');
+        if ($selectedFiliere && $selectedFiliere !== 'all') {
+            $sectionsQuery->whereHas('filiere', function ($query) use ($selectedFiliere) {
+                $query->where('id_filiere', $selectedFiliere);
+            });
+        }
+        $sections = $sectionsQuery->get();
 
         return Inertia::render("GestionsEtudiantes/InscriptionsAdministratives/Index", [
             "inscriptions" => $inscriptions,

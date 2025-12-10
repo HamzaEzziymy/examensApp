@@ -19,41 +19,59 @@ class OffreFormationController extends Controller
      */
     public function index()
     {
-        $userAuthId = auth()->user()->id;
-        $filiereAnnee = UserFiliereAnnee::where('user_id', $userAuthId)->first();
-        if($filiereAnnee){
-            $userFiliereId = $filiereAnnee->id_filiere;
-            $userAnneeId = $filiereAnnee->id_annee;
-        }else{
-            $userFiliereId = 0;
-            $userAnneeId = 0;
-        }
+        // Get user's selected filiere and year
+        $userFiliereAnnee = auth()->user()->userFiliereAnnees()->first();
+        $selectedFiliere = $userFiliereAnnee ? $userFiliereAnnee->id_filiere : null;
+        $selectedAnnee = $userFiliereAnnee ? $userFiliereAnnee->id_annee : null;
 
-        $offresFormation = OffreFormation::with([
+        // Build query for offres formation
+        $offresQuery = OffreFormation::with([
             'module.elements',
             'semestre.niveau',
             'section.filiere',
             'anneeUniversitaire',
             'coordinateur'
-        ])
-            ->whereHas('section.filiere', function ($query) use ($userFiliereId) {
-                $query->where('id_filiere', $userFiliereId);
-            })
-            ->whereHas('anneeUniversitaire', function ($query) use ($userAnneeId) {
-                $query->where('id_annee', $userAnneeId);
-            })
-            ->get();
+        ]);
 
-        $sections = Section::with('filiere')->get();
-        // order semestre by code_niveau
+        // Apply filiere filter if a specific filiere is selected (not "all")
+        if ($selectedFiliere && $selectedFiliere !== 'all') {
+            $offresQuery->whereHas('section.filiere', function ($query) use ($selectedFiliere) {
+                $query->where('id_filiere', $selectedFiliere);
+            });
+        }
+
+        // Apply year filter if a specific year is selected (not "all")
+        if ($selectedAnnee && $selectedAnnee !== 'all') {
+            $offresQuery->where('id_annee', $selectedAnnee);
+        }
+
+        $offresFormation = $offresQuery->get();
+
+        // Filter sections based on selected filiere
+        $sectionsQuery = Section::with('filiere');
+        if ($selectedFiliere && $selectedFiliere !== 'all') {
+            $sectionsQuery->whereHas('filiere', function ($query) use ($selectedFiliere) {
+                $query->where('id_filiere', $selectedFiliere);
+            });
+        }
+        $sections = $sectionsQuery->get();
+
+        // Order semestre by code_niveau
         $Semestres = Semestre::with('niveau')->join('niveaux', 'semestres.id_niveau', '=', 'niveaux.id_niveau')
             ->orderBy('niveaux.code_niveau')
             ->orderBy('semestres.ordre')
             ->select('semestres.*')
             ->get();
+            
         $modules = Module::orderBy('nom_module')->get();
         $cordinateurs = Enseignant::orderBy('nom')->get();
-        $anneeUniversitaires = AnneeUniversitaire::orderByDesc('date_debut')->get();
+        
+        // Filter years - show all if "all" is selected, otherwise show selected year
+        $anneesQuery = AnneeUniversitaire::orderByDesc('date_debut');
+        if ($selectedAnnee && $selectedAnnee !== 'all') {
+            $anneesQuery->where('id_annee', $selectedAnnee);
+        }
+        $anneeUniversitaires = $anneesQuery->get();
 
 
         return Inertia::render(

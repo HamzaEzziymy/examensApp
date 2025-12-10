@@ -34,10 +34,25 @@ class HandleInertiaRequests extends Middleware
     public function share(Request $request): array
     {
         if(! empty($request->user())){
-            $user_filiere_annee = UserFiliereAnnee::with('filiere', 'anneeUniv')
+            $user_filiere_annee_raw = UserFiliereAnnee::with('filiere', 'anneeUniv')
                     ->where('user_id', $request->user()->id)
                     ->get()
                     ->first();
+            
+            // Convert to array and handle null values for frontend
+            if ($user_filiere_annee_raw) {
+                $user_filiere_annee = $user_filiere_annee_raw->toArray();
+                
+                // Convert null values to "all" for frontend
+                if ($user_filiere_annee['id_filiere'] === null) {
+                    $user_filiere_annee['id_filiere'] = 'all';
+                }
+                if ($user_filiere_annee['id_annee'] === null) {
+                    $user_filiere_annee['id_annee'] = 'all';
+                }
+            } else {
+                $user_filiere_annee = null;
+            }
         }else{
             $user_filiere_annee = null;
         }
