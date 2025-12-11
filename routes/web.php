@@ -191,6 +191,7 @@ Route::prefix('correction')->name('correction.')->group(function () {
         'resultats-elements' => ResultatElementController::class,
         'resultats-modules' => ResultatModuleController::class,
     ]);
+    Route::post('notes/import', [NoteController::class, 'import'])->name('notes.import');
 });
 
 /* =========================
