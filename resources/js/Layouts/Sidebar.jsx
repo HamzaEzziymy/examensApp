@@ -5,15 +5,25 @@ import { FaHome, FaPaperclip, FaSchool, FaTasks, FaUser } from 'react-icons/fa';
 import { IoDocumentsSharp } from "react-icons/io5";
 import { MdAccountTree, MdFestival } from "react-icons/md";
 import { PiStudent } from "react-icons/pi";
-import { CalendarDays } from 'lucide-react';
+import { CalendarDays, Building } from 'lucide-react';
 
 
 function Sidebar({ sidebarOpen, setSidebarOpen, mobileMenuOpen, setMobileMenuOpen }) {
 
     // Navigation items
     const navigation = [
-        { name: 'Dashboard', icon: <FaHome size={20} />, href: route('dashboard'), current: route().current('dashboard') },
-        { name: 'Documents', icon: <IoDocumentsSharp size={20} />, href: route('proces-v'), current: route().current('*.documents.*') },
+        {
+            name: 'Dashboard',
+            icon: <FaHome size={20} />,
+            href: route('dashboard'),
+            current: route().current('dashboard')
+        },
+        {
+            name: 'Documents',
+            icon: <IoDocumentsSharp size={20} />,
+            href: route('proces-v'),
+            current: route().current('*.documents.*')
+        },
         {
             name: 'Structure académique',
             icon: <MdAccountTree size={20} />,
@@ -32,14 +42,18 @@ function Sidebar({ sidebarOpen, setSidebarOpen, mobileMenuOpen, setMobileMenuOpe
             href: route('examens.sessions.index'),
             current: route().current('examens.*') || route().current('surveillance.repartition-etudiants.*')
         },
-        { name: 'Reports', icon: <FaPaperclip size={20} />, href: '#', current: false },
-        { name: 'Profile', icon: <FaUser size={20} />, href: route('profile.edit'), current: route().current('profile.edit') }
+        {
+            name: 'Profile',
+            icon: <FaUser size={20} />,
+            href: route('profile.edit'),
+            current: route().current('profile.edit')
+        }
     ];
 
     const configRoutes = [
         { name: 'Faculté', icon: <FaSchool size={20} />, href: route('configuration.faculte.index'), current: route().current('configuration.faculte.index') },
-        { name: 'Années Universitaires', icon: <CalendarDays size={20} />, href: route("configuration.annees-universitaires.index"), current: route().current('configuration.annees-universitaires.index') }
-
+        { name: 'Années Universitaires', icon: <CalendarDays size={20} />, href: route("configuration.annees-universitaires.index"), current: route().current('configuration.annees-universitaires.index') },
+        { name: 'Salles', icon: <Building size={20} />, href: route('configuration.salles.index'), current: route().current('configuration.salles.*') }
     ]
 
     return (

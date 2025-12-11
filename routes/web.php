@@ -95,7 +95,12 @@ Route::withoutMiddleware([MiddlewareVerifyCsrfToken::class])->group(function () 
             'select-filiere-annee' => SelectFiliereAnneeController::class,
             'faculte' => FaculteController::class,
             'annees-universitaires' => AnneeUniversitaireController::class,
+            'salles' => SalleController::class,
         ]);
+        
+        // Bulk operations for salles
+        Route::post('salles/bulk-destroy', [SalleController::class, 'bulkDestroy'])
+            ->name('salles.bulk-destroy');
     });
 });
 
@@ -157,7 +162,6 @@ Route::prefix('inscriptions')->name('inscriptions.')->group(function () {
 |=========================*/
 Route::prefix('examens')->name('examens.')->group(function () {
     Route::resources([
-        'salles' => SalleController::class,
         'sessions' => SessionExamenController::class, // sessions_examen
         'examens' => ExamenController::class,
         'sujets' => SujetExamenController::class,

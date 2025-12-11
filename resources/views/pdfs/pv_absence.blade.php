@@ -186,7 +186,15 @@
         </div>
         
         <h1>PROCÈS VERBAL</h1>
-        <h2 class="niveau">{{ $data["niveau"] }}</h2>
+        <h2 class="niveau">
+            {{ $data["niveau"] }}
+            @if(isset($data["filiere"]) && $data["filiere"])
+                {{ $data["filiere"] }}
+            @endif
+            @if(isset($data["section"]) && $data["section"])
+                {{ $data["section"] }}
+            @endif
+        </h2>
 
         <table class="info-table">
             <tr>

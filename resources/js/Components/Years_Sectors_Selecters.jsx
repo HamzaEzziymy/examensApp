@@ -83,6 +83,7 @@ export default function YearsSectorsSelecters() {
     return (
         <div className="flex items-center gap-x-3 lg:gap-x-4">
             {/* Academic Year Selector */}
+            <ToastContainer position="top-right" autoClose={3000} />
             <div className="relative">
                 <select
                     value={data.id_annee}

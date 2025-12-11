@@ -31,7 +31,8 @@ class InscriptionPedagogiqueController extends Controller
             'inscriptionAdministrative.anneeUniversitaire',
             'inscriptionAdministrative.section.filiere',
             'offreFormation.module',
-            'offreFormation.semestre.niveau'
+            'offreFormation.semestre.niveau',
+            'offreFormation.section.filiere'
         ])->orderBy('created_at', 'desc');
         
         // Apply filiere filter if a specific filiere is selected
@@ -53,7 +54,8 @@ class InscriptionPedagogiqueController extends Controller
         // Filter supporting data based on selections
         $offres_formation = OffreFormation::with([
             'module', 
-            'semestre.niveau'
+            'semestre.niveau',
+            'section.filiere'
         ])->get();
         
         // Filter administrative inscriptions

@@ -5,7 +5,7 @@ import Header from '../Header'
 import CreateForm from './CreateForm'
 import DisplayDocuments from './DisplayDocuments'
 
-function Index({documents}) {
+function Index({documents, sessions, niveaux, salles, modules, filieres, sections}) {
   
   return (
     <AuthenticatedLayout
@@ -18,7 +18,15 @@ function Index({documents}) {
       <Head title="Documents" />
       <Header />
       <div className='flex flex-col lg:flex-row justify-between gap-4 lg:gap-6 p-4'>
-        <CreateForm className='w-full rounded-lg shadow-sm' />
+        <CreateForm 
+          className='w-full rounded-lg shadow-sm' 
+          sessions={sessions}
+          niveaux={niveaux}
+          salles={salles}
+          modules={modules}
+          filieres={filieres}
+          sections={sections}
+        />
         <DisplayDocuments documents={documents} className='w-full rounded-lg shadow-sm' />
       </div>
 

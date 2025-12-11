@@ -1,15 +1,22 @@
 import React from 'react';
 import { useForm } from '@inertiajs/react';
 
-export default function CreateForm() {
+export default function CreateForm({ sessions = [], niveaux = [], salles = [], modules = [], filieres = [], sections = [] }) {
     const { data, setData, post, processing, errors } = useForm({
         nomDoc: '',
         descripDoc: '',
         session: '',
         niveau: '',
+        filiere: '',
+        section: '',
         salle: '',
         module: '',
     });
+
+    // Filter sections based on selected filiere
+    const filteredSections = sections.filter(section => 
+        !data.filiere || section.id_filiere == data.filiere
+    );
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -67,8 +74,11 @@ export default function CreateForm() {
                         required
                     >
                         <option value="">Select Session</option>
-                        <option value="2024/2025">2024/2025</option>
-                        <option value="2025/2026">2025/2026</option>
+                        {sessions.map((session) => (
+                            <option key={session.id_session_examen} value={session.nom_session}>
+                                {session.nom_session}
+                            </option>
+                        ))}
                     </select>
                     {errors.session && <p className="text-red-500 text-sm mt-1">{errors.session}</p>}
                 </div>
@@ -85,12 +95,65 @@ export default function CreateForm() {
                         required
                     >
                         <option value="">Select Niveau</option>
-                        <option value="1ère année">1ère année</option>
-                        <option value="2ème année medecine dentaire">2ème année medecine dentaire</option>
-                        <option value="3ème année medecine dentaire">3ème année medecine dentaire</option>
-                        <option value="3ème année">3ème année</option>
+                        {niveaux.map((niveau) => (
+                            <option key={niveau.id_niveau} value={niveau.nom_niveau}>
+                                {niveau.nom_niveau}
+                            </option>
+                        ))}
                     </select>
                     {errors.niveau && <p className="text-red-500 text-sm mt-1">{errors.niveau}</p>}
+                </div>
+
+                {/* FILIERE */}
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Filière
+                    </label>
+                    <select
+                        value={data.filiere}
+                        onChange={(e) => {
+                            setData('filiere', e.target.value);
+                            // Reset section when filiere changes
+                            if (data.section) {
+                                setData('section', '');
+                            }
+                        }}
+                        className="w-full border rounded-lg p-2 dark:bg-gray-700 dark:text-white"
+                        required
+                    >
+                        <option value="">Select Filière</option>
+                        {filieres.map((filiere) => (
+                            <option key={filiere.id_filiere} value={filiere.id_filiere}>
+                                {filiere.nom_filiere}
+                            </option>
+                        ))}
+                    </select>
+                    {errors.filiere && <p className="text-red-500 text-sm mt-1">{errors.filiere}</p>}
+                </div>
+
+                {/* SECTION */}
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Section
+                    </label>
+                    <select
+                        value={data.section}
+                        onChange={(e) => setData('section', e.target.value)}
+                        className="w-full border rounded-lg p-2 dark:bg-gray-700 dark:text-white"
+                        required
+                        disabled={!data.filiere}
+                    >
+                        <option value="">Select Section</option>
+                        {filteredSections.map((section) => (
+                            <option key={section.id_section} value={section.nom_section}>
+                                {section.nom_section}
+                            </option>
+                        ))}
+                    </select>
+                    {errors.section && <p className="text-red-500 text-sm mt-1">{errors.section}</p>}
+                    {!data.filiere && (
+                        <p className="text-gray-500 text-sm mt-1">Veuillez d'abord sélectionner une filière</p>
+                    )}
                 </div>
 
                 {/* SALLE */}
@@ -105,10 +168,11 @@ export default function CreateForm() {
                         required
                     >
                         <option value="">Select Salle</option>
-                        <option value="Salle A">Salle A</option>
-                        <option value="Salle B">Salle B</option>
-                        <option value=" "> </option>
-                        <option value="centre d'examen CDIM(2)">centre d'examen CDIM(2)</option>
+                        {salles.map((salle) => (
+                            <option key={salle.id_salle} value={`${salle.code_salle} - ${salle.nom_salle}`}>
+                                {salle.code_salle} - {salle.nom_salle}
+                            </option>
+                        ))}
                     </select>
                     {errors.salle && <p className="text-red-500 text-sm mt-1">{errors.salle}</p>}
                 </div>
@@ -125,12 +189,11 @@ export default function CreateForm() {
                         required
                     >
                         <option value="">Select Module</option>
-                        <option value="Mathématiques">Mathématiques</option>
-                        <option value="Informatique">Informatique</option>
-                        <option value="Physique">Physique</option>
-                        <option value="Langues étrangères">Langue étrangère</option>
-                        <option value="APP Endodontie">APP Endodontie</option>
-
+                        {modules.map((module) => (
+                            <option key={module.id_module} value={module.nom_module}>
+                                {module.nom_module}
+                            </option>
+                        ))}
                     </select>
                     {errors.module && <p className="text-red-500 text-sm mt-1">{errors.module}</p>}
                 </div>

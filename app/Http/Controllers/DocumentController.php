@@ -11,13 +11,43 @@ class DocumentController extends Controller
 {
     public function indexPv()
     {
-        // fetch dis by date desc created_at
-
+        // fetch documents by date desc created_at
         $documents = Document::orderBy('created_at', 'desc')->get();
+
+        // Fetch real data for the form
+        $sessions = \App\Models\SessionExamen::select('id_session_examen', 'nom_session')
+            ->orderBy('nom_session')
+            ->get();
+            
+        $niveaux = \App\Models\Niveau::select('id_niveau', 'nom_niveau')
+            ->orderBy('nom_niveau')
+            ->get();
+            
+        $salles = \App\Models\Salle::select('id_salle', 'code_salle', 'nom_salle')
+            ->where('est_disponible', true)
+            ->orderBy('code_salle')
+            ->get();
+            
+        $modules = \App\Models\Module::select('id_module', 'nom_module')
+            ->orderBy('nom_module')
+            ->get();
+            
+        $filieres = \App\Models\Filiere::select('id_filiere', 'nom_filiere')
+            ->orderBy('nom_filiere')
+            ->get();
+            
+        $sections = \App\Models\Section::select('id_section', 'nom_section', 'id_filiere')
+            ->orderBy('nom_section')
+            ->get();
 
         return Inertia::render('Documents/Pvs/Index', [
             'documents' => $documents,
-            
+            'sessions' => $sessions,
+            'niveaux' => $niveaux,
+            'salles' => $salles,
+            'modules' => $modules,
+            'filieres' => $filieres,
+            'sections' => $sections,
         ]);
     }
 
@@ -31,7 +61,16 @@ class DocumentController extends Controller
             File::makeDirectory($publicStoragePvPath, 0755, true);
         }
 
-        Pdf::view('pdfs.pv_absence', ['data' => $request->all()])
+        // Prepare data for PDF - convert IDs to names
+        $pdfData = $request->all();
+        
+        // Convert filiere ID to name
+        if (!empty($pdfData['filiere'])) {
+            $filiere = \App\Models\Filiere::find($pdfData['filiere']);
+            $pdfData['filiere'] = $filiere ? $filiere->nom_filiere : '';
+        }
+
+        Pdf::view('pdfs.pv_absence', ['data' => $pdfData])
             ->format('a4')
             ->save('storage/pvs_absence/'.$now.'pv_absence.pdf');
         

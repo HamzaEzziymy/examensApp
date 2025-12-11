@@ -12,9 +12,16 @@ const InscriptionPedagogiqueDataTable = ({
   filters: initialFilters = {}
 }) => {
 
+
   const [inscriptions, setInscriptions] = useState(initialInscriptions.data || initialInscriptions);
   const [searchTerm, setSearchTerm] = useState(initialFilters.search || '');
   const [showAddModal, setShowAddModal] = useState(false);
+
+  // Debug: Check if section/filiere data is loaded
+  console.log('Inscriptions pedagogiques:', initialInscriptions);
+  if (initialInscriptions && initialInscriptions.length > 0) {
+    console.log('First inscription offre_formation:', initialInscriptions[0]?.offre_formation);
+  }
   const [showImportModal, setShowImportModal] = useState(false);
   const [currentPage, setCurrentPage] = useState(initialInscriptions.current_page || 1);
   const [itemsPerPage, setItemsPerPage] = useState(25);
@@ -116,8 +123,7 @@ const InscriptionPedagogiqueDataTable = ({
   // Submit single inscription
   const handleSubmit = (e) => {
     e.preventDefault();
-    
-    console.log('Form data being submitted:', inscriptionForm.data);
+
     
     // Basic validation
     if (!inscriptionForm.data.id_inscription_admin || !inscriptionForm.data.id_offre) {
@@ -142,7 +148,6 @@ const InscriptionPedagogiqueDataTable = ({
         });
       },
       onError: (errors) => {
-        console.log('Form submission errors:', errors);
         let errorMessage = 'Veuillez corriger les erreurs dans le formulaire';
         
         if (errors.error) {
@@ -191,7 +196,6 @@ const InscriptionPedagogiqueDataTable = ({
         });
       },
       onError: (errors) => {
-        console.log('Update errors:', errors);
         let errorMessage = 'Erreur lors de la mise à jour';
         
         if (errors.error) {
@@ -352,8 +356,6 @@ const InscriptionPedagogiqueDataTable = ({
         credits_acquis: parseInt(importCredits) || 0
       };
     });
-
-    console.log('Sending inscriptions to backend:', inscriptionsToImport);
     
     // Validate data before sending
     const invalidData = inscriptionsToImport.find(item => 
@@ -641,11 +643,37 @@ const InscriptionPedagogiqueDataTable = ({
                           </div>
                         </td>
                         <td className="px-6 py-4">
-                          <div className="text-sm text-gray-900 dark:text-gray-100">
-                            {inscription.offre_formation?.module?.nom_module ? 
-                              `${inscription.offre_formation.module.nom_module} - ${inscription.offre_formation.semestre?.niveau?.nom_niveau || ''}(${inscription.offre_formation.semestre?.nom_semestre || ''})` 
-                              : inscription.offre_formation?.nom_affiche || 'N/A'
-                            }
+                          <div className="space-y-1">
+                            {/* Module and Semester */}
+                            <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                              {inscription.offre_formation?.module?.nom_module || inscription.offre_formation?.nom_affiche || 'Module non défini'}
+                            </div>
+                            
+                            {/* Level and Semester */}
+                            {inscription.offre_formation?.semestre && (
+                              <div className="text-xs font-medium text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-2 py-1 rounded-md inline-block">
+                                {inscription.offre_formation.semestre.niveau?.nom_niveau || 'N/A'} - {inscription.offre_formation.semestre.nom_semestre || 'N/A'}
+                              </div>
+                            )}
+                            
+                            {/* Section and Filiere */}
+                            <div className="flex flex-col space-y-0.5">
+                              {inscription.offre_formation?.section && (
+                                <div className="text-xs text-gray-600 dark:text-gray-400 flex items-center">
+                                  <span className="inline-block w-2 h-2 bg-green-400 rounded-full mr-2"></span>
+                                  <span className="font-medium">Section:</span>
+                                  <span className="ml-1">{inscription.offre_formation.section.nom_section}</span>
+                                </div>
+                              )}
+                              
+                              {inscription.offre_formation?.section?.filiere && (
+                                <div className="text-xs text-gray-600 dark:text-gray-400 flex items-center">
+                                  <span className="inline-block w-2 h-2 bg-purple-400 rounded-full mr-2"></span>
+                                  <span className="font-medium">Filière:</span>
+                                  <span className="ml-1">{inscription.offre_formation.section.filiere.nom_filiere}</span>
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </td>
                         <td className="px-6 py-4">
@@ -840,7 +868,7 @@ const InscriptionPedagogiqueDataTable = ({
                       <option value="">-- Sélectionner une offre --</option>
                       {offres_formation.map(offre => (
                         <option key={offre.id_offre} value={offre.id_offre}>
-                          {offre.module?.nom_module} - {offre.semestre?.niveau?.nom_niveau}({offre.semestre?.nom_semestre})
+                          {offre.module?.nom_module} - {offre.semestre?.niveau?.nom_niveau}({offre.semestre?.nom_semestre}) - {offre.section?.filiere?.nom_filiere} ({offre.section?.nom_section})
                         </option>
                       ))}
                     </select>
@@ -952,7 +980,7 @@ const InscriptionPedagogiqueDataTable = ({
                       <option value="">-- Sélectionner une offre --</option>
                       {offres_formation.map(offre => (
                         <option key={offre.id_offre} value={offre.id_offre}>
-                          {offre.module?.nom_module} - {offre.semestre?.niveau?.nom_niveau}({offre.semestre?.nom_semestre})
+                          {offre.module?.nom_module} - {offre.semestre?.niveau?.nom_niveau}({offre.semestre?.nom_semestre}) - {offre.section?.filiere?.nom_filiere} ({offre.section?.nom_section})
                         </option>
                       ))}
                     </select>
@@ -1055,7 +1083,7 @@ const InscriptionPedagogiqueDataTable = ({
                       <option value="">-- Sélectionner une offre --</option>
                       {offres_formation.map(offre => (
                         <option key={offre.id_offre} value={offre.id_offre}>
-                          {offre.module?.nom_module} - {offre.semestre?.niveau?.nom_niveau}({offre.semestre?.nom_semestre})
+                          {offre.module?.nom_module} - {offre.semestre?.niveau?.nom_niveau}({offre.semestre?.nom_semestre}) - {offre.section?.filiere?.nom_filiere} ({offre.section?.nom_section})
                         </option>
                       ))}
                     </select>
