@@ -22,7 +22,6 @@ export default function Display({
     const [itemsPerPage, setItemsPerPage] = useState(10);
     const [filteredOffres, setFilteredOffres] = useState(initialOffres);
     const [filters, setFilters] = useState({
-        filiere: '',
         semestre: '',
         module: '',
         coordinateur: ''
@@ -38,11 +37,7 @@ export default function Display({
         nom_affiche: ''
     });
 
-    // Extract unique values for filters from offresFormation
-    const filieres = [...new Map(initialOffres
-        .filter(offre => offre.section?.filiere)
-        .map(offre => [offre.section.filiere.id_filiere, offre.section.filiere])
-    ).values()];
+    // Remove filiere filter - no longer needed
 
     // Filter offres based on search term and filters
     useEffect(() => {
@@ -57,12 +52,11 @@ export default function Display({
                 offre.coordinateur?.prenom?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                 offre.nom_affiche?.toLowerCase().includes(searchTerm.toLowerCase());
 
-            const matchesFiliere = !filters.filiere || offre.section?.id_filiere?.toString() === filters.filiere;
             const matchesSemestre = !filters.semestre || offre.id_semestre?.toString() === filters.semestre;
             const matchesModule = !filters.module || offre.id_module?.toString() === filters.module;
             const matchesCoordinateur = !filters.coordinateur || offre.id_coordinateur?.toString() === filters.coordinateur;
 
-            return matchesSearch && matchesFiliere && matchesSemestre && matchesModule && matchesCoordinateur;
+            return matchesSearch && matchesSemestre && matchesModule && matchesCoordinateur;
         });
         
         setFilteredOffres(filtered);
@@ -195,7 +189,6 @@ export default function Display({
 
     const clearFilters = () => {
         setFilters({
-            filiere: '',
             semestre: '',
             module: '',
             coordinateur: ''
@@ -260,23 +253,7 @@ export default function Display({
             </div>
 
             {/* Filters */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-6 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                <div>
-                    <label className="block text-sm font-medium mb-1">Filière</label>
-                    <select
-                        value={filters.filiere}
-                        onChange={(e) => setFilters(prev => ({ ...prev, filiere: e.target.value }))}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-sm"
-                    >
-                        <option value="">Toutes les filières</option>
-                        {filieres.map((filiere) => (
-                            <option key={filiere.id_filiere} value={filiere.id_filiere}>
-                                {filiere.nom_filiere}
-                            </option>
-                        ))}
-                    </select>
-                </div>
-
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
                 <div>
                     <label className="block text-sm font-medium mb-1">Semestre</label>
                     <select

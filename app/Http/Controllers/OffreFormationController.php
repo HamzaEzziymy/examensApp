@@ -19,12 +19,11 @@ class OffreFormationController extends Controller
      */
     public function index()
     {
-        // Get user's selected filiere and year
+        // Get user's selected year (remove filiere filtering)
         $userFiliereAnnee = auth()->user()->userFiliereAnnees()->first();
-        $selectedFiliere = $userFiliereAnnee ? $userFiliereAnnee->id_filiere : null;
         $selectedAnnee = $userFiliereAnnee ? $userFiliereAnnee->id_annee : null;
 
-        // Build query for offres formation
+        // Build query for offres formation (no filiere filter)
         $offresQuery = OffreFormation::with([
             'module.elements',
             'semestre.niveau',
@@ -33,13 +32,6 @@ class OffreFormationController extends Controller
             'coordinateur'
         ]);
 
-        // Apply filiere filter if a specific filiere is selected (not "all")
-        if ($selectedFiliere && $selectedFiliere !== 'all') {
-            $offresQuery->whereHas('section.filiere', function ($query) use ($selectedFiliere) {
-                $query->where('id_filiere', $selectedFiliere);
-            });
-        }
-
         // Apply year filter if a specific year is selected (not "all")
         if ($selectedAnnee && $selectedAnnee !== 'all') {
             $offresQuery->where('id_annee', $selectedAnnee);
@@ -47,14 +39,8 @@ class OffreFormationController extends Controller
 
         $offresFormation = $offresQuery->get();
 
-        // Filter sections based on selected filiere
-        $sectionsQuery = Section::with('filiere');
-        if ($selectedFiliere && $selectedFiliere !== 'all') {
-            $sectionsQuery->whereHas('filiere', function ($query) use ($selectedFiliere) {
-                $query->where('id_filiere', $selectedFiliere);
-            });
-        }
-        $sections = $sectionsQuery->get();
+        // Get all sections (no filiere filter)
+        $sections = Section::with('filiere')->get();
 
         // Order semestre by code_niveau
         $Semestres = Semestre::with('niveau')->join('niveaux', 'semestres.id_niveau', '=', 'niveaux.id_niveau')
@@ -66,12 +52,8 @@ class OffreFormationController extends Controller
         $modules = Module::orderBy('nom_module')->get();
         $cordinateurs = Enseignant::orderBy('nom')->get();
         
-        // Filter years - show all if "all" is selected, otherwise show selected year
-        $anneesQuery = AnneeUniversitaire::orderByDesc('date_debut');
-        if ($selectedAnnee && $selectedAnnee !== 'all') {
-            $anneesQuery->where('id_annee', $selectedAnnee);
-        }
-        $anneeUniversitaires = $anneesQuery->get();
+        // Get all years (no filtering)
+        $anneeUniversitaires = AnneeUniversitaire::orderByDesc('date_debut')->get();
 
 
         return Inertia::render(

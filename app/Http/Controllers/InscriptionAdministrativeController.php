@@ -11,6 +11,7 @@ use App\Models\Section;
 use App\Models\UserFiliereAnnee;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
@@ -119,7 +120,10 @@ class InscriptionAdministrativeController extends Controller
             ]);
         }
 
-        InscriptionAdministrative::create($validated);
+        $inscriptionAdmin = InscriptionAdministrative::create($validated);
+
+        // Automatically create pedagogical inscriptions for all relevant course offerings
+        $this->createAutomaticPedagogicalInscriptions($inscriptionAdmin);
 
         return redirect()->route('inscriptions.administratives.index')
             ->with('success', 'Inscription administrative créée avec succès.');
@@ -154,7 +158,9 @@ class InscriptionAdministrativeController extends Controller
                     ->exists();
 
                 if (!$exists) {
-                    InscriptionAdministrative::create($inscriptionData);
+                    $inscriptionAdmin = InscriptionAdministrative::create($inscriptionData);
+                    // Automatically create pedagogical inscriptions
+                    $this->createAutomaticPedagogicalInscriptions($inscriptionAdmin);
                     $created++;
                 } else {
                     $skipped++;
@@ -269,5 +275,53 @@ class InscriptionAdministrativeController extends Controller
 
         return redirect()->route('inscriptions.administratives.index')
             ->with('success', "Suppression terminée: {$deleted} inscriptions supprimées, {$skipped} ignorées (inscriptions pédagogiques associées).");
+    }
+
+    /**
+     * Automatically create pedagogical inscriptions for all course offerings
+     * that match the student's level
+     */
+    private function createAutomaticPedagogicalInscriptions(InscriptionAdministrative $inscriptionAdmin)
+    {
+        try {
+            // Get all course offerings (offre_formation) that match the student's level
+            $offresFormation = \App\Models\OffreFormation::whereHas('semestre.niveau', function ($query) use ($inscriptionAdmin) {
+                $query->where('id_niveau', $inscriptionAdmin->id_niveau);
+            })->get();
+
+            $created = 0;
+            foreach ($offresFormation as $offre) {
+                // Check if pedagogical inscription already exists
+                $exists = \App\Models\InscriptionPedagogique::where('id_inscription_admin', $inscriptionAdmin->id_inscription_admin)
+                    ->where('id_offre', $offre->id_offre)
+                    ->exists();
+
+                if (!$exists) {
+                    \App\Models\InscriptionPedagogique::create([
+                        'id_inscription_admin' => $inscriptionAdmin->id_inscription_admin,
+                        'id_offre' => $offre->id_offre,
+                        'type_inscription' => 'Normal',
+                        'credits_acquis' => 0,
+                    ]);
+                    $created++;
+                }
+            }
+
+            // Log the automatic creation for debugging
+            \Log::info("Automatic pedagogical inscriptions created", [
+                'inscription_admin_id' => $inscriptionAdmin->id_inscription_admin,
+                'student_id' => $inscriptionAdmin->id_etudiant,
+                'level_id' => $inscriptionAdmin->id_niveau,
+                'created_count' => $created,
+                'total_offers' => $offresFormation->count()
+            ]);
+
+        } catch (\Exception $e) {
+            // Log error but don't fail the administrative inscription
+            \Log::error("Failed to create automatic pedagogical inscriptions", [
+                'inscription_admin_id' => $inscriptionAdmin->id_inscription_admin,
+                'error' => $e->getMessage()
+            ]);
+        }
     }
 }
