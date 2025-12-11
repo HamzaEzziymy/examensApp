@@ -3,7 +3,7 @@ import { Link, usePage } from '@inertiajs/react';
 import ApplicationLogo from '@/Components/ApplicationLogo';
 import { FaHome, FaPaperclip, FaSchool, FaTasks, FaUser } from 'react-icons/fa';
 import { IoDocumentsSharp } from "react-icons/io5";
-import { MdAccountTree, MdFestival } from "react-icons/md";
+import { MdAccountTree, MdFestival, MdOutlineGrading } from "react-icons/md";
 import { PiStudent } from "react-icons/pi";
 import { CalendarDays, Building } from 'lucide-react';
 
@@ -43,11 +43,21 @@ function Sidebar({ sidebarOpen, setSidebarOpen, mobileMenuOpen, setMobileMenuOpe
             current: route().current('examens.*') || route().current('surveillance.repartition-etudiants.*')
         },
         {
+<<<<<<< HEAD
             name: 'Profile',
             icon: <FaUser size={20} />,
             href: route('profile.edit'),
             current: route().current('profile.edit')
         }
+=======
+            name: 'Correction & notes',
+            icon: <MdOutlineGrading size={20} />,
+            href: route('correction.notes.index'),
+            current: route().current('correction.*')
+        },
+        { name: 'Reports', icon: <FaPaperclip size={20} />, href: '#', current: false },
+        { name: 'Profile', icon: <FaUser size={20} />, href: route('profile.edit'), current: route().current('profile.edit') }
+>>>>>>> 0d89c46e6631ca8f5218e8176308b23185079857
     ];
 
     const configRoutes = [
