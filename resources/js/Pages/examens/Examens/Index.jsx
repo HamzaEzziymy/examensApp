@@ -18,9 +18,9 @@ export default function ExamensIndex({ examens, sessions, modules, salles, statu
 
             <ExamHeader />
 
-            <div className="mb-4 flex items-center justify-between gap-3">
-                <div className="text-sm text-gray-500 dark:text-gray-400">Basculez entre la liste et le calendrier.</div>
-                <div className="flex items-center gap-3">
+            <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-gray-200 bg-white/80 p-3 shadow-sm dark:border-gray-700 dark:bg-gray-900/70">
+                <div className="text-sm text-gray-600 dark:text-gray-300">Basculez entre la liste et le calendrier.</div>
+                <div className="flex flex-wrap items-center gap-3">
                     <button
                         type="button"
                         onClick={() => setFormOpen(true)}
@@ -28,14 +28,14 @@ export default function ExamensIndex({ examens, sessions, modules, salles, statu
                     >
                         Planifier un examen
                     </button>
-                    <div className="inline-flex rounded-lg border border-indigo-200 p-1 dark:border-indigo-500/40">
+                    <div className="inline-flex rounded-lg border border-indigo-200 bg-white/60 p-1 shadow-sm dark:border-indigo-500/40 dark:bg-indigo-900/40">
                         <button
                             type="button"
                             onClick={() => setView('list')}
                             className={`rounded-md px-3 py-1.5 text-sm font-semibold transition ${
                                 view === 'list'
                                     ? 'bg-indigo-600 text-white shadow'
-                                    : 'text-indigo-700 hover:bg-indigo-50 dark:text-indigo-200 dark:hover:bg-indigo-500/10'
+                                    : 'text-indigo-700 hover:bg-indigo-50 dark:text-indigo-100 dark:hover:bg-indigo-800/40'
                             }`}
                         >
                             Vue liste
@@ -46,7 +46,7 @@ export default function ExamensIndex({ examens, sessions, modules, salles, statu
                             className={`rounded-md px-3 py-1.5 text-sm font-semibold transition ${
                                 view === 'calendar'
                                     ? 'bg-indigo-600 text-white shadow'
-                                    : 'text-indigo-700 hover:bg-indigo-50 dark:text-indigo-200 dark:hover:bg-indigo-500/10'
+                                    : 'text-indigo-700 hover:bg-indigo-50 dark:text-indigo-100 dark:hover:bg-indigo-800/40'
                             }`}
                         >
                             Calendrier

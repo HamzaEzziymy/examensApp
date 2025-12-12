@@ -264,7 +264,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
 
             <ExamHeader />
 
-            <div className="mb-6 grid gap-4 rounded-xl bg-white p-4 shadow dark:bg-gray-800 md:grid-cols-3">
+            <div className="mb-6 grid gap-4 rounded-xl border border-gray-200 bg-white/90 p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900 md:grid-cols-3">
                 <div className="md:col-span-2 space-y-3">
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Selectionnez un examen</label>
@@ -282,7 +282,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                         </select>
                     </div>
                 </div>
-                <div className="rounded-lg bg-gray-50 p-4 text-sm text-gray-700 dark:bg-gray-900/40 dark:text-gray-200">
+                <div className="rounded-lg bg-gray-50 p-4 text-sm text-gray-700 dark:bg-gray-800/60 dark:text-gray-200">
                     {selectedExamen ? (
                         <>
                             <div className="font-semibold">{selectedExamen.module?.nom_module}</div>
@@ -374,7 +374,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
 
             <div className="grid gap-6 lg:grid-cols-3">
                 <div className="lg:col-span-1">
-                    <div className="rounded-xl bg-white p-5 shadow dark:bg-gray-800">
+                    <div className="rounded-xl border border-gray-200 bg-white/90 p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
                         <div className="mb-4 flex items-center justify-between">
                             <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">
                                 {editingId ? 'Modifier la répartition' : 'Nouvelle répartition'}
@@ -502,7 +502,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                 </div>
 
                 <div className="lg:col-span-2">
-                    <div className="rounded-xl bg-white p-6 shadow dark:bg-gray-800">
+                    <div className="rounded-xl border border-gray-200 bg-white/90 p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900">
                         <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                             <div>
                                 <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Étudiants affectés</h3>
@@ -558,17 +558,17 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                                     {repartition.inscription_pedagogique?.etudiant?.nom}{' '}
                                                     {repartition.inscription_pedagogique?.etudiant?.prenom}
                                                 </div>
-                                                <div className="text-xs text-gray-500">
+                                                <div className="text-xs text-gray-500 dark:text-gray-400">
                                                     {repartition.inscription_pedagogique?.etudiant?.cne}
                                                 </div>
                                             </td>
                                             <td className="px-4 py-3">
                                                 <div>Grille #{repartition.code_grille}</div>
-                                                <div className="text-xs text-gray-500">Place {repartition.numero_place ?? '—'}</div>
+                                                <div className="text-xs text-gray-500 dark:text-gray-400">Place {repartition.numero_place ?? '-'}</div>
                                             </td>
                                             <td className="px-4 py-3">
-                                                <div className="font-medium">{repartition.code_anonymat ?? '—'}</div>
-                                                <div className="text-xs text-gray-500">
+                                                <div className="font-medium">{repartition.code_anonymat ?? '-'}</div>
+                                                <div className="text-xs text-gray-500 dark:text-gray-400">
                                                     {formatTime(repartition.heure_arrivee)} → {formatTime(repartition.heure_sortie)}
                                                 </div>
                                             </td>
@@ -625,8 +625,6 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         </AuthenticatedLayout>
     );
 }
-
-
 
 
 

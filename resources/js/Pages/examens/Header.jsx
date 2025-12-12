@@ -24,7 +24,7 @@ const navigation = [
 
 export default function ExamHeader() {
     return (
-        <header className="mb-6 rounded-xl bg-white p-4 shadow dark:bg-gray-800">
+        <header className="mb-6 rounded-xl border border-gray-200 bg-white/90 p-4 shadow-sm backdrop-blur dark:border-gray-700 dark:bg-gray-900/80">
             <nav className="flex flex-wrap gap-3" aria-label="Exam navigation">
                 {navigation.map((item) => (
                     <Link

@@ -151,7 +151,7 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
     const searchActive = searchTerm.trim().length > 0;
 
     return (
-        <div className="rounded-xl bg-white p-6 shadow dark:bg-gray-800">
+        <div className="rounded-xl border border-gray-200 bg-white/90 p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900">
             <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
                     <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Examens programmés</h2>
