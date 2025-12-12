@@ -36,8 +36,9 @@ class ResultatModuleController extends Controller
 
         $moduleResults = ResultatModule::with([
                 'module:id_module,nom_module,code_module',
-                'inscriptionPedagogique:id_inscription_pedagogique,id_etudiant,id_module',
-                'inscriptionPedagogique.etudiant:id_etudiant,nom,prenom,cne',
+                'inscriptionPedagogique:id_inscription_pedagogique,id_inscription_admin,id_offre',
+                'inscriptionPedagogique.inscriptionAdministrative:id_inscription_admin,id_etudiant',
+                'inscriptionPedagogique.inscriptionAdministrative.etudiant:id_etudiant,nom,prenom,cne',
             ])
             ->when($moduleId, fn ($query) => $query->where('id_module', $moduleId))
             ->orderByDesc('id_resultat_module')
@@ -54,8 +55,9 @@ class ResultatModuleController extends Controller
         $elementResults = ResultatElement::with([
                 'element:id_element,id_module,code_element,nom_element',
                 'element.module:id_module,nom_module,code_module',
-                'inscriptionPedagogique:id_inscription_pedagogique,id_etudiant,id_module',
-                'inscriptionPedagogique.etudiant:id_etudiant,nom,prenom,cne',
+                'inscriptionPedagogique:id_inscription_pedagogique,id_inscription_admin,id_offre',
+                'inscriptionPedagogique.inscriptionAdministrative:id_inscription_admin,id_etudiant',
+                'inscriptionPedagogique.inscriptionAdministrative.etudiant:id_etudiant,nom,prenom,cne',
                 'sessionExamen:id_session_examen,nom_session,type_session,date_session_examen',
             ])
             ->when($moduleId, fn ($query) => $query->whereHas('element', fn ($q) => $q->where('id_module', $moduleId)))

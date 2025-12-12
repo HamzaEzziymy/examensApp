@@ -35,9 +35,10 @@ class NoteController extends Controller
 
         $notesQuery = Note::with([
                 'anonymat:id_anonymat,id_examen,id_inscription_pedagogique,code_anonymat',
-                'anonymat.inscriptionPedagogique:id_inscription_pedagogique,id_etudiant,id_module',
-                'anonymat.inscriptionPedagogique.etudiant:id_etudiant,nom,prenom,cne',
-                'anonymat.inscriptionPedagogique.module:id_module,nom_module,code_module',
+                'anonymat.inscriptionPedagogique:id_inscription_pedagogique,id_inscription_admin,id_offre',
+                'anonymat.inscriptionPedagogique.inscriptionAdministrative:id_inscription_admin,id_etudiant',
+                'anonymat.inscriptionPedagogique.inscriptionAdministrative.etudiant:id_etudiant,nom,prenom,cne',
+                'anonymat.inscriptionPedagogique.offreFormation.module:id_module,nom_module,code_module',
                 'correcteur:id_correcteur,id_examen,id_enseignant,statut,nombre_copies,date_limite_correction',
                 'correcteur.enseignant:id_enseignant,nom,prenom',
             ])
@@ -58,8 +59,9 @@ class NoteController extends Controller
 
         $anonymats = $selectedExamen
             ? Anonymat::with([
-                    'inscriptionPedagogique:id_inscription_pedagogique,id_etudiant,id_module',
-                    'inscriptionPedagogique.etudiant:id_etudiant,nom,prenom,cne',
+                    'inscriptionPedagogique:id_inscription_pedagogique,id_inscription_admin,id_offre',
+                    'inscriptionPedagogique.inscriptionAdministrative:id_inscription_admin,id_etudiant',
+                    'inscriptionPedagogique.inscriptionAdministrative.etudiant:id_etudiant,nom,prenom,cne',
                 ])
                 ->where('id_examen', $selectedExamen->id_examen)
                 ->get([

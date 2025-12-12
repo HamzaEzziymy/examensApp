@@ -133,7 +133,7 @@ class EtudiantController extends Controller
             'section.filiere',
             'inscriptionsAdministratives.anneeUniversitaire',
             'inscriptionsAdministratives.niveau',
-            'inscriptionsPedagogiques.module'
+            'inscriptionsPedagogiques.offreFormation.module'
         ])->findOrFail($id);
 
         return Inertia::render('GestionsEtudiantes/Etudiantes/Show', [

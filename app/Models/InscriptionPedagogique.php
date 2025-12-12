@@ -15,6 +15,10 @@ class InscriptionPedagogique extends Model
     protected $table = 'inscriptions_pedagogiques';
     protected $primaryKey = 'id_inscription_pedagogique';
     protected $guarded = [];
+    protected $appends = [
+        'etudiant',
+        'module',
+    ];
 
     protected $fillable = [
         'id_inscription_admin',
@@ -32,6 +36,11 @@ class InscriptionPedagogique extends Model
     public function getEtudiantAttribute()
     {
         return $this->inscriptionAdministrative?->etudiant;
+    }
+
+    public function getModuleAttribute()
+    {
+        return $this->offreFormation?->module;
     }
 
     public function offreFormation(): BelongsTo

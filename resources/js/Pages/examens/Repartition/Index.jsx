@@ -271,7 +271,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                         <select
                             value={selectedExamenId ? String(selectedExamenId) : ''}
                             onChange={handleExamChange}
-                            className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
+                            className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:bg-slate-800 dark:text-white"
                         >
                             <option value="">-- Choisir un examen --</option>
                             {examens.map((examen) => (
@@ -286,16 +286,16 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                     {selectedExamen ? (
                         <>
                             <div className="font-semibold">{selectedExamen.module?.nom_module}</div>
-                            <div className="text-xs text-gray-500">
+                            <div className="text-xs text-gray-200">
                                 {selectedExamen.session_examen?.nom_session} - {formatDateTime(selectedExamen.date_debut)} - {formatDateTime(selectedExamen.date_fin)}
                             </div>
                             <div className="mt-3 grid grid-cols-2 gap-3 text-xs">
                                 <div className="rounded-md bg-white/60 p-2 dark:bg-gray-800/60">
-                                    <div className="text-gray-500">Etudiants inscrits</div>
+                                    <div className="text-gray-200">Etudiants inscrits</div>
                                     <div className="text-base font-semibold text-gray-800 dark:text-gray-100">{studentCount}</div>
                                 </div>
                                 <div className="rounded-md bg-white/60 p-2 dark:bg-gray-800/60">
-                                    <div className="text-gray-500">Repartitions existantes</div>
+                                    <div className="text-gray-200">Repartitions existantes</div>
                                     <div className="text-base font-semibold text-gray-800 dark:text-gray-100">
                                         {repartitions.length} / {studentCount}
                                     </div>
@@ -367,7 +367,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                             </div>
                         </>
                     ) : (
-                        <div className="text-center text-xs text-gray-500">Choisissez un examen pour voir les details.</div>
+                        <div className="text-center text-xs text-gray-200">Choisissez un examen pour voir les details.</div>
                     )}
                 </div>
             </div>
@@ -394,8 +394,8 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                 <select
                                     value={data.id_inscription_pedagogique}
                                     onChange={(e) => setData('id_inscription_pedagogique', e.target.value)}
-                                    className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
                                     disabled={!selectedExamenId}
+                                    className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:bg-slate-800 dark:text-white"
                                 >
                                     <option value="">Sélectionner</option>
                                     {availableInscriptions.map((inscription) => (
@@ -413,7 +413,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                         type="number"
                                         value={data.code_grille}
                                         onChange={(e) => setData('code_grille', e.target.value)}
-                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
+                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 dark:text-white focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
                                         disabled={!selectedExamenId}
                                     />
                                     <InputError message={errors.code_grille} className="mt-1" />
@@ -423,7 +423,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                     <input
                                         value={data.code_anonymat}
                                         onChange={(e) => setData('code_anonymat', e.target.value)}
-                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
+                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 dark:text-white focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
                                     />
                                     <InputError message={errors.code_anonymat} className="mt-1" />
                                 </div>
@@ -433,7 +433,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                 <input
                                     value={data.numero_place}
                                     onChange={(e) => setData('numero_place', e.target.value)}
-                                    className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
+                                    className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 dark:text-white focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
                                 />
                                 <InputError message={errors.numero_place} className="mt-1" />
                             </div>
@@ -456,7 +456,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                         type="time"
                                         value={data.heure_arrivee}
                                         onChange={(e) => setData('heure_arrivee', e.target.value)}
-                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
+                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 dark:text-white focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
                                     />
                                     <InputError message={errors.heure_arrivee} className="mt-1" />
                                 </div>
@@ -466,7 +466,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                         type="time"
                                         value={data.heure_sortie}
                                         onChange={(e) => setData('heure_sortie', e.target.value)}
-                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
+                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 dark:text-white focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
                                     />
                                     <InputError message={errors.heure_sortie} className="mt-1" />
                                 </div>
@@ -477,7 +477,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                     rows={3}
                                     value={data.observation}
                                     onChange={(e) => setData('observation', e.target.value)}
-                                    className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
+                                    className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 dark:text-white focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
                                 />
                                 <InputError message={errors.observation} className="mt-1" />
                             </div>
@@ -506,7 +506,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                         <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                             <div>
                                 <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Étudiants affectés</h3>
-                                <span className="text-sm text-gray-500 dark:text-gray-400">
+                                <span className="text-sm text-gray-200 dark:text-gray-400">
                                     {searchActive ? (
                                         <>
                                             {filteredRepartitions.length} / {repartitions.length} lignes
@@ -526,7 +526,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                     value={searchTerm}
                                     onChange={(event) => setSearchTerm(event.target.value)}
                                     placeholder="Rechercher (nom, CNE, grille...)"
-                                    className="w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-700"
+                                    className="w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 dark:text-white focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
                                     disabled={!selectedExamenId}
                                 />
                             </div>
@@ -535,16 +535,16 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                             <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                                 <thead className="bg-gray-50 dark:bg-gray-900/40">
                                     <tr>
-                                        <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                                        <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-200 dark:text-gray-400">
                                             Étudiant
                                         </th>
-                                        <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                                        <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-200 dark:text-gray-400">
                                             Grille / Place
                                         </th>
-                                        <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                                        <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-200 dark:text-gray-400">
                                             Anonymat
                                         </th>
-                                        <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
+                                        <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-200 dark:text-gray-400">
                                             Présence
                                         </th>
                                         <th className="px-4 py-3" />
@@ -558,17 +558,17 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                                     {repartition.inscription_pedagogique?.etudiant?.nom}{' '}
                                                     {repartition.inscription_pedagogique?.etudiant?.prenom}
                                                 </div>
-                                                <div className="text-xs text-gray-500 dark:text-gray-400">
+                                                <div className="text-xs text-gray-200 dark:text-gray-400">
                                                     {repartition.inscription_pedagogique?.etudiant?.cne}
                                                 </div>
                                             </td>
                                             <td className="px-4 py-3">
                                                 <div>Grille #{repartition.code_grille}</div>
-                                                <div className="text-xs text-gray-500 dark:text-gray-400">Place {repartition.numero_place ?? '-'}</div>
+                                                <div className="text-xs text-gray-200 dark:text-gray-400">Place {repartition.numero_place ?? '-'}</div>
                                             </td>
                                             <td className="px-4 py-3">
                                                 <div className="font-medium">{repartition.code_anonymat ?? '-'}</div>
-                                                <div className="text-xs text-gray-500 dark:text-gray-400">
+                                                <div className="text-xs text-gray-200 dark:text-gray-400">
                                                     {formatTime(repartition.heure_arrivee)} → {formatTime(repartition.heure_sortie)}
                                                 </div>
                                             </td>
@@ -609,7 +609,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                     ))}
                                     {filteredRepartitions.length === 0 && (
                                         <tr>
-                                            <td colSpan={5} className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                                            <td colSpan={5} className="px-4 py-6 text-center text-sm text-gray-200 dark:text-gray-400">
                                                 {searchActive
                                                     ? 'Aucun résultat ne correspond à cette recherche.'
                                                     : 'Aucune répartition pour cet examen.'}
@@ -625,6 +625,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         </AuthenticatedLayout>
     );
 }
+
 
 
 

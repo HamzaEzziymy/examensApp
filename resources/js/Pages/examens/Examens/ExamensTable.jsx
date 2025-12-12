@@ -151,7 +151,7 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
     const searchActive = searchTerm.trim().length > 0;
 
     return (
-        <div className="rounded-xl border border-gray-200 bg-white/90 p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+        <div className="rounded-xl border border-gray-200 bg-white/90 p-6 shadow-sm dark:border-gray-700 dark:text-white dark:bg-gray-900">
             <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
                     <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Examens programmés</h2>
@@ -175,7 +175,7 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
                         value={searchTerm}
                         onChange={(event) => setSearchTerm(event.target.value)}
                         placeholder="Rechercher (module, session, salle...)"
-                        className="w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-700"
+                        className="w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
                     />
                 </div>
             </div>
@@ -283,10 +283,10 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
 
             {modalOpen && (
                 <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
-                    <div className="w-full max-w-2xl rounded-lg bg-white p-6 shadow-xl dark:bg-gray-800">
+                    <div className="w-full max-w-2xl rounded-lg bg-white p-6 shadow-xl dark:bg-gray-800 dark:text-white">
                         <div className="mb-4 flex items-center justify-between">
                             <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Modifier l’examen</h3>
-                            <button onClick={closeModal} className="text-gray-500 hover:text-gray-700 dark:text-gray-300">
+                            <button onClick={closeModal} className="text-gray-500 hover:text-gray-700 dark:text-gray-200">
                                 ×
                             </button>
                         </div>
@@ -294,11 +294,11 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
                         <form onSubmit={handleUpdate} className="space-y-4">
                             <div className="grid gap-4 sm:grid-cols-2">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Session</label>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-100">Session</label>
                                     <select
                                         value={data.id_session_examen}
                                         onChange={(e) => setData('id_session_examen', e.target.value)}
-                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
+                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
                                     >
                                         <option value="">Sélectionner</option>
                                         {sessions.map((session) => (
@@ -310,11 +310,11 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
                                     <InputError message={errors.id_session_examen} className="mt-1" />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Module</label>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-100">Module</label>
                                     <select
                                         value={data.id_module}
                                         onChange={(e) => setData('id_module', e.target.value)}
-                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
+                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
                                     >
                                         <option value="">Sélectionner</option>
                                         {modules.map((module) => (
@@ -329,12 +329,12 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
 
                             <div className="grid gap-4 sm:grid-cols-3">
                                 <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Salles (multi)</label>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-100">Salles (multi)</label>
                                 <select
                                     multiple
                                     value={data.salles}
                                     onChange={(e) => setData('salles', Array.from(e.target.selectedOptions).map((opt) => opt.value))}
-                                    className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
+                                    className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
                                 >
                                     {salles.map((salle) => (
                                         <option key={salle.id_salle} value={String(salle.id_salle)}>
@@ -345,21 +345,21 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
                                 <InputError message={errors.salles} className="mt-1" />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Date</label>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-100">Date</label>
                                     <input
                                         type="date"
                                         value={data.date_examen}
                                         onChange={(e) => setData('date_examen', e.target.value)}
-                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
+                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
                                     />
                                     <InputError message={errors.date_examen} className="mt-1" />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Statut</label>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-100">Statut</label>
                                     <select
                                         value={data.statut}
                                         onChange={(e) => setData('statut', e.target.value)}
-                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
+                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
                                     >
                                         {statuts.map((statut) => (
                                             <option key={statut} value={statut}>
@@ -373,34 +373,34 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
 
                             <div className="grid gap-4 sm:grid-cols-2">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Début</label>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-100">Début</label>
                                     <input
                                         type="datetime-local"
                                         value={data.date_debut}
                                         onChange={(e) => setData('date_debut', e.target.value)}
-                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
+                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
                                     />
                                     <InputError message={errors.date_debut} className="mt-1" />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Fin</label>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-100">Fin</label>
                                     <input
                                         type="datetime-local"
                                         value={data.date_fin}
                                         onChange={(e) => setData('date_fin', e.target.value)}
-                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
+                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
                                     />
                                     <InputError message={errors.date_fin} className="mt-1" />
                                 </div>
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Notes</label>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-100">Notes</label>
                                 <textarea
                                     rows={3}
                                     value={data.description}
                                     onChange={(e) => setData('description', e.target.value)}
-                                    className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
+                                    className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
                                 />
                                 <InputError message={errors.description} className="mt-1" />
                             </div>
@@ -409,7 +409,7 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
                                 <button
                                     type="button"
                                     onClick={closeModal}
-                                    className="rounded-lg px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+                                    className="rounded-lg px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
                                 >
                                     Annuler
                                 </button>
@@ -428,3 +428,4 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
         </div>
     );
 }
+

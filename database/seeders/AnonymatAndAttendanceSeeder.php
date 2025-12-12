@@ -28,14 +28,16 @@ class AnonymatAndAttendanceSeeder extends Seeder
             ]);
 
             $registrations = InscriptionPedagogique::query()
-                ->join('offre_formation', 'offre_formation.id_offre', '=', 'inscriptions_pedagogiques.id_offre')
-                ->where('offre_formation.id_module', $exam->id_module)
-                ->when($activeYearId, function ($query) use ($activeYearId) {
-                    $query->join('inscriptions_administratives', 'inscriptions_administratives.id_inscription_admin', '=', 'inscriptions_pedagogiques.id_inscription_admin')
-                        ->where('inscriptions_administratives.id_annee', $activeYearId);
+                ->whereHas('offreFormation', function ($query) use ($exam) {
+                    $query->where('id_module', $exam->id_module);
                 })
-                ->orderBy('inscriptions_pedagogiques.id_inscription_pedagogique')
-                ->get(['inscriptions_pedagogiques.id_inscription_pedagogique']);
+                ->when($activeYearId, function ($query) use ($activeYearId) {
+                    $query->whereHas('inscriptionAdministrative', function ($adminQuery) use ($activeYearId) {
+                        $adminQuery->where('id_annee', $activeYearId);
+                    });
+                })
+                ->orderBy('id_inscription_pedagogique')
+                ->get(['id_inscription_pedagogique']);
 
             if ($registrations->isEmpty()) {
                 continue;

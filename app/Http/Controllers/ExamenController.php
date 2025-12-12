@@ -311,13 +311,16 @@ class ExamenController extends Controller
         $activeYearId = AnneeUniversitaire::where('est_active', true)->latest('date_debut')->value('id_annee');
 
         return InscriptionPedagogique::query()
-            ->where('inscriptions_pedagogiques.id_module', $moduleId)
-            ->when($activeYearId, function ($query) use ($activeYearId) {
-                $query->join('inscriptions_administratives', 'inscriptions_administratives.id_inscription_admin', '=', 'inscriptions_pedagogiques.id_inscription_admin')
-                    ->where('inscriptions_administratives.id_annee', $activeYearId);
+            ->whereHas('offreFormation', function ($query) use ($moduleId) {
+                $query->where('id_module', $moduleId);
             })
-            ->orderBy('inscriptions_pedagogiques.id_inscription_pedagogique')
-            ->get(['inscriptions_pedagogiques.id_inscription_pedagogique']);
+            ->when($activeYearId, function ($query) use ($activeYearId) {
+                $query->whereHas('inscriptionAdministrative', function ($adminQuery) use ($activeYearId) {
+                    $adminQuery->where('id_annee', $activeYearId);
+                });
+            })
+            ->orderBy('id_inscription_pedagogique')
+            ->get(['id_inscription_pedagogique']);
     }
 
     private function filiereCode(Examen $examen): int

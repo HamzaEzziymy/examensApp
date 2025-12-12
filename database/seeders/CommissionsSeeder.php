@@ -43,9 +43,14 @@ class CommissionsSeeder extends Seeder
         }
 
         // Reclamations: create for random registrations
-        $ips = InscriptionPedagogique::inRandomOrder()->take(5)->get();
+        $ips = InscriptionPedagogique::with('offreFormation.module')->inRandomOrder()->take(5)->get();
         foreach ($ips as $ip) {
-            $element = ElementModule::where('id_module', $ip->id_module)->inRandomOrder()->first();
+            $moduleId = $ip->offreFormation?->module?->id_module;
+            if (! $moduleId) {
+                continue;
+            }
+
+            $element = ElementModule::where('id_module', $moduleId)->inRandomOrder()->first();
             Reclamation::factory()->create([
                 'id_inscription_pedagogique' => $ip->id_inscription_pedagogique,
                 'id_element_module'          => $element?->id_element,

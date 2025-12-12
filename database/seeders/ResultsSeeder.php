@@ -8,7 +8,6 @@ use App\Models\ElementModule;
 use App\Models\SessionExamen;
 use App\Models\ResultatElement;
 use App\Models\ResultatModule;
-use App\Models\Module;
 
 class ResultsSeeder extends Seeder
 {
@@ -16,11 +15,21 @@ class ResultsSeeder extends Seeder
     {
         $sessions = SessionExamen::all();
 
-        foreach (InscriptionPedagogique::orderBy('id_inscription_pedagogique')->limit(20)->get() as $ip) {
+        $registrations = InscriptionPedagogique::with('offreFormation.module')
+            ->orderBy('id_inscription_pedagogique')
+            ->limit(20)
+            ->get();
+
+        foreach ($registrations as $ip) {
+            $module = $ip->offreFormation?->module;
+            if (! $module) {
+                continue;
+            }
+
             // Pick a session (random) and a single element from the module
             $session = $sessions->random() ?? null;
 
-            $element = ElementModule::where('id_module', $ip->id_module)->first();
+            $element = ElementModule::where('id_module', $module->id_module)->first();
             if ($element) {
                 ResultatElement::factory()->create([
                     'id_inscription_pedagogique' => $ip->id_inscription_pedagogique,
@@ -32,7 +41,7 @@ class ResultsSeeder extends Seeder
             // Module result aggregated
             ResultatModule::factory()->create([
                 'id_inscription_pedagogique' => $ip->id_inscription_pedagogique,
-                'id_module'                  => $ip->id_module,
+                'id_module'                  => $module->id_module,
             ]);
         }
     }

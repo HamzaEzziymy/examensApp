@@ -14,11 +14,11 @@ class InscriptionPedagogiqueFactory extends Factory
     public function definition(): array
     {
         $admin = InscriptionAdministrative::factory()->create();
-        $offre = OffreFormation::inRandomOrder()->first();
+        $offre = OffreFormation::inRandomOrder()->first() ?? OffreFormation::factory()->create();
 
         return [
             'id_inscription_admin' => $admin->id_inscription_admin,
-            'id_offre'             => $offre->id_offre ?? null,
+            'id_offre'             => $offre->id_offre,
             'type_inscription'     => $this->faker->randomElement(['Normal', 'Credit', 'Anticipe']),
             'credits_acquis'       => $this->faker->numberBetween(0, 30),
         ];

@@ -39,9 +39,10 @@ class RepartitionEtudiantController extends Controller
         $selectedExamen = $examens->firstWhere('id_examen', $selectedExamenId) ?? $examens->first();
 
         $repartitions = RepartitionEtudiant::with([
-                'inscriptionPedagogique:id_inscription_pedagogique,id_etudiant,id_module',
-                'inscriptionPedagogique.etudiant:id_etudiant,nom,prenom,cne',
-                'inscriptionPedagogique.module:id_module,nom_module,code_module',
+                'inscriptionPedagogique:id_inscription_pedagogique,id_inscription_admin,id_offre',
+                'inscriptionPedagogique.inscriptionAdministrative:id_inscription_admin,id_etudiant',
+                'inscriptionPedagogique.inscriptionAdministrative.etudiant:id_etudiant,nom,prenom,cne',
+                'inscriptionPedagogique.offreFormation.module:id_module,nom_module,code_module',
             ])
             ->when($selectedExamen, fn ($query) => $query->where('id_examen', $selectedExamen->id_examen))
             ->orderBy('code_grille')
@@ -60,15 +61,18 @@ class RepartitionEtudiantController extends Controller
 
         $inscriptions = $selectedExamen
             ? InscriptionPedagogique::with([
-                    'etudiant:id_etudiant,nom,prenom,cne',
-                    'module:id_module,nom_module,code_module',
+                    'inscriptionAdministrative:id_inscription_admin,id_etudiant',
+                    'inscriptionAdministrative.etudiant:id_etudiant,nom,prenom,cne',
+                    'offreFormation.module:id_module,nom_module,code_module',
                 ])
-                ->where('id_module', $selectedExamen->id_module)
+                ->whereHas('offreFormation', function ($query) use ($selectedExamen) {
+                    $query->where('id_module', $selectedExamen->id_module);
+                })
                 ->orderBy('id_inscription_pedagogique')
                 ->get([
                     'id_inscription_pedagogique',
-                    'id_etudiant',
-                    'id_module',
+                    'id_inscription_admin',
+                    'id_offre',
                 ])
             : collect();
 
@@ -179,8 +183,9 @@ class RepartitionEtudiantController extends Controller
     public function export(Request $request, Examen $examen)
     {
         $repartitions = RepartitionEtudiant::with([
-                'inscriptionPedagogique:id_inscription_pedagogique,id_etudiant',
-                'inscriptionPedagogique.etudiant:id_etudiant,nom,prenom,cne',
+                'inscriptionPedagogique:id_inscription_pedagogique,id_inscription_admin,id_offre',
+                'inscriptionPedagogique.inscriptionAdministrative:id_inscription_admin,id_etudiant',
+                'inscriptionPedagogique.inscriptionAdministrative.etudiant:id_etudiant,nom,prenom,cne',
             ])
             ->where('id_examen', $examen->id_examen)
             ->orderBy('code_grille')
@@ -286,8 +291,9 @@ class RepartitionEtudiantController extends Controller
             ->values();
 
         $allRepartitions = RepartitionEtudiant::with([
-                'inscriptionPedagogique:id_inscription_pedagogique,id_etudiant,id_module',
-                'inscriptionPedagogique.etudiant:id_etudiant,nom,prenom,cne',
+                'inscriptionPedagogique:id_inscription_pedagogique,id_inscription_admin,id_offre',
+                'inscriptionPedagogique.inscriptionAdministrative:id_inscription_admin,id_etudiant',
+                'inscriptionPedagogique.inscriptionAdministrative.etudiant:id_etudiant,nom,prenom,cne',
             ])
             ->whereIn('id_examen', $examens->pluck('id_examen'))
             ->orderBy('id_inscription_pedagogique')
@@ -302,8 +308,9 @@ class RepartitionEtudiantController extends Controller
         }
 
         $selectedRepartitions = RepartitionEtudiant::with([
-                'inscriptionPedagogique:id_inscription_pedagogique,id_etudiant,id_module',
-                'inscriptionPedagogique.etudiant:id_etudiant,nom,prenom,cne',
+                'inscriptionPedagogique:id_inscription_pedagogique,id_inscription_admin,id_offre',
+                'inscriptionPedagogique.inscriptionAdministrative:id_inscription_admin,id_etudiant',
+                'inscriptionPedagogique.inscriptionAdministrative.etudiant:id_etudiant,nom,prenom,cne',
             ])
             ->where('id_examen', $examen->id_examen)
             ->orderBy('code_grille')
@@ -323,7 +330,7 @@ class RepartitionEtudiantController extends Controller
 
         $studentsById = $allRepartitions
             ->groupBy(function ($rep) {
-                return $rep->inscriptionPedagogique?->id_etudiant ?? $rep->id_inscription_pedagogique;
+                return $rep->inscriptionPedagogique?->inscriptionAdministrative?->id_etudiant ?? $rep->id_inscription_pedagogique;
             })
             ->map(function ($rows) use ($modules) {
                 $ip = $rows->first()->inscriptionPedagogique;
@@ -333,20 +340,20 @@ class RepartitionEtudiantController extends Controller
                 }
 
                 return [
-                    'cne'     => $ip?->etudiant?->cne,
-                    'nom'     => $ip?->etudiant?->nom,
-                    'prenom'  => $ip?->etudiant?->prenom,
+                    'cne'     => $ip?->inscriptionAdministrative?->etudiant?->cne,
+                    'nom'     => $ip?->inscriptionAdministrative?->etudiant?->nom,
+                    'prenom'  => $ip?->inscriptionAdministrative?->etudiant?->prenom,
                     'modules' => $flags,
                 ];
             });
 
         $studentsWithSeats = $selectedRepartitions
             ->map(function ($rep) use ($studentsById, $modules) {
-                $key = $rep->inscriptionPedagogique?->id_etudiant ?? $rep->id_inscription_pedagogique;
+                $key = $rep->inscriptionPedagogique?->inscriptionAdministrative?->id_etudiant ?? $rep->id_inscription_pedagogique;
                 $student = $studentsById[$key] ?? [
-                    'cne'     => $rep->inscriptionPedagogique?->etudiant?->cne,
-                    'nom'     => $rep->inscriptionPedagogique?->etudiant?->nom,
-                    'prenom'  => $rep->inscriptionPedagogique?->etudiant?->prenom,
+                    'cne'     => $rep->inscriptionPedagogique?->inscriptionAdministrative?->etudiant?->cne,
+                    'nom'     => $rep->inscriptionPedagogique?->inscriptionAdministrative?->etudiant?->nom,
+                    'prenom'  => $rep->inscriptionPedagogique?->inscriptionAdministrative?->etudiant?->prenom,
                     'modules' => collect($modules)->mapWithKeys(fn ($m) => [$m['id_examen'] => false])->all(),
                 ];
 

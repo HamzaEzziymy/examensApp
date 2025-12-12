@@ -186,7 +186,7 @@ class InscriptionAdministrativeController extends Controller
             'anneeUniversitaire',
             'etudiant',
             'section.filiere',
-            'inscriptionsPedagogiques.module'
+            'inscriptionsPedagogiques.offreFormation.module'
         ])->findOrFail($id);
 
         return Inertia::render("GestionsEtudiantes/InscriptionsAdministratives/Show", [

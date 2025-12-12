@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasManyThrough;
 
 class Module extends Model
 {
@@ -32,9 +33,16 @@ class Module extends Model
         return $this->hasMany(OffreFormation::class, 'id_module', 'id_module');
     }
 
-    public function inscriptionsPedagogiques(): HasMany
+    public function inscriptionsPedagogiques(): HasManyThrough
     {
-        return $this->hasMany(InscriptionPedagogique::class, 'id_module', 'id_module');
+        return $this->hasManyThrough(
+            InscriptionPedagogique::class,
+            OffreFormation::class,
+            'id_module', // FK on offre_formation -> modules
+            'id_offre', // FK on inscriptions_pedagogiques -> offre_formation
+            'id_module', // Local key on modules
+            'id_offre' // Local key on offre_formation
+        );
     }
 
     public function capitalisations(): HasMany
@@ -57,4 +65,3 @@ class Module extends Model
         return $this->hasMany(Examen::class, 'id_module', 'id_module');
     }
 }
-
