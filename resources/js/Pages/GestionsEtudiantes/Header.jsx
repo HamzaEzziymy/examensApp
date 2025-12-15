@@ -1,6 +1,7 @@
 import { Link } from '@inertiajs/react';
 import {
     GraduationCap,
+    Building,
 } from "lucide-react";
 import { FaRegAddressCard } from "react-icons/fa";
 import { IoDocumentAttachSharp } from 'react-icons/io5';
@@ -25,6 +26,12 @@ export default function Header() {
             icon: <IoDocumentAttachSharp size={20} />, // Represents academic registrations
             href: route("inscriptions.pedagogiques.index"),
             current: route().current("inscriptions.pedagogiques.index"),
+        },
+        {
+            name: "Stages",
+            icon: <Building size={20} />, // Represents internships/stages
+            href: route("inscriptions.stages.index"),
+            current: route().current("inscriptions.stages.index"),
         }
     ];
 

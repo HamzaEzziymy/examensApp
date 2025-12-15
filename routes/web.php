@@ -155,6 +155,10 @@ Route::prefix('inscriptions')->name('inscriptions.')->group(function () {
         ->name('pedagogiques.bulk-store');
     Route::post('pedagogiques/bulk-destroy', [InscriptionPedagogiqueController::class, 'bulkDestroy'])
         ->name('pedagogiques.bulk-destroy');
+    
+    // Bulk operations for stages
+    Route::post('stages/bulk-destroy', [StageController::class, 'bulkDestroy'])
+        ->name('stages.bulk-destroy');
 });
 
 /* =========================
