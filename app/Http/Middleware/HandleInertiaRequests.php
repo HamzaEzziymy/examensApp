@@ -72,7 +72,7 @@ class HandleInertiaRequests extends Middleware
                 return AnneeUniversitaire::all();
             },
             'faculte' => function () {
-                return Faculte::first();
+                return Faculte::first() ?: null;
             }
         ];
     }

@@ -96,11 +96,16 @@ Route::withoutMiddleware([MiddlewareVerifyCsrfToken::class])->group(function () 
             'faculte' => FaculteController::class,
             'annees-universitaires' => AnneeUniversitaireController::class,
             'salles' => SalleController::class,
+            'enseignants' => EnseignantController::class,
         ]);
         
         // Bulk operations for salles
         Route::post('salles/bulk-destroy', [SalleController::class, 'bulkDestroy'])
             ->name('salles.bulk-destroy');
+            
+        // Bulk operations for enseignants
+        Route::post('enseignants/bulk-destroy', [EnseignantController::class, 'bulkDestroy'])
+            ->name('enseignants.bulk-destroy');
     });
 });
 

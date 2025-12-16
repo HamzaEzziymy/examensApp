@@ -1,7 +1,7 @@
 import React from 'react'
 import { Link, usePage } from '@inertiajs/react';
 import ApplicationLogo from '@/Components/ApplicationLogo';
-import { FaHome, FaPaperclip, FaSchool, FaTasks, FaUser } from 'react-icons/fa';
+import { FaHome, FaPaperclip, FaSchool, FaTasks, FaUser, FaChalkboardTeacher } from 'react-icons/fa';
 import { IoDocumentsSharp } from "react-icons/io5";
 import { MdAccountTree, MdFestival, MdOutlineGrading } from "react-icons/md";
 import { PiStudent } from "react-icons/pi";
@@ -54,7 +54,8 @@ function Sidebar({ sidebarOpen, setSidebarOpen, mobileMenuOpen, setMobileMenuOpe
     const configRoutes = [
         { name: 'Faculté', icon: <FaSchool size={20} />, href: route('configuration.faculte.index'), current: route().current('configuration.faculte.index') },
         { name: 'Années Universitaires', icon: <CalendarDays size={20} />, href: route("configuration.annees-universitaires.index"), current: route().current('configuration.annees-universitaires.index') },
-        { name: 'Salles', icon: <Building size={20} />, href: route('configuration.salles.index'), current: route().current('configuration.salles.*') }
+        { name: 'Salles', icon: <Building size={20} />, href: route('configuration.salles.index'), current: route().current('configuration.salles.*') },
+        { name: 'Enseignants', icon: <FaChalkboardTeacher size={20} />, href: route('configuration.enseignants.index'), current: route().current('configuration.enseignants.*') }
     ]
 
     return (
