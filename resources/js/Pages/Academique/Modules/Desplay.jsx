@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { useForm } from '@inertiajs/react';
+import { useForm, router } from '@inertiajs/react';
 import Swal from 'sweetalert2';
-import { Pencil, Trash2, Plus, ChevronDown, ChevronUp, Search } from 'lucide-react';
+import { Pencil, Trash2, Plus, ChevronDown, ChevronUp, Search, Upload, Download } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 export default function ModulesDisplay({ modules: initialModules }) {
     const [expandedRows, setExpandedRows] = useState({});
@@ -15,6 +16,13 @@ export default function ModulesDisplay({ modules: initialModules }) {
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(10);
     const [filteredModules, setFilteredModules] = useState(initialModules);
+    
+    // Excel import states
+    const [importModalOpen, setImportModalOpen] = useState(false);
+    const [importFile, setImportFile] = useState(null);
+    const [isImporting, setIsImporting] = useState(false);
+    const [importPreview, setImportPreview] = useState([]);
+    const [importErrors, setImportErrors] = useState([]);
 
     const elementForm = useForm({
         id_element: null,
@@ -120,27 +128,13 @@ export default function ModulesDisplay({ modules: initialModules }) {
 
     const handleElementSubmit = (e) => {
         e.preventDefault();
-        const action = modalType === 'add' 
-            ? elementForm.post(route('academique.elements-module.store'), {
+        if (modalType === 'add') {
+            elementForm.post(route('academique.elements-module.store'), {
                 onSuccess: () => {
                     closeModal();
                     Swal.fire({
                         icon: 'success',
-                        title: modalType === 'add' ? 'Élément ajouté' : 'Élément modifié',
-                        showConfirmButton: false,
-                        timer: 1500
-                    });
-                },
-                onError: () => {
-                    Swal.fire('Erreur', 'Une erreur est survenue', 'error');
-                }
-            })
-            : elementForm.put(route('academique.elements-module.update', elementForm.data.id_element), {
-                onSuccess: () => {
-                    closeModal();
-                    Swal.fire({
-                        icon: 'success',
-                        title: modalType === 'add' ? 'Élément ajouté' : 'Élément modifié',
+                        title: 'Élément ajouté',
                         showConfirmButton: false,
                         timer: 1500
                     });
@@ -149,31 +143,33 @@ export default function ModulesDisplay({ modules: initialModules }) {
                     Swal.fire('Erreur', 'Une erreur est survenue', 'error');
                 }
             });
+        } else {
+            elementForm.put(route('academique.elements-module.update', elementForm.data.id_element), {
+                onSuccess: () => {
+                    closeModal();
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Élément modifié',
+                        showConfirmButton: false,
+                        timer: 1500
+                    });
+                },
+                onError: () => {
+                    Swal.fire('Erreur', 'Une erreur est survenue', 'error');
+                }
+            });
+        }
     };
 
     const handleModuleSubmit = (e) => {
         e.preventDefault();
-        const action = modalType === 'add' 
-            ? moduleForm.post(route('academique.modules.store'), {
+        if (modalType === 'add') {
+            moduleForm.post(route('academique.modules.store'), {
                 onSuccess: () => {
                     closeModal();
                     Swal.fire({
                         icon: 'success',
-                        title: modalType === 'add' ? 'Module ajouté' : 'Module modifié',
-                        showConfirmButton: false,
-                        timer: 1500
-                    });
-                },
-                onError: () => {
-                    Swal.fire('Erreur', 'Une erreur est survenue', 'error');
-                }
-            })
-            : moduleForm.put(route('academique.modules.update', moduleForm.data.id_module), {
-                onSuccess: () => {
-                    closeModal();
-                    Swal.fire({
-                        icon: 'success',
-                        title: modalType === 'add' ? 'Module ajouté' : 'Module modifié',
+                        title: 'Module ajouté',
                         showConfirmButton: false,
                         timer: 1500
                     });
@@ -182,6 +178,22 @@ export default function ModulesDisplay({ modules: initialModules }) {
                     Swal.fire('Erreur', 'Une erreur est survenue', 'error');
                 }
             });
+        } else {
+            moduleForm.put(route('academique.modules.update', moduleForm.data.id_module), {
+                onSuccess: () => {
+                    closeModal();
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Module modifié',
+                        showConfirmButton: false,
+                        timer: 1500
+                    });
+                },
+                onError: () => {
+                    Swal.fire('Erreur', 'Une erreur est survenue', 'error');
+                }
+            });
+        }
     };
 
     const handleElementDelete = (element) => {
@@ -266,6 +278,173 @@ export default function ModulesDisplay({ modules: initialModules }) {
         setCurrentPage(1);
     };
 
+    // Excel import functions
+    const downloadTemplate = () => {
+        const templateData = [
+            {
+                'Code Module': 'M001',
+                'Nom Module': 'Exemple Module',
+                'Type Module': 'CONNAISSANCE',
+                'Crédits': '6'
+            }
+        ];
+
+        const ws = XLSX.utils.json_to_sheet(templateData);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Modules');
+        XLSX.writeFile(wb, 'template_modules.xlsx');
+    };
+
+    const openImportModal = () => {
+        setImportModalOpen(true);
+        setImportFile(null);
+    };
+
+    const closeImportModal = () => {
+        setImportModalOpen(false);
+        setImportFile(null);
+        setIsImporting(false);
+        setImportPreview([]);
+        setImportErrors([]);
+    };
+
+    const handleFileChange = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        setImportFile(file);
+        const reader = new FileReader();
+
+        reader.onload = (e) => {
+            try {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[sheetName];
+                const jsonData = XLSX.utils.sheet_to_json(worksheet);
+
+                const preview = [];
+                const errors = [];
+
+                jsonData.forEach((row, index) => {
+                    const rowNumber = index + 2; // Excel row number (starting from 2)
+                    
+                    // Expected columns: Code Module, Nom Module, Type Module, Crédits
+                    const codeModule = row['Code Module'] || row['code_module'] || '';
+                    const nomModule = row['Nom Module'] || row['nom_module'] || '';
+                    const typeModule = row['Type Module'] || row['type_module'] || '';
+                    const credits = row['Crédits'] || row['credits'] || '';
+
+                    // Validate required fields
+                    if (!codeModule) {
+                        errors.push(`Ligne ${rowNumber}: Code Module manquant`);
+                    }
+                    if (!nomModule) {
+                        errors.push(`Ligne ${rowNumber}: Nom Module manquant`);
+                    }
+                    if (!typeModule) {
+                        errors.push(`Ligne ${rowNumber}: Type Module manquant`);
+                    } else if (!['CONNAISSANCE', 'HORIZONTAL', 'STAGE', 'THESE'].includes(typeModule)) {
+                        errors.push(`Ligne ${rowNumber}: Type Module invalide (doit être: CONNAISSANCE, HORIZONTAL, STAGE, THESE)`);
+                    }
+                    if (!credits) {
+                        errors.push(`Ligne ${rowNumber}: Crédits manquant`);
+                    } else if (isNaN(parseFloat(credits)) || parseFloat(credits) < 0) {
+                        errors.push(`Ligne ${rowNumber}: Crédits invalide (doit être un nombre positif)`);
+                    }
+
+                    // Check for duplicate code_module in existing modules
+                    const existingModule = initialModules.find(m => m.code_module === codeModule);
+                    if (existingModule) {
+                        errors.push(`Ligne ${rowNumber}: Code Module "${codeModule}" existe déjà`);
+                    }
+
+                    // Check for duplicate in current preview
+                    const duplicateInPreview = preview.find(p => p.codeModule === codeModule);
+                    if (duplicateInPreview) {
+                        errors.push(`Ligne ${rowNumber}: Code Module "${codeModule}" dupliqué dans le fichier`);
+                    }
+
+                    preview.push({
+                        rowNumber,
+                        codeModule,
+                        nomModule,
+                        typeModule,
+                        credits: parseFloat(credits) || 0,
+                        hasErrors: !codeModule || !nomModule || !typeModule || !credits || 
+                                  !['CONNAISSANCE', 'HORIZONTAL', 'STAGE', 'THESE'].includes(typeModule) ||
+                                  isNaN(parseFloat(credits)) || parseFloat(credits) < 0 ||
+                                  existingModule || duplicateInPreview
+                    });
+                });
+
+                setImportPreview(preview);
+                setImportErrors(errors);
+
+            } catch (error) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Erreur',
+                    text: 'Erreur lors de la lecture du fichier Excel'
+                });
+            }
+        };
+
+        reader.readAsArrayBuffer(file);
+    };
+
+    const handleImport = () => {
+        if (importErrors.length > 0) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Erreurs détectées',
+                text: 'Veuillez corriger les erreurs avant d\'importer'
+            });
+            return;
+        }
+
+        const modulesToImport = importPreview
+            .filter(item => !item.hasErrors)
+            .map(item => ({
+                code_module: item.codeModule,
+                nom_module: item.nomModule,
+                type_module: item.typeModule,
+                credits: item.credits
+            }));
+
+        if (modulesToImport.length === 0) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'Aucun module valide',
+                text: 'Aucun module valide trouvé pour l\'import'
+            });
+            return;
+        }
+
+        setIsImporting(true);
+
+        // Send to backend using router
+        router.post(route('academique.modules.store'), { modules: modulesToImport }, {
+            onSuccess: () => {
+                closeImportModal();
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Import réussi',
+                    text: `${modulesToImport.length} modules importés avec succès`,
+                    showConfirmButton: false,
+                    timer: 2000
+                });
+            },
+            onError: (errors) => {
+                console.error('Import errors:', errors);
+                Swal.fire('Erreur', 'Erreur lors de l\'import', 'error');
+            },
+            onFinish: () => {
+                setIsImporting(false);
+            }
+        });
+    };
+
     return (
         <div className="bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 p-6 rounded-md">
             {/* Header with Search and Add Button */}
@@ -287,15 +466,35 @@ export default function ModulesDisplay({ modules: initialModules }) {
                         />
                     </div>
                     
-                    {/* Add Module Button */}
-                    <button
-                        onClick={openAddModuleModal}
-                        className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded whitespace-nowrap"
-                        aria-label="Ajouter un module"
-                    >
-                        <Plus size={18} />
-                        <span>Ajouter Module</span>
-                    </button>
+                    {/* Action Buttons */}
+                    <div className="flex gap-2">
+                        <button
+                            onClick={downloadTemplate}
+                            className="flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded whitespace-nowrap"
+                            aria-label="Télécharger template"
+                        >
+                            <Download size={18} />
+                            <span>Template</span>
+                        </button>
+                        
+                        <button
+                            onClick={openImportModal}
+                            className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded whitespace-nowrap"
+                            aria-label="Importer Excel"
+                        >
+                            <Upload size={18} />
+                            <span>Importer</span>
+                        </button>
+                        
+                        <button
+                            onClick={openAddModuleModal}
+                            className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded whitespace-nowrap"
+                            aria-label="Ajouter un module"
+                        >
+                            <Plus size={18} />
+                            <span>Ajouter Module</span>
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -515,6 +714,161 @@ export default function ModulesDisplay({ modules: initialModules }) {
                     {searchTerm && (
                         <p className="text-sm mt-2">Essayez de modifier vos termes de recherche</p>
                     )}
+                </div>
+            )}
+
+            {/* Import Modal */}
+            {importModalOpen && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+                        <div className="p-6">
+                            <h2 className="text-xl font-bold mb-4">Importer des Modules</h2>
+                            
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-medium mb-2">
+                                        Sélectionner un fichier Excel (.xlsx)
+                                    </label>
+                                    <input
+                                        type="file"
+                                        accept=".xlsx,.xls"
+                                        onChange={handleFileChange}
+                                        className="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600"
+                                    />
+                                </div>
+                                
+                                {importFile && (
+                                    <div className="text-sm text-green-600 dark:text-green-400">
+                                        Fichier sélectionné: {importFile.name}
+                                    </div>
+                                )}
+                                
+                                {importPreview.length === 0 && (
+                                    <div className="text-sm text-gray-600 dark:text-gray-400">
+                                        <p>Format attendu:</p>
+                                        <ul className="list-disc list-inside mt-1 space-y-1">
+                                            <li>Code Module (obligatoire)</li>
+                                            <li>Nom Module (obligatoire)</li>
+                                            <li>Type Module (CONNAISSANCE, HORIZONTAL, STAGE, THESE)</li>
+                                            <li>Crédits (nombre positif)</li>
+                                        </ul>
+                                    </div>
+                                )}
+
+                                {/* Errors Display */}
+                                {importErrors.length > 0 && (
+                                    <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+                                        <h3 className="text-red-800 dark:text-red-200 font-medium mb-2">
+                                            Erreurs détectées ({importErrors.length})
+                                        </h3>
+                                        <div className="max-h-32 overflow-y-auto">
+                                            <ul className="text-sm text-red-700 dark:text-red-300 space-y-1">
+                                                {importErrors.slice(0, 10).map((error, index) => (
+                                                    <li key={index}>• {error}</li>
+                                                ))}
+                                                {importErrors.length > 10 && (
+                                                    <li className="font-medium">... et {importErrors.length - 10} autres erreurs</li>
+                                                )}
+                                            </ul>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Preview */}
+                                {importPreview.length > 0 && (
+                                    <div className="mb-6">
+                                        <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-4">
+                                            Aperçu des données ({importPreview.length} lignes)
+                                        </h3>
+                                        <div className="overflow-x-auto max-h-64 border border-gray-200 dark:border-gray-700 rounded-lg">
+                                            <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                                                <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0">
+                                                    <tr>
+                                                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Ligne</th>
+                                                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Code Module</th>
+                                                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Nom Module</th>
+                                                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Type</th>
+                                                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Crédits</th>
+                                                        <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Statut</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                                                    {importPreview.slice(0, 20).map((item, index) => (
+                                                        <tr key={index} className={`${item.hasErrors ? 'bg-red-50 dark:bg-red-900/20' : 'bg-white dark:bg-gray-800'}`}>
+                                                            <td className="px-3 py-2 text-gray-900 dark:text-gray-100">{item.rowNumber}</td>
+                                                            <td className="px-3 py-2 text-gray-900 dark:text-gray-100 font-mono">{item.codeModule}</td>
+                                                            <td className="px-3 py-2 text-gray-900 dark:text-gray-100">{item.nomModule}</td>
+                                                            <td className="px-3 py-2 text-gray-900 dark:text-gray-100">{item.typeModule}</td>
+                                                            <td className="px-3 py-2 text-gray-900 dark:text-gray-100">{item.credits}</td>
+                                                            <td className="px-3 py-2">
+                                                                {item.hasErrors ? (
+                                                                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">
+                                                                        Erreur
+                                                                    </span>
+                                                                ) : (
+                                                                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
+                                                                        Valide
+                                                                    </span>
+                                                                )}
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                            {importPreview.length > 20 && (
+                                                <div className="p-3 text-center text-sm text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700">
+                                                    ... et {importPreview.length - 20} autres lignes
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Summary */}
+                                {importPreview.length > 0 && (
+                                    <div className="mb-6 grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                        <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                                            <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">
+                                                {importPreview.length}
+                                            </div>
+                                            <div className="text-sm text-blue-800 dark:text-blue-200">Total lignes</div>
+                                        </div>
+                                        <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg">
+                                            <div className="text-2xl font-bold text-green-600 dark:text-green-400">
+                                                {importPreview.filter(item => !item.hasErrors).length}
+                                            </div>
+                                            <div className="text-sm text-green-800 dark:text-green-200">Valides</div>
+                                        </div>
+                                        <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg">
+                                            <div className="text-2xl font-bold text-red-600 dark:text-red-400">
+                                                {importPreview.filter(item => item.hasErrors).length}
+                                            </div>
+                                            <div className="text-sm text-red-800 dark:text-red-200">Erreurs</div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                            
+                            <div className="flex justify-end gap-2 mt-6">
+                                <button
+                                    type="button"
+                                    onClick={closeImportModal}
+                                    className="px-4 py-2 bg-gray-300 dark:bg-gray-600 rounded hover:bg-gray-400 dark:hover:bg-gray-500"
+                                    disabled={isImporting}
+                                >
+                                    Annuler
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleImport}
+                                    disabled={importPreview.length === 0 || importErrors.length > 0 || importPreview.filter(item => !item.hasErrors).length === 0 || isImporting}
+                                    className="px-4 py-2 bg-blue-500 hover:bg-blue-600 text-white rounded disabled:opacity-50"
+                                >
+                                    {isImporting ? 'Import en cours...' : `Importer ${importPreview.filter(item => !item.hasErrors).length > 0 ? `(${importPreview.filter(item => !item.hasErrors).length})` : ''}`}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             )}
 
