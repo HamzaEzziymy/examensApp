@@ -109,6 +109,34 @@ export default function Display({
         offreForm.reset();
     };
 
+    // Filter available modules based on what's already used
+    const getAvailableModules = () => {
+        // Get all module IDs that are already used in existing offres
+        const usedModuleIds = initialOffres.map(offre => offre.id_module);
+        
+        let availableModules = [];
+        
+        if (modalType === 'add') {
+            // For adding new offre, exclude all used modules
+            availableModules = modules.filter(module => !usedModuleIds.includes(module.id_module));
+        } else if (modalType === 'edit' && selectedOffre) {
+            // For editing, include the current module plus all unused modules
+            availableModules = modules.filter(module => 
+                module.id_module === selectedOffre.id_module || 
+                !usedModuleIds.includes(module.id_module)
+            );
+        } else {
+            availableModules = modules;
+        }
+        
+        // Sort modules by code_module
+        return availableModules.sort((a, b) => {
+            const codeA = a.code_module || '';
+            const codeB = b.code_module || '';
+            return codeA.localeCompare(codeB);
+        });
+    };
+
     const handleSubmit = (e) => {
         e.preventDefault();
         const action = modalType === 'add' 
@@ -647,14 +675,24 @@ export default function Display({
                                         required
                                     >
                                         <option value="">Sélectionner un module</option>
-                                        {modules.map((module) => (
+                                        {getAvailableModules().map((module) => (
                                             <option key={module.id_module} value={module.id_module}>
-                                                {module.nom_module} ({module.code_module}) - {module.credits} crédits
+                                                {module.code_module} - ({module.nom_module})
                                             </option>
                                         ))}
                                     </select>
                                     {offreForm.errors.id_module && (
                                         <div className="text-red-500 text-sm mt-1">{offreForm.errors.id_module}</div>
+                                    )}
+                                    {modalType === 'add' && getAvailableModules().length === 0 && (
+                                        <div className="text-amber-600 dark:text-amber-400 text-sm mt-1">
+                                            Tous les modules sont déjà utilisés dans des offres existantes.
+                                        </div>
+                                    )}
+                                    {modalType === 'add' && getAvailableModules().length > 0 && (
+                                        <div className="text-green-600 dark:text-green-400 text-sm mt-1">
+                                            {getAvailableModules().length} module(s) disponible(s)
+                                        </div>
                                     )}
                                 </div>
 
