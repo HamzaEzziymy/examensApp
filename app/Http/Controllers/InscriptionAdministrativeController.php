@@ -279,15 +279,19 @@ class InscriptionAdministrativeController extends Controller
 
     /**
      * Automatically create pedagogical inscriptions for all course offerings
-     * that match the student's level
+     * that match the student's level and section
      */
     private function createAutomaticPedagogicalInscriptions(InscriptionAdministrative $inscriptionAdmin)
     {
         try {
-            // Get all course offerings (offre_formation) that match the student's level
-            $offresFormation = \App\Models\OffreFormation::whereHas('semestre.niveau', function ($query) use ($inscriptionAdmin) {
-                $query->where('id_niveau', $inscriptionAdmin->id_niveau);
-            })->get();
+            // Get all course offerings (offre_formation) that match the student's level AND section
+            $offresFormation = \App\Models\OffreFormation::with(['semestre.niveau', 'section', 'module'])
+                ->whereHas('semestre.niveau', function ($query) use ($inscriptionAdmin) {
+                    $query->where('id_niveau', $inscriptionAdmin->id_niveau);
+                })
+                ->where('id_section', $inscriptionAdmin->id_section)
+                ->where('id_annee', $inscriptionAdmin->id_annee) // Also match the academic year
+                ->get();
 
             $created = 0;
             foreach ($offresFormation as $offre) {
@@ -312,8 +316,18 @@ class InscriptionAdministrativeController extends Controller
                 'inscription_admin_id' => $inscriptionAdmin->id_inscription_admin,
                 'student_id' => $inscriptionAdmin->id_etudiant,
                 'level_id' => $inscriptionAdmin->id_niveau,
+                'section_id' => $inscriptionAdmin->id_section,
+                'academic_year_id' => $inscriptionAdmin->id_annee,
                 'created_count' => $created,
-                'total_offers' => $offresFormation->count()
+                'total_offers' => $offresFormation->count(),
+                'offers_details' => $offresFormation->map(function($offre) {
+                    return [
+                        'id_offre' => $offre->id_offre,
+                        'module_name' => $offre->module->nom_module ?? 'N/A',
+                        'semestre' => $offre->semestre->nom_semestre ?? 'N/A',
+                        'section' => $offre->section->nom_section ?? 'N/A'
+                    ];
+                })
             ]);
 
         } catch (\Exception $e) {

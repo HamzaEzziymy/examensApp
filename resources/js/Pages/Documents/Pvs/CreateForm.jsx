@@ -169,8 +169,8 @@ export default function CreateForm({ sessions = [], niveaux = [], salles = [], m
                     >
                         <option value="">Select Salle</option>
                         {salles.map((salle) => (
-                            <option key={salle.id_salle} value={`${salle.code_salle} - ${salle.nom_salle}`}>
-                                {salle.code_salle} - {salle.nom_salle}
+                            <option key={salle.id_salle} value={`${salle.nom_salle}`}>
+                                {salle.nom_salle}
                             </option>
                         ))}
                     </select>

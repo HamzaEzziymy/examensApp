@@ -48,9 +48,15 @@ class EtudiantController extends Controller
         }
         $sections = $sectionsQuery->get();
         
+        // Get niveaux and academic years for administrative inscription
+        $niveaux = \App\Models\Niveau::orderBy('ordre')->get();
+        $annees = \App\Models\AnneeUniversitaire::orderBy('annee_univ', 'desc')->get();
+        
         return Inertia::render('GestionsEtudiantes/Etudiantes/Index', [
             'students' => $students,
-            'sections' => $sections
+            'sections' => $sections,
+            'niveaux' => $niveaux,
+            'annees' => $annees
         ]);
     }
 
@@ -59,11 +65,13 @@ class EtudiantController extends Controller
      */
     public function store(Request $request)
     {
+        // Only validate the 4 core required fields: cne, nom, prenom, mail_academique
         $rules = [
-            'cne' => 'required|string|max:20|unique:etudiants,cne',
-            'nom' => 'required|string|max:50',
-            'prenom' => 'required|string|max:50',
+            'cne' => 'required|string|min:2|max:20|unique:etudiants,cne',
+            'nom' => 'required|string|min:2|max:50',
+            'prenom' => 'required|string|min:2|max:50',
             'mail_academique' => 'required|email|max:100|unique:etudiants,mail_academique',
+            // All other fields are optional but must respect database constraints
             'mail_personnel' => 'nullable|email|max:100|unique:etudiants,mail_personnel',
             'date_naissance' => 'nullable|date',
             'telephone' => 'nullable|string|max:20',
@@ -77,10 +85,62 @@ class EtudiantController extends Controller
         }
 
         // Single student creation
-        $validated = $request->validate($rules);
-        Etudiant::create($validated);
-
-        return redirect()->route('personnes.etudiants.index');
+        try {
+            \Log::info('=== DEBUGGING SINGLE STUDENT CREATION ===', [
+                'request_data' => $request->all(),
+                'validation_rules' => $rules
+            ]);
+            
+            // Add validation for administrative inscription fields if provided
+            if ($request->has('id_niveau') && $request->has('id_annee')) {
+                $rules['id_niveau'] = 'required|exists:niveaux,id_niveau';
+                $rules['id_annee'] = 'required|exists:annees_universitaires,id_annee';
+            }
+            
+            $validated = $request->validate($rules);
+            
+            \Log::info('Validation passed, creating student', [
+                'validated_data' => $validated
+            ]);
+            
+            // Create the student
+            $studentData = array_intersect_key($validated, array_flip([
+                'cne', 'nom', 'prenom', 'mail_academique', 'mail_personnel', 
+                'date_naissance', 'telephone', 'url_photo', 'id_section'
+            ]));
+            $student = Etudiant::create($studentData);
+            
+            \Log::info('Student created successfully', [
+                'student_id' => $student->id_etudiant,
+                'student_data' => $student->toArray()
+            ]);
+            
+            // Create administrative inscription if niveau and annee are provided
+            if (isset($validated['id_niveau']) && isset($validated['id_annee'])) {
+                $this->createAdministrativeInscription($student, $validated);
+            }
+            
+            return redirect()->route('inscriptions.etudiants.index')
+                ->with('success', 'Étudiant ajouté avec succès' . 
+                    (isset($validated['id_niveau']) ? ' et inscription administrative créée automatiquement' : ''));
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            \Log::error('Validation failed for single student', [
+                'errors' => $e->errors(),
+                'data' => $request->all()
+            ]);
+            
+            return redirect()->route('inscriptions.etudiants.index')
+                ->withErrors($e->errors());
+        } catch (\Exception $e) {
+            \Log::error('Single student creation failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'data' => $request->all()
+            ]);
+            
+            return redirect()->route('inscriptions.etudiants.index')
+                ->withErrors(['error' => 'Erreur lors de la création: ' . $e->getMessage()]);
+        }
     }
 
     /**
@@ -93,35 +153,96 @@ class EtudiantController extends Controller
         $skipped = 0;
         $errors = [];
 
+        \Log::info('Bulk import started', [
+            'total_students' => count($studentsData),
+            'first_student' => $studentsData[0] ?? null
+        ]);
+
         DB::beginTransaction();
+        try {
             foreach ($studentsData as $index => $data) {
+                // Only validate the 4 core required fields: cne, nom, prenom, mail_academique
                 $validator = Validator::make($data, [
-                    'cne' => 'required|string|max:20|unique:etudiants,cne',
-                    'nom' => 'required|string|max:50',
-                    'prenom' => 'required|string|max:50',
+                    'cne' => 'required|string|min:2|max:20|unique:etudiants,cne',
+                    'nom' => 'required|string|min:2|max:50',
+                    'prenom' => 'required|string|min:2|max:50',
                     'mail_academique' => 'required|email|max:100|unique:etudiants,mail_academique',
+                    // All other fields are optional but must respect database constraints
                     'mail_personnel' => 'nullable|email|max:100|unique:etudiants,mail_personnel',
                     'date_naissance' => 'nullable|date',
                     'telephone' => 'nullable|string|max:20',
                     'url_photo' => 'nullable|string|max:255',
-                    'id_section' => 'nullable|exists:sections,id_section',
+                    'id_section' => 'nullable|integer|exists:sections,id_section',
                 ]);
 
                 if ($validator->fails()) {
                     $skipped++;
                     $errors[] = [
-                        'row' => $index + 1,
+                        'row' => $index + 2, // Excel row number (starting from 2)
                         'cne' => $data['cne'] ?? '',
+                        'nom' => $data['nom'] ?? '',
+                        'prenom' => $data['prenom'] ?? '',
+                        'mail_academique' => $data['mail_academique'] ?? '',
                         'errors' => $validator->errors()->all()
                     ];
-                }else {
-                    // Create student
-                    Etudiant::create($validator->validated());
-                    $created++;
+                } else {
+                    try {
+                        // Create student with validated data
+                        $studentData = $validator->validated();
+                        
+                        // Handle empty strings for nullable fields
+                        foreach (['mail_personnel', 'date_naissance', 'telephone', 'url_photo', 'id_section'] as $field) {
+                            if (isset($studentData[$field]) && $studentData[$field] === '') {
+                                $studentData[$field] = null;
+                            }
+                        }
+                        
+                        Etudiant::create($studentData);
+                        $created++;
+                    } catch (\Exception $e) {
+                        $skipped++;
+                        $errors[] = [
+                            'row' => $index + 2,
+                            'cne' => $data['cne'] ?? '',
+                            'nom' => $data['nom'] ?? '',
+                            'prenom' => $data['prenom'] ?? '',
+                            'mail_academique' => $data['mail_academique'] ?? '',
+                            'errors' => ['Erreur de base de données: ' . $e->getMessage()]
+                        ];
+                    }
                 }
             }
-        DB::commit();
-        return redirect()->route('inscriptions.etudiants.index');
+            DB::commit();
+
+            \Log::info('Bulk import completed', [
+                'created' => $created,
+                'skipped' => $skipped,
+                'errors_count' => count($errors),
+                'errors' => $errors
+            ]);
+
+            // Return appropriate response based on results
+            if (empty($errors)) {
+                // All students imported successfully
+                return redirect()->route('inscriptions.etudiants.index')
+                    ->with('success', "Import réussi: {$created} étudiants créés avec succès");
+            } else {
+                // Some students had errors
+                return redirect()->route('inscriptions.etudiants.index')
+                    ->with('import_partial', "Import partiel: {$created} étudiants créés, {$skipped} avec erreurs")
+                    ->with('import_errors', $errors);
+            }
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            \Log::error('Bulk import failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return redirect()->route('inscriptions.etudiants.index')
+                ->withErrors(['import' => 'Erreur lors de l\'import: ' . $e->getMessage()]);
+        }
     }
 
     /**
@@ -148,11 +269,13 @@ class EtudiantController extends Controller
     {
         $student = Etudiant::findOrFail($id);
 
+        // Only validate the 4 core required fields: cne, nom, prenom, mail_academique
         $validated = $request->validate([
-            'cne' => ['required', 'string', 'max:20', Rule::unique('etudiants', 'cne')->ignore($id, 'id_etudiant')],
-            'nom' => 'required|string|max:50',
-            'prenom' => 'required|string|max:50',
+            'cne' => ['required', 'string', 'min:2', 'max:20', Rule::unique('etudiants', 'cne')->ignore($id, 'id_etudiant')],
+            'nom' => 'required|string|min:2|max:50',
+            'prenom' => 'required|string|min:2|max:50',
             'mail_academique' => ['required', 'email', 'max:100', Rule::unique('etudiants', 'mail_academique')->ignore($id, 'id_etudiant')],
+            // All other fields are optional but must respect database constraints
             'mail_personnel' => ['nullable', 'email', 'max:100', Rule::unique('etudiants', 'mail_personnel')->ignore($id, 'id_etudiant')],
             'date_naissance' => 'nullable|date',
             'telephone' => 'nullable|string|max:20',
@@ -211,5 +334,116 @@ class EtudiantController extends Controller
 
         return redirect()->route('personnes.etudiants.index')
             ->with('success', "Suppression terminée: {$deleted} étudiants supprimés, {$skipped} ignorés (inscriptions associées).");
+    }
+
+    /**
+     * Create administrative inscription and automatic pedagogical inscriptions
+     */
+    private function createAdministrativeInscription(Etudiant $student, array $validated)
+    {
+        try {
+            // Check if administrative inscription already exists
+            $exists = \App\Models\InscriptionAdministrative::where('id_etudiant', $student->id_etudiant)
+                ->where('id_annee', $validated['id_annee'])
+                ->where('id_niveau', $validated['id_niveau'])
+                ->exists();
+
+            if ($exists) {
+                \Log::warning('Administrative inscription already exists', [
+                    'student_id' => $student->id_etudiant,
+                    'annee_id' => $validated['id_annee'],
+                    'niveau_id' => $validated['id_niveau']
+                ]);
+                return;
+            }
+
+            // Create administrative inscription
+            $inscriptionAdmin = \App\Models\InscriptionAdministrative::create([
+                'id_etudiant' => $student->id_etudiant,
+                'id_annee' => $validated['id_annee'],
+                'id_niveau' => $validated['id_niveau'],
+                'id_section' => $validated['id_section'],
+                'date_inscription' => now()->format('Y-m-d'),
+                'statut' => 'Inscrit',
+                'type_inscription' => 'nouveau'
+            ]);
+
+            \Log::info('Administrative inscription created', [
+                'inscription_id' => $inscriptionAdmin->id_inscription_admin,
+                'student_id' => $student->id_etudiant
+            ]);
+
+            // Create automatic pedagogical inscriptions
+            $this->createAutomaticPedagogicalInscriptions($inscriptionAdmin);
+
+        } catch (\Exception $e) {
+            \Log::error('Failed to create administrative inscription', [
+                'student_id' => $student->id_etudiant,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
+    }
+
+    /**
+     * Automatically create pedagogical inscriptions for all course offerings
+     * that match the student's level and section
+     */
+    private function createAutomaticPedagogicalInscriptions(\App\Models\InscriptionAdministrative $inscriptionAdmin)
+    {
+        try {
+            // Get all course offerings (offre_formation) that match the student's level AND section
+            $offresFormation = \App\Models\OffreFormation::with(['semestre.niveau', 'section', 'module'])
+                ->whereHas('semestre.niveau', function ($query) use ($inscriptionAdmin) {
+                    $query->where('id_niveau', $inscriptionAdmin->id_niveau);
+                })
+                ->where('id_section', $inscriptionAdmin->id_section)
+                ->where('id_annee', $inscriptionAdmin->id_annee) // Also match the academic year
+                ->get();
+
+            $created = 0;
+            foreach ($offresFormation as $offre) {
+                // Check if pedagogical inscription already exists
+                $exists = \App\Models\InscriptionPedagogique::where('id_inscription_admin', $inscriptionAdmin->id_inscription_admin)
+                    ->where('id_offre', $offre->id_offre)
+                    ->exists();
+
+                if (!$exists) {
+                    \App\Models\InscriptionPedagogique::create([
+                        'id_inscription_admin' => $inscriptionAdmin->id_inscription_admin,
+                        'id_offre' => $offre->id_offre,
+                        'type_inscription' => 'Normal',
+                        'credits_acquis' => 0,
+                    ]);
+                    $created++;
+                }
+            }
+
+            // Log the automatic creation for debugging
+            \Log::info("Automatic pedagogical inscriptions created from student creation", [
+                'inscription_admin_id' => $inscriptionAdmin->id_inscription_admin,
+                'student_id' => $inscriptionAdmin->id_etudiant,
+                'level_id' => $inscriptionAdmin->id_niveau,
+                'section_id' => $inscriptionAdmin->id_section,
+                'academic_year_id' => $inscriptionAdmin->id_annee,
+                'created_count' => $created,
+                'total_offers' => $offresFormation->count(),
+                'offers_details' => $offresFormation->map(function($offre) {
+                    return [
+                        'id_offre' => $offre->id_offre,
+                        'module_name' => $offre->module->nom_module ?? 'N/A',
+                        'semestre' => $offre->semestre->nom_semestre ?? 'N/A',
+                        'section' => $offre->section->nom_section ?? 'N/A'
+                    ];
+                })
+            ]);
+
+        } catch (\Exception $e) {
+            // Log error but don't fail the administrative inscription
+            \Log::error("Failed to create automatic pedagogical inscriptions from student creation", [
+                'inscription_admin_id' => $inscriptionAdmin->id_inscription_admin,
+                'error' => $e->getMessage()
+            ]);
+        }
     }
 }
