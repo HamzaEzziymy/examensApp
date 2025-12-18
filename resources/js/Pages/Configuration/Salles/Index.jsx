@@ -89,7 +89,6 @@ const SallesIndex = ({ salles: initialSalles = [] }) => {
         });
       },
       onError: (errors) => {
-        console.log('Add errors:', errors);
         let errorMessage = 'Veuillez corriger les erreurs dans le formulaire';
         
         if (errors.error) {

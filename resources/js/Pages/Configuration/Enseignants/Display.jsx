@@ -287,7 +287,6 @@ const EnseignantsDisplay = ({ enseignants = [], availableUsers = [] }) => {
                 });
             },
             onError: (errors) => {
-                console.log('Add errors:', errors);
                 let errorMessage = 'Veuillez corriger les erreurs dans le formulaire';
                 
                 if (errors.error) {

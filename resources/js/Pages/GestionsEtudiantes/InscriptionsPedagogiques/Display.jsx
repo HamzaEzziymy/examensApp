@@ -18,7 +18,6 @@ const InscriptionPedagogiqueDataTable = ({
   const [showAddModal, setShowAddModal] = useState(false);
 
   // Debug: Check if section/filiere data is loaded
-  console.log('Inscriptions pedagogiques:', initialInscriptions);
   if (initialInscriptions && initialInscriptions.length > 0) {
     console.log('First inscription offre_formation:', initialInscriptions[0]?.offre_formation);
   }

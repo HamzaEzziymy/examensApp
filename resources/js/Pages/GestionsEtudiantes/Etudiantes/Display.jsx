@@ -101,13 +101,9 @@ const StudentDataTable = ({
 
   // Submit single student
   const handleSubmit = () => {
-    console.log('=== DEBUGGING SINGLE STUDENT CREATION ===');
-    console.log('Form data being sent:', formData);
-    console.log('Current form errors:', formErrors);
     
     router.post('/inscriptions/etudiants', formData, {
       onSuccess: (response) => {
-        console.log('✅ Student creation successful:', response);
         // Close modal and reset form
         setShowAddModal(false);
         setFormData({
@@ -145,7 +141,7 @@ const StudentDataTable = ({
 
   const validateCNE = (cne) => {
     // CNE should be alphanumeric and between 8-20 characters
-    const cneRegex = /^[A-Za-z0-9]{8,20}$/;
+    const cneRegex = /^[A-Za-z0-9]{3,20}$/;
     return cneRegex.test(cne);
   };
 
