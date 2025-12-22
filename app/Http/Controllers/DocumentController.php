@@ -72,6 +72,8 @@ class DocumentController extends Controller
 
         Pdf::view('pdfs.pv_absence', ['data' => $pdfData])
             ->format('a4')
+            ->margins(12, 10, 14, 10)
+            ->footerView('pdfs.partials.footer')
             ->save('storage/pvs_absence/'.$now.'pv_absence.pdf');
         
         
