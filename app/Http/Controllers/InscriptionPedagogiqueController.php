@@ -215,8 +215,20 @@ class InscriptionPedagogiqueController extends Controller
      */
     public function destroy(string $id)
     {
+        \Log::info('=== DEBUGGING INSCRIPTION PEDAGOGIQUE DELETE ===', [
+            'id' => $id,
+            'request_method' => request()->method(),
+            'request_url' => request()->url(),
+            'request_data' => request()->all()
+        ]);
+        
         try {
             $inscription = InscriptionPedagogique::findOrFail($id);
+            
+            \Log::info('Inscription found', [
+                'inscription_id' => $inscription->id_inscription_pedagogique,
+                'inscription_data' => $inscription->toArray()
+            ]);
             
             // Check if inscription has related records that would prevent deletion
             $hasCapitalisations = $inscription->capitalisations()->exists();
@@ -224,18 +236,40 @@ class InscriptionPedagogiqueController extends Controller
             $hasAnonymats = $inscription->anonymats()->exists();
             $hasResultats = $inscription->resultatsElements()->exists() || $inscription->resultatsModules()->exists();
             
+            \Log::info('Checking related records', [
+                'has_capitalisations' => $hasCapitalisations,
+                'has_stages' => $hasStages,
+                'has_anonymats' => $hasAnonymats,
+                'has_resultats' => $hasResultats
+            ]);
+            
             if ($hasCapitalisations || $hasStages || $hasAnonymats || $hasResultats) {
+                \Log::warning('Cannot delete inscription due to related records');
                 return redirect()->back()
                     ->withErrors(['error' => 'Impossible de supprimer cette inscription car elle contient des données liées (capitalisations, stages, résultats, etc.).']);
             }
             
             $inscription->delete();
             
+            \Log::info('Inscription deleted successfully');
+            
             return redirect()->back()->with('success', 'Inscription pédagogique supprimée avec succès.');
             
-        } catch (\Exception $e) {
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            \Log::error('Inscription not found', [
+                'id' => $id,
+                'error' => $e->getMessage()
+            ]);
             return redirect()->back()
-                ->withErrors(['error' => 'Erreur lors de la suppression de l\'inscription pédagogique.']);
+                ->withErrors(['error' => 'Inscription pédagogique introuvable.']);
+        } catch (\Exception $e) {
+            \Log::error('Error deleting inscription', [
+                'id' => $id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return redirect()->back()
+                ->withErrors(['error' => 'Erreur lors de la suppression de l\'inscription pédagogique: ' . $e->getMessage()]);
         }
     }
 

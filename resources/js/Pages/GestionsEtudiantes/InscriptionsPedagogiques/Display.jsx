@@ -218,6 +218,10 @@ const InscriptionPedagogiqueDataTable = ({
 
   // Handle delete
   const handleDelete = (id) => {
+    console.log('=== DEBUGGING DELETE FUNCTION ===');
+    console.log('Attempting to delete inscription with ID:', id);
+    console.log('Route being called:', route('inscriptions.pedagogiques.destroy', id));
+    
     Swal.fire({
       title: 'Êtes-vous sûr ?',
       text: "Cette action est irréversible !",
@@ -229,15 +233,37 @@ const InscriptionPedagogiqueDataTable = ({
       cancelButtonText: 'Annuler'
     }).then((result) => {
       if (result.isConfirmed) {
+        console.log('User confirmed deletion, making request...');
+        
         router.delete(route('inscriptions.pedagogiques.destroy', id), {
-          onSuccess: () => {
+          onSuccess: (response) => {
+            console.log('✅ Delete successful:', response);
             Swal.fire(
               'Supprimé !',
               'L\'inscription pédagogique a été supprimée.',
               'success'
             );
+            // Reload the page data
+            router.reload({ only: ['inscriptions_pedagogiques'] });
+          },
+          onError: (errors) => {
+            console.log('❌ Delete failed with errors:', errors);
+            console.log('Error details:', JSON.stringify(errors, null, 2));
+            
+            // Show error message
+            const errorMessage = errors.error || 'Erreur lors de la suppression';
+            Swal.fire(
+              'Erreur !',
+              errorMessage,
+              'error'
+            );
+          },
+          onFinish: () => {
+            console.log('🔄 Delete request finished (success or error)');
           }
         });
+      } else {
+        console.log('User cancelled deletion');
       }
     });
   };
