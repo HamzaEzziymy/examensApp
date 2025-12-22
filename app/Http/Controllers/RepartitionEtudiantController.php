@@ -254,6 +254,8 @@ class RepartitionEtudiantController extends Controller
 
         return Pdf::view('pdfs.repartition', $payload)
             ->format('a4')
+            ->margins(12, 10, 14, 10)
+            ->footerView('pdfs.partials.footer')
             ->download($filename);
     }
 
@@ -395,6 +397,8 @@ class RepartitionEtudiantController extends Controller
             })
             ->values();
 
+        $sessionName = $examen->sessionExamen->nom_session ?? 'session';
+
         $payload = [
             'examen'        => $examen,
             'modules'       => $modules,
@@ -402,17 +406,19 @@ class RepartitionEtudiantController extends Controller
             'studentsTotal' => $studentsWithSeats->count(),
             'generatedAt'   => now(),
             'niveauFiliere' => $this->niveauFiliereLabel($examen),
-            'sessionName'   => $examen->sessionExamen->nom_session ?? '',
+            'sessionName'   => $sessionName,
         ];
 
         $filename = sprintf(
             'presence-collective-%s-%s.pdf',
-            $examen->sessionExamen->nom_session ?? 'session',
+            $sessionName,
             $examen->id_session_examen
         );
 
         return Pdf::view('pdfs.repartition-collective', $payload)
             ->format('a4')
+            ->margins(12, 10, 14, 10)
+            ->footerView('pdfs.partials.footer')
             ->download($filename);
     }
 

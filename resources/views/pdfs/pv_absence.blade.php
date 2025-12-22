@@ -154,7 +154,7 @@
 
         .footer-note {
             font-size: 10px;
-            margin-top: 10px;
+            margin-top: 5px;
             font-style: italic;
             width: 100%;
         }
@@ -191,9 +191,9 @@
             @if(isset($data["filiere"]) && $data["filiere"])
                 {{ $data["filiere"] }}
             @endif
-            @if(isset($data["section"]) && $data["section"])
+            <!-- @if(isset($data["section"]) && $data["section"])
                 {{ $data["section"] }}
-            @endif
+            @endif -->
         </h2>
 
         <table class="info-table">

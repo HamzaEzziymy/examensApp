@@ -75,25 +75,34 @@ class ExamenController extends Controller
     {
         $validated = $this->validateExamen($request);
 
+        $session = SessionExamen::find((int) $validated['id_session_examen'], ['id_session_examen', 'id_annee']);
         $salles = collect($request->input('salles', []))
             ->filter()
             ->map(fn ($id) => (int) $id)
             ->unique()
             ->values();
 
-        $validated['id_salle'] = $validated['id_salle'] ?? $salles->first();
+        // Prefer the first selected salle as the primary one to avoid keeping stale values
+        $primarySalleId = $salles->first() ?: ($validated['id_salle'] ?? null);
+        $validated['id_salle'] = $primarySalleId ? (int) $primarySalleId : null;
 
         // Ensure at least one salle is provided
-        $allSalleIds = $salles;
-        if ($validated['id_salle']) {
-            $allSalleIds = $allSalleIds->push((int) $validated['id_salle'])->unique()->values();
-        }
+        $allSalleIds = $salles->isNotEmpty()
+            ? $salles
+            : collect([$validated['id_salle']])->filter()->values();
         if ($allSalleIds->isEmpty()) {
             return back()->with('error', 'Veuillez selectionner au moins une salle.');
         }
 
         // Validate capacity vs expected students
-        $registrations = $this->registrationsForModule((int) $validated['id_module']);
+        $registrations = $this->registrationsForModule((int) $validated['id_module'], $session?->id_annee);
+        if ($registrations->isEmpty()) {
+            return back()
+                ->withErrors([
+                    'id_module' => 'Aucun etudiant inscrit pour ce module dans l\'annee academique de la session choisie. Creez les inscriptions pedagogiques avant de planifier cet examen.',
+                ])
+                ->withInput();
+        }
         $studentCount = $registrations->count();
         $salleModels = Salle::whereIn('id_salle', $allSalleIds)->get(['id_salle', 'code_salle', 'capacite_examens', 'capacite']);
         $totalCapacity = $salleModels->sum(function ($salle) {
@@ -131,6 +140,7 @@ class ExamenController extends Controller
     {
         $validated = $this->validateExamen($request);
 
+        $session = SessionExamen::find((int) $validated['id_session_examen'], ['id_session_examen', 'id_annee']);
         $salles = collect($request->input('salles', []))
             ->filter()
             ->map(fn ($id) => (int) $id)
@@ -139,8 +149,38 @@ class ExamenController extends Controller
 
         $validated['id_salle'] = $validated['id_salle'] ?? $salles->first();
 
+        // Ensure at least one salle is provided
+        $allSalleIds = $salles;
+        if ($validated['id_salle']) {
+            $allSalleIds = $allSalleIds->push((int) $validated['id_salle'])->unique()->values();
+        }
+        if ($allSalleIds->isEmpty()) {
+            return back()->with('error', 'Veuillez selectionner au moins une salle.');
+        }
+
+        // Validate capacity vs expected students
+        $registrations = $this->registrationsForModule((int) $validated['id_module'], $session?->id_annee);
+        if ($registrations->isEmpty()) {
+            return back()
+                ->withErrors([
+                    'id_module' => 'Aucun etudiant inscrit pour ce module dans l\'annee academique de la session choisie. Creez les inscriptions pedagogiques avant de planifier cet examen.',
+                ])
+                ->withInput();
+        }
+        $studentCount = $registrations->count();
+        $salleModels = Salle::whereIn('id_salle', $allSalleIds)->get(['id_salle', 'code_salle', 'capacite_examens', 'capacite']);
+        $totalCapacity = $salleModels->sum(function ($salle) {
+            return $salle->capacite_examens ?? $salle->capacite ?? 0;
+        });
+
+        if ($studentCount > $totalCapacity) {
+            return back()
+                ->withErrors(['salles' => 'Capacite des salles insuffisante pour le nombre d\'etudiants. Ajoutez une salle.'])
+                ->withInput();
+        }
+
         $examen->update($validated);
-        $examen->salles()->sync($salles);
+        $examen->salles()->sync($allSalleIds);
 
         return redirect()
             ->route('examens.examens.index')
@@ -188,7 +228,10 @@ class ExamenController extends Controller
 
     private function generateInitialRepartition(Examen $examen, $registrations = null): void
     {
-        $registrations = $registrations ?? $this->registrationsForModule((int) $examen->id_module);
+        $registrations = $registrations ?? $this->registrationsForModule(
+            (int) $examen->id_module,
+            $examen->sessionExamen?->id_annee
+        );
 
         if ($registrations->isEmpty()) {
             return;
@@ -306,9 +349,10 @@ class ExamenController extends Controller
         }
     }
 
-    private function registrationsForModule(int $moduleId)
+    private function registrationsForModule(int $moduleId, ?int $anneeId = null)
     {
-        $activeYearId = AnneeUniversitaire::where('est_active', true)->latest('date_debut')->value('id_annee');
+        $activeYearId = $anneeId
+            ?: AnneeUniversitaire::where('est_active', true)->latest('date_debut')->value('id_annee');
 
         return InscriptionPedagogique::query()
             ->whereHas('offreFormation', function ($query) use ($moduleId) {

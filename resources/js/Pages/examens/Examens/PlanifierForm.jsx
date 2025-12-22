@@ -90,7 +90,7 @@ export default function PlanifierForm({
                 >
                     {salles.map((salle) => (
                         <option key={salle.id_salle} value={String(salle.id_salle)}>
-                            {salle.code_salle} - Capacite {salle.capacite_examens}
+                            {salle.nom_salle} - Capacite {salle.capacite_examens}
                         </option>
                     ))}
                 </select>

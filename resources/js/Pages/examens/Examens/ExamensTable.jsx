@@ -338,7 +338,7 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
                                 >
                                     {salles.map((salle) => (
                                         <option key={salle.id_salle} value={String(salle.id_salle)}>
-                                            {salle.code_salle}
+                                            {salle.code_salle} - Capacite {salle.capacite_examens ?? salle.capacite ?? 0}
                                         </option>
                                     ))}
                                 </select>
@@ -428,4 +428,3 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
         </div>
     );
 }
-
