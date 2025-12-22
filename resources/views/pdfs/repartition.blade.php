@@ -5,39 +5,23 @@
     <title>Repartition - {{ $examen->module->code_module ?? 'Examen' }}</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: Arial, sans-serif; padding: 20px; padding-bottom: 50px; counter-reset: page; }
-        .container { max-width: 800px; margin: 0 auto; display: flex; flex-direction: column; align-items: center; }
-        .header { text-align: right; font-size: 11px; margin-bottom: 5px; color: #666; }
-        .date { font-size: 12px; font-weight: bold; }
-        h1 { text-align: center; font-size: 28px; font-weight: bold; margin-bottom: 5px; letter-spacing: 2px; }
-        h2 { text-align: center; font-size: 18px; font-weight: bold; margin-bottom: 15px; }
-        .info-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
-        .info-table td { border: 2px solid #000; padding: 8px; font-size: 13px; }
+        body { font-family: Arial, sans-serif; padding: 12px 14px 26px; }
+        .container { width: 100%; max-width: none; margin: 0; display: flex; flex-direction: column; align-items: stretch; }
+        .header { text-align: right; font-size: 10px; margin-bottom: 2px; color: #666; }
+        .date { font-size: 11px; font-weight: bold; }
+        h1 { text-align: center; font-size: 24px; font-weight: bold; margin-bottom: 4px; letter-spacing: 1px; }
+        h2 { text-align: center; font-size: 15px; font-weight: bold; margin-bottom: 8px; }
+        .info-table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+        .info-table td { border: 2px solid #000; padding: 6px; font-size: 12px; }
         .info-table .label { font-weight: bold; width: 20%; }
-        .info-table .value { text-transform: uppercase; font-weight: 800; text-align: center; font-size: 16px; }
-        .counts { width: 100%; display: flex; gap: 12px; margin-bottom: 10px; }
-        .count-box { flex: 1; border: 2px solid #000; padding: 8px; text-align: center; font-weight: bold; }
+        .info-table .value { text-transform: uppercase; font-weight: 800; text-align: center; font-size: 14px; }
+        .counts { width: 100%; display: flex; gap: 8px; margin-bottom: 8px; }
+        .count-box { flex: 1; border: 2px solid #000; padding: 6px; text-align: center; font-size: 11px; font-weight: bold; }
         table { width: 100%; border-collapse: collapse; }
-        th, td { border: 1px solid #000; padding: 6px 8px; font-size: 12px; text-align: left; }
+        th, td { border: 1px solid #000; padding: 4px 6px; font-size: 11px; text-align: left; }
         th { background: #FFD966; text-align: center; }
-        tbody tr:nth-child(odd) { background: #d6d6d6; }
+        tbody tr:nth-child(odd) { background: #e5e5e5; }
         .text-center { text-align: center; }
-        .page-break { page-break-before: always; }
-
-        @page {
-            margin: 40px 10px 50px 20px;
-            counter-increment: page;
-        }
-        .footer {
-            position: fixed;
-            left: 0;
-            right: 0;
-            bottom: 10px;
-            text-align: center;
-            font-size: 10px;
-            color: #333;
-        }
-        .footer .pagenum:before { content: counter(page+1); }
     </style>
 </head>
 <body>
@@ -61,9 +45,9 @@
     @endphp
 
     @foreach($groups as $groupIndex => $group)
-        <div class="container" style="padding-right: 30px; {{ $groupIndex > 0 ? 'page-break-before: always;' : '' }}">
-            <img src="{{ public_path('/logo.png') }}" alt="Logo" style="top: 20px; left: 20px; width: 100%; height: 70px;">
-            <div class="date-service" style="margin-top: 10px; width: 100%; display: flex; justify-content: space-between;">
+        <div class="container" style="{{ $groupIndex > 0 ? 'page-break-before: always;' : '' }}">
+            <img src="{{ public_path('/logo.png') }}" alt="Logo" style="top: 10px; left: 20px; width: 100%; height: 55px;">
+            <div class="date-service" style="margin-top: 6px; width: 100%; display: flex; justify-content: space-between;">
                 <div class="header">{{ $examen->sessionExamen->nom_session ?? '-' }}</div>
                 <div class="date">Fes le : {{ $generatedAt->format('d/m/Y') }}</div>
             </div>
@@ -88,8 +72,10 @@
 
             <div class="counts">
                 <div class="count-box">Total: {{ $group['total'] }}</div>
-                <div class="count-box">Presents: {{ $group['present'] }}</div>
-                <div class="count-box">Absents: {{ $group['absent'] }}</div>
+                @if($presenceFilled)
+                    <div class="count-box">Presents: {{ $group['present'] }}</div>
+                    <div class="count-box">Absents: {{ $group['absent'] }}</div>
+                @endif
             </div>
 
             <table>
@@ -143,14 +129,10 @@
                 </tbody>
             </table>
 
-            <div style="width: 100%; text-align: right; font-size: 11px; margin-top: 5px;">
+            <div style="width: 100%; text-align: right; font-size: 11px; margin-top: 4px;">
                 Genere le {{ $generatedAt->format('d/m/Y H:i') }}
             </div>
         </div>
     @endforeach
-
-    <div class="footer">
-        Page <span class="pagenum"></span>
-    </div>
 </body>
 </html>
