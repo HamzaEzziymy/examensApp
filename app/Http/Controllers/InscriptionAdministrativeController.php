@@ -147,10 +147,17 @@ class InscriptionAdministrativeController extends Controller
 
         $created = 0;
         $skipped = 0;
+        $errors = [];
+        $totalRows = count($request->inscriptions);
 
         DB::beginTransaction();
         try {
-            foreach ($request->inscriptions as $inscriptionData) {
+            foreach ($request->inscriptions as $index => $inscriptionData) {
+                // Get student info for error reporting
+                $student = Etudiant::find($inscriptionData['id_etudiant']);
+                $studentName = $student ? "{$student->nom} {$student->prenom}" : 'Inconnu';
+                $studentCne = $student ? $student->cne : 'N/A';
+
                 // Check for duplicate
                 $exists = InscriptionAdministrative::where('id_etudiant', $inscriptionData['id_etudiant'])
                     ->where('id_annee', $inscriptionData['id_annee'])
@@ -158,21 +165,94 @@ class InscriptionAdministrativeController extends Controller
                     ->exists();
 
                 if (!$exists) {
-                    $inscriptionAdmin = InscriptionAdministrative::create($inscriptionData);
-                    // Automatically create pedagogical inscriptions
-                    $this->createAutomaticPedagogicalInscriptions($inscriptionAdmin);
-                    $created++;
+                    try {
+                        $inscriptionAdmin = InscriptionAdministrative::create($inscriptionData);
+                        // Automatically create pedagogical inscriptions
+                        $this->createAutomaticPedagogicalInscriptions($inscriptionAdmin);
+                        $created++;
+                    } catch (\Exception $e) {
+                        $skipped++;
+                        $errors[] = [
+                            'row' => $index + 1,
+                            'cne' => $studentCne,
+                            'student_name' => $studentName,
+                            'errors' => ['Erreur de base de données: ' . $e->getMessage()]
+                        ];
+                    }
                 } else {
                     $skipped++;
+                    $errors[] = [
+                        'row' => $index + 1,
+                        'cne' => $studentCne,
+                        'student_name' => $studentName,
+                        'errors' => ['Inscription déjà existante pour cette année et ce niveau']
+                    ];
                 }
             }
             DB::commit();
 
-            return redirect()->route('inscriptions.administratives.index')
-                ->with('success', "Import terminé: {$created} inscriptions créées, {$skipped} doublons ignorés.");
+            // Build response message
+            $message = $this->buildImportMessage($created, $skipped, $totalRows);
+
+            // Check if request expects JSON (AJAX request)
+            if ($request->expectsJson() || $request->ajax()) {
+                if (empty($errors)) {
+                    return response()->json([
+                        'success' => true,
+                        'message' => $message,
+                        'created' => $created,
+                        'skipped' => $skipped,
+                        'import_errors' => []
+                    ]);
+                } else {
+                    return response()->json([
+                        'success' => $created > 0,
+                        'message' => $message,
+                        'created' => $created,
+                        'skipped' => $skipped,
+                        'import_errors' => $errors
+                    ], $created > 0 ? 200 : 422);
+                }
+            }
+
+            // Standard redirect response
+            if (empty($errors)) {
+                return redirect()->route('inscriptions.administratives.index')
+                    ->with('success', $message);
+            } else {
+                return redirect()->route('inscriptions.administratives.index')
+                    ->with('import_partial', $message)
+                    ->with('import_errors', $errors);
+            }
+
         } catch (\Exception $e) {
             DB::rollBack();
+            
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Erreur lors de l\'import: ' . $e->getMessage(),
+                    'created' => 0,
+                    'skipped' => $totalRows,
+                    'import_errors' => []
+                ], 500);
+            }
+            
             return back()->withErrors(['error' => 'Erreur lors de l\'import: ' . $e->getMessage()]);
+        }
+    }
+
+    /**
+     * Build human-readable import result message
+     */
+    private function buildImportMessage(int $created, int $skipped, int $total): string
+    {
+        if ($skipped === 0) {
+            return "Import réussi: {$created} inscriptions créées avec succès";
+        } elseif ($created === 0) {
+            return "Import échoué: {$skipped} inscriptions avec erreurs sur {$total}";
+        } else {
+            return "Import partiel: {$created} inscriptions créées, {$skipped} avec erreurs";
         }
     }
 

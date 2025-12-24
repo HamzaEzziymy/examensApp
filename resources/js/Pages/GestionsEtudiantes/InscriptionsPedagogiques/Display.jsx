@@ -134,7 +134,7 @@ const InscriptionPedagogiqueDataTable = ({
       return;
     }
     
-    inscriptionForm.post(route('inscriptions.pedagogiques.store'), {
+    inscriptionForm.post('/inscriptions/pedagogiques', {
       onSuccess: () => {
         setShowAddModal(false);
         inscriptionForm.reset();
@@ -182,7 +182,7 @@ const InscriptionPedagogiqueDataTable = ({
 
   const handleUpdate = (e) => {
     e.preventDefault();
-    editForm.put(route('inscriptions.pedagogiques.update', editingInscription.id_inscription_pedagogique), {
+    editForm.put(`/inscriptions/pedagogiques/${editingInscription.id_inscription_pedagogique}`, {
       onSuccess: () => {
         setShowEditModal(false);
         setEditingInscription(null);
@@ -217,54 +217,90 @@ const InscriptionPedagogiqueDataTable = ({
   };
 
   // Handle delete
-  const handleDelete = (id) => {
+  const handleDelete = (id, force = false) => {
     console.log('=== DEBUGGING DELETE FUNCTION ===');
     console.log('Attempting to delete inscription with ID:', id);
-    console.log('Route being called:', route('inscriptions.pedagogiques.destroy', id));
+    console.log('Force delete:', force);
+    console.log('Delete URL:', `/inscriptions/pedagogiques/${id}${force ? '?force=1' : ''}`);
+    
+    // SweetAlert confirm dialog
+    const confirmTitle = force 
+      ? 'FORCE DELETE - Attention !'
+      : 'Êtes-vous sûr ?';
+    const confirmText = force 
+      ? 'Vous allez supprimer cette inscription en ignorant les relations. Ceci peut causer des problèmes de données !'
+      : 'Cette action est irréversible !';
+    const confirmButtonText = force 
+      ? 'Oui, forcer la suppression !'
+      : 'Oui, supprimer !';
     
     Swal.fire({
-      title: 'Êtes-vous sûr ?',
-      text: "Cette action est irréversible !",
-      icon: 'warning',
+      title: confirmTitle,
+      text: confirmText,
+      icon: force ? 'error' : 'warning',
       showCancelButton: true,
-      confirmButtonColor: '#d33',
+      confirmButtonColor: force ? '#dc2626' : '#d33',
       cancelButtonColor: '#3085d6',
-      confirmButtonText: 'Oui, supprimer !',
+      confirmButtonText: confirmButtonText,
       cancelButtonText: 'Annuler'
     }).then((result) => {
-      if (result.isConfirmed) {
-        console.log('User confirmed deletion, making request...');
-        
-        router.delete(route('inscriptions.pedagogiques.destroy', id), {
-          onSuccess: (response) => {
-            console.log('✅ Delete successful:', response);
-            Swal.fire(
-              'Supprimé !',
-              'L\'inscription pédagogique a été supprimée.',
-              'success'
-            );
-            // Reload the page data
-            router.reload({ only: ['inscriptions_pedagogiques'] });
-          },
-          onError: (errors) => {
-            console.log('❌ Delete failed with errors:', errors);
-            console.log('Error details:', JSON.stringify(errors, null, 2));
-            
-            // Show error message
-            const errorMessage = errors.error || 'Erreur lors de la suppression';
+      if (!result.isConfirmed) {
+        console.log('User cancelled deletion');
+        return;
+      }
+      
+      console.log('User confirmed deletion, making request...');
+      
+      const deleteUrl = force 
+        ? `/inscriptions/pedagogiques/${id}?force=1`
+        : `/inscriptions/pedagogiques/${id}`;
+      
+      router.delete(deleteUrl, {
+        onSuccess: (response) => {
+          console.log('✅ Delete successful:', response);
+          Swal.fire(
+            'Supprimé !',
+            'L\'inscription pédagogique a été supprimée avec succès.',
+            'success'
+          );
+          // Reload the page data
+          router.reload({ only: ['inscriptions_pedagogiques'] });
+        },
+        onError: (errors) => {
+          console.log('❌ Delete failed with errors:', errors);
+          console.log('Error details:', JSON.stringify(errors, null, 2));
+          
+          // Show error message with option to force delete
+          const errorMessage = errors.error || Object.values(errors).flat().join(', ') || 'Erreur lors de la suppression';
+          
+          if (!force && errorMessage.includes('données liées')) {
+            Swal.fire({
+              title: 'Suppression impossible',
+              text: errorMessage,
+              icon: 'error',
+              showCancelButton: true,
+              confirmButtonColor: '#dc2626',
+              cancelButtonColor: '#6b7280',
+              confirmButtonText: 'Forcer la suppression',
+              cancelButtonText: 'Annuler',
+              footer: '<small>⚠️ Forcer la suppression peut causer des problèmes de données</small>'
+            }).then((forceResult) => {
+              if (forceResult.isConfirmed) {
+                handleDelete(id, true); // Retry with force
+              }
+            });
+          } else {
             Swal.fire(
               'Erreur !',
               errorMessage,
               'error'
             );
-          },
-          onFinish: () => {
-            console.log('🔄 Delete request finished (success or error)');
           }
-        });
-      } else {
-        console.log('User cancelled deletion');
-      }
+        },
+        onFinish: () => {
+          console.log('🔄 Delete request finished (success or error)');
+        }
+      });
     });
   };
 
@@ -397,7 +433,7 @@ const InscriptionPedagogiqueDataTable = ({
       return;
     }
     
-    router.post(route('inscriptions.pedagogiques.bulk-store'), {
+    router.post('/inscriptions/pedagogiques/bulk-store', {
       inscriptions: inscriptionsToImport
     }, {
       onSuccess: () => {
@@ -721,7 +757,10 @@ const InscriptionPedagogiqueDataTable = ({
                               <Edit className="w-4 h-4" />
                             </button>
                             <button
-                              onClick={() => handleDelete(inscription.id_inscription_pedagogique)}
+                              onClick={() => {
+                                console.log('Delete button clicked for inscription:', inscription.id_inscription_pedagogique);
+                                handleDelete(inscription.id_inscription_pedagogique);
+                              }}
                               className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300 p-1"
                               title="Supprimer"
                             >

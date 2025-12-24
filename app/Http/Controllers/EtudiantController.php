@@ -145,6 +145,13 @@ class EtudiantController extends Controller
 
     /**
      * Bulk store students from Excel import
+     * 
+     * Returns structured response with:
+     * - success: boolean indicating overall success
+     * - message: human-readable summary
+     * - created: count of successfully created students
+     * - skipped: count of students with errors
+     * - errors: array of ImportError objects with row, student data, and error messages
      */
     protected function bulkStore(Request $request)
     {
@@ -152,66 +159,123 @@ class EtudiantController extends Controller
         $created = 0;
         $skipped = 0;
         $errors = [];
+        $totalRows = count($studentsData);
 
         \Log::info('Bulk import started', [
-            'total_students' => count($studentsData),
+            'total_students' => $totalRows,
             'first_student' => $studentsData[0] ?? null
         ]);
 
+        // First pass: collect all validation errors before any database operations
+        $validatedStudents = [];
+        foreach ($studentsData as $index => $data) {
+            // Validate the 4 core required fields: cne, nom, prenom, mail_academique
+            // mail_academique is strictly required with no auto-generation fallback
+            $validator = Validator::make($data, [
+                'cne' => 'required|string|min:2|max:20',
+                'nom' => 'required|string|min:2|max:50',
+                'prenom' => 'required|string|min:2|max:50',
+                'mail_academique' => 'required|email|max:100',
+                // All other fields are optional but must respect database constraints
+                'mail_personnel' => 'nullable|email|max:100',
+                'date_naissance' => 'nullable|date',
+                'telephone' => 'nullable|string|max:20',
+                'url_photo' => 'nullable|string|max:255',
+                'id_section' => 'nullable|integer|exists:sections,id_section',
+            ], [
+                'cne.required' => 'CNE requis',
+                'nom.required' => 'Nom requis',
+                'prenom.required' => 'Prénom requis',
+                'mail_academique.required' => 'Email académique requis',
+                'mail_academique.email' => 'Format email invalide',
+            ]);
+
+            if ($validator->fails()) {
+                $skipped++;
+                $errors[] = [
+                    'row' => $index + 2, // Excel row number (starting from 2)
+                    'cne' => $data['cne'] ?? '',
+                    'nom' => $data['nom'] ?? '',
+                    'prenom' => $data['prenom'] ?? '',
+                    'mail_academique' => $data['mail_academique'] ?? '',
+                    'errors' => $validator->errors()->all()
+                ];
+            } else {
+                $validatedStudents[] = [
+                    'index' => $index,
+                    'data' => $validator->validated(),
+                    'original' => $data
+                ];
+            }
+        }
+
+        // Check for unique constraint violations (CNE and email) against database
+        foreach ($validatedStudents as $key => $item) {
+            $uniqueErrors = [];
+            $data = $item['data'];
+            $original = $item['original'];
+            
+            // Check CNE uniqueness
+            if (Etudiant::where('cne', $data['cne'])->exists()) {
+                $uniqueErrors[] = 'CNE existe déjà dans la base de données';
+            }
+            
+            // Check email uniqueness
+            if (Etudiant::where('mail_academique', $data['mail_academique'])->exists()) {
+                $uniqueErrors[] = 'Email académique existe déjà dans la base de données';
+            }
+            
+            // Check mail_personnel uniqueness if provided
+            if (!empty($data['mail_personnel']) && Etudiant::where('mail_personnel', $data['mail_personnel'])->exists()) {
+                $uniqueErrors[] = 'Email personnel existe déjà dans la base de données';
+            }
+            
+            if (!empty($uniqueErrors)) {
+                $skipped++;
+                $errors[] = [
+                    'row' => $item['index'] + 2,
+                    'cne' => $data['cne'] ?? '',
+                    'nom' => $data['nom'] ?? '',
+                    'prenom' => $data['prenom'] ?? '',
+                    'mail_academique' => $data['mail_academique'] ?? '',
+                    'errors' => $uniqueErrors
+                ];
+                unset($validatedStudents[$key]);
+            }
+        }
+
+        // Re-index array after removing invalid entries
+        $validatedStudents = array_values($validatedStudents);
+
+        // Second pass: insert valid students within a transaction
         DB::beginTransaction();
         try {
-            foreach ($studentsData as $index => $data) {
-                // Only validate the 4 core required fields: cne, nom, prenom, mail_academique
-                $validator = Validator::make($data, [
-                    'cne' => 'required|string|min:2|max:20|unique:etudiants,cne',
-                    'nom' => 'required|string|min:2|max:50',
-                    'prenom' => 'required|string|min:2|max:50',
-                    'mail_academique' => 'required|email|max:100|unique:etudiants,mail_academique',
-                    // All other fields are optional but must respect database constraints
-                    'mail_personnel' => 'nullable|email|max:100|unique:etudiants,mail_personnel',
-                    'date_naissance' => 'nullable|date',
-                    'telephone' => 'nullable|string|max:20',
-                    'url_photo' => 'nullable|string|max:255',
-                    'id_section' => 'nullable|integer|exists:sections,id_section',
-                ]);
-
-                if ($validator->fails()) {
-                    $skipped++;
-                    $errors[] = [
-                        'row' => $index + 2, // Excel row number (starting from 2)
-                        'cne' => $data['cne'] ?? '',
-                        'nom' => $data['nom'] ?? '',
-                        'prenom' => $data['prenom'] ?? '',
-                        'mail_academique' => $data['mail_academique'] ?? '',
-                        'errors' => $validator->errors()->all()
-                    ];
-                } else {
-                    try {
-                        // Create student with validated data
-                        $studentData = $validator->validated();
-                        
-                        // Handle empty strings for nullable fields
-                        foreach (['mail_personnel', 'date_naissance', 'telephone', 'url_photo', 'id_section'] as $field) {
-                            if (isset($studentData[$field]) && $studentData[$field] === '') {
-                                $studentData[$field] = null;
-                            }
-                        }
-                        
-                        Etudiant::create($studentData);
-                        $created++;
-                    } catch (\Exception $e) {
-                        $skipped++;
-                        $errors[] = [
-                            'row' => $index + 2,
-                            'cne' => $data['cne'] ?? '',
-                            'nom' => $data['nom'] ?? '',
-                            'prenom' => $data['prenom'] ?? '',
-                            'mail_academique' => $data['mail_academique'] ?? '',
-                            'errors' => ['Erreur de base de données: ' . $e->getMessage()]
-                        ];
+            foreach ($validatedStudents as $item) {
+                $studentData = $item['data'];
+                
+                // Handle empty strings for nullable fields
+                foreach (['mail_personnel', 'date_naissance', 'telephone', 'url_photo', 'id_section'] as $field) {
+                    if (isset($studentData[$field]) && $studentData[$field] === '') {
+                        $studentData[$field] = null;
                     }
                 }
+                
+                try {
+                    Etudiant::create($studentData);
+                    $created++;
+                } catch (\Exception $e) {
+                    $skipped++;
+                    $errors[] = [
+                        'row' => $item['index'] + 2,
+                        'cne' => $studentData['cne'] ?? '',
+                        'nom' => $studentData['nom'] ?? '',
+                        'prenom' => $studentData['prenom'] ?? '',
+                        'mail_academique' => $studentData['mail_academique'] ?? '',
+                        'errors' => ['Erreur de base de données: ' . $e->getMessage()]
+                    ];
+                }
             }
+            
             DB::commit();
 
             \Log::info('Bulk import completed', [
@@ -221,16 +285,55 @@ class EtudiantController extends Controller
                 'errors' => $errors
             ]);
 
+            // Build structured response message
+            $message = $this->buildImportMessage($created, $skipped, $totalRows);
+
             // Return appropriate response based on results
             if (empty($errors)) {
                 // All students imported successfully
+                // Check if request expects JSON (AJAX request)
+                if ($request->expectsJson() || $request->ajax()) {
+                    return response()->json([
+                        'success' => true,
+                        'message' => $message,
+                        'created' => $created,
+                        'skipped' => $skipped,
+                        'errors' => []
+                    ]);
+                }
+                
                 return redirect()->route('inscriptions.etudiants.index')
-                    ->with('success', "Import réussi: {$created} étudiants créés avec succès");
+                    ->with('success', $message)
+                    ->with('import_result', [
+                        'success' => true,
+                        'message' => $message,
+                        'created' => $created,
+                        'skipped' => $skipped,
+                        'errors' => []
+                    ]);
             } else {
-                // Some students had errors
+                // Some students had errors - return structured error response
+                // Check if request expects JSON (AJAX request)
+                if ($request->expectsJson() || $request->ajax()) {
+                    return response()->json([
+                        'success' => $created > 0,
+                        'message' => $message,
+                        'created' => $created,
+                        'skipped' => $skipped,
+                        'import_errors' => $errors
+                    ], $created > 0 ? 200 : 422);
+                }
+                
                 return redirect()->route('inscriptions.etudiants.index')
-                    ->with('import_partial', "Import partiel: {$created} étudiants créés, {$skipped} avec erreurs")
-                    ->with('import_errors', $errors);
+                    ->with('import_partial', $message)
+                    ->with('import_errors', $errors)
+                    ->with('import_result', [
+                        'success' => $created > 0,
+                        'message' => $message,
+                        'created' => $created,
+                        'skipped' => $skipped,
+                        'errors' => $errors
+                    ]);
             }
 
         } catch (\Exception $e) {
@@ -240,8 +343,40 @@ class EtudiantController extends Controller
                 'trace' => $e->getTraceAsString()
             ]);
             
+            // Check if request expects JSON (AJAX request)
+            if ($request->expectsJson() || $request->ajax()) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Erreur lors de l\'import: ' . $e->getMessage(),
+                    'created' => 0,
+                    'skipped' => $totalRows,
+                    'import_errors' => []
+                ], 500);
+            }
+            
             return redirect()->route('inscriptions.etudiants.index')
-                ->withErrors(['import' => 'Erreur lors de l\'import: ' . $e->getMessage()]);
+                ->withErrors(['import' => 'Erreur lors de l\'import: ' . $e->getMessage()])
+                ->with('import_result', [
+                    'success' => false,
+                    'message' => 'Erreur lors de l\'import: ' . $e->getMessage(),
+                    'created' => 0,
+                    'skipped' => $totalRows,
+                    'errors' => []
+                ]);
+        }
+    }
+
+    /**
+     * Build human-readable import result message
+     */
+    private function buildImportMessage(int $created, int $skipped, int $total): string
+    {
+        if ($skipped === 0) {
+            return "Import réussi: {$created} étudiants créés avec succès";
+        } elseif ($created === 0) {
+            return "Import échoué: {$skipped} étudiants avec erreurs sur {$total}";
+        } else {
+            return "Import partiel: {$created} étudiants créés, {$skipped} avec erreurs";
         }
     }
 

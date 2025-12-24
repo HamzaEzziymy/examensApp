@@ -1,9 +1,10 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { router, usePage } from '@inertiajs/react';
-import { Search, Plus, Upload, Download, Edit, Trash2, Filter, X, FileSpreadsheet, Users, ChevronLeft, ChevronRight, Eye } from 'lucide-react';
+import { Search, Plus, Upload, Download, Edit, Trash2, Filter, X, FileSpreadsheet, Users, ChevronLeft, ChevronRight, Eye, Loader2 } from 'lucide-react';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import * as XLSX from 'xlsx';
+import axios from 'axios';
 
 // Inertia props from controller
 const StudentDataTable = ({ 
@@ -46,6 +47,8 @@ const StudentDataTable = ({
   const [importPreview, setImportPreview] = useState([]);
   const [importErrors, setImportErrors] = useState([]);
   const [selectedImportSection, setSelectedImportSection] = useState('');
+  const [backendErrors, setBackendErrors] = useState([]); // Errors from backend validation
+  const [isImporting, setIsImporting] = useState(false); // Loading state for import
 
   // Server flash messages and import errors
   const { flash } = usePage().props;
@@ -64,13 +67,26 @@ const StudentDataTable = ({
 
   useEffect(() => {
     if (flash?.success) {
-      toast.success(flash.success);
+      toast.success(flash.success, {
+        icon: '✅',
+        autoClose: 4000
+      });
     }
     if (flash?.import_partial) {
-      toast.info(flash.import_partial);
+      toast.info(flash.import_partial, {
+        icon: '⚠️',
+        autoClose: 5000
+      });
     }
     if (flash?.import_errors && flash.import_errors.length > 0) {
-      toast.error(`${flash.import_errors.length} étudiants avec erreurs de validation`);
+      const errorCount = flash.import_errors.length;
+      toast.error(
+        `Import partiel: ${errorCount} étudiant${errorCount > 1 ? 's' : ''} avec erreurs de validation. Consultez le détail ci-dessous.`,
+        {
+          icon: '❌',
+          autoClose: 6000
+        }
+      );
     }
   }, [flash?.success, flash?.import_partial, flash?.import_errors]);
 
@@ -124,7 +140,10 @@ const StudentDataTable = ({
         // Show detailed error message
         if (errors) {
           const errorMessages = Object.values(errors).flat().join(', ');
-          toast.error(`Erreur de validation: ${errorMessages}`);
+          toast.error(`Erreur de validation: ${errorMessages}`, {
+            icon: '❌',
+            autoClose: 5000
+          });
         }
       },
       onFinish: () => {
@@ -145,17 +164,17 @@ const StudentDataTable = ({
     return cneRegex.test(cne);
   };
 
-  // Check for duplicates in current data
+  // Check for duplicates in current data (case-insensitive, trimmed)
   const checkDuplicates = (data, field) => {
-    const values = data.map(row => row[field]).filter(val => val);
+    const values = data.map(row => row[field] ? row[field].toString().trim().toLowerCase() : '').filter(val => val);
     const duplicates = values.filter((val, index) => values.indexOf(val) !== index);
     return [...new Set(duplicates)];
   };
 
-  // Check for duplicates against existing students
+  // Check for duplicates against existing students (case-insensitive, trimmed)
   const checkExistingDuplicates = (data, field) => {
-    const existingValues = students.map(student => student[field]).filter(val => val);
-    const newValues = data.map(row => row[field]).filter(val => val);
+    const existingValues = students.map(student => student[field] ? student[field].toString().trim().toLowerCase() : '').filter(val => val);
+    const newValues = data.map(row => row[field] ? row[field].toString().trim().toLowerCase() : '').filter(val => val);
     return newValues.filter(val => existingValues.includes(val));
   };
 
@@ -175,48 +194,38 @@ const StudentDataTable = ({
         const data = XLSX.utils.sheet_to_json(sheet);
 
         if (data.length === 0) {
-          toast.error('Le fichier Excel est vide');
+          toast.error('Le fichier Excel est vide. Veuillez sélectionner un fichier contenant des données.', {
+            icon: '📄',
+            autoClose: 4000
+          });
           return;
         }
 
-        // Comprehensive validation
+        // Comprehensive validation - NO auto-generation of emails
         const errors = [];
         const validRows = [];
         const invalidRows = [];
 
-        // First pass: generate emails for all rows to check for duplicates
-        const processedData = data.map(row => {
-          let finalEmail = row.mail_academique ? row.mail_academique.toString().trim() : '';
-          
-          // Auto-generate email if missing or invalid
-          if (!finalEmail || !validateEmail(finalEmail)) {
-            if (row.nom && row.prenom) {
-              const nom = row.nom.toString().trim().toLowerCase();
-              const prenom = row.prenom.toString().trim().toLowerCase();
-              // Remove accents and special characters, replace spaces with dots
-              const cleanNom = nom.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, '');
-              const cleanPrenom = prenom.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]/g, '');
-              finalEmail = `${cleanPrenom}.${cleanNom}@usmba.ac.ma`;
-            }
-          }
-          
-          return {
-            ...row,
-            processed_mail_academique: finalEmail
-          };
-        });
+        // Extract emails from data for duplicate checking
+        const emailsInFile = data.map(row => 
+          row.mail_academique ? row.mail_academique.toString().trim().toLowerCase() : ''
+        ).filter(email => email);
 
-        // Check for duplicates in the file (using processed emails)
+        // Check for duplicates in the file
         const cneDuplicates = checkDuplicates(data, 'cne');
-        const emailDuplicates = checkDuplicates(processedData, 'processed_mail_academique');
         
-        // Check for duplicates against existing students (using processed emails)
+        // Find duplicate emails within the file (case-insensitive)
+        const emailCounts = {};
+        emailsInFile.forEach(email => {
+          emailCounts[email] = (emailCounts[email] || 0) + 1;
+        });
+        const emailDuplicatesInFile = Object.keys(emailCounts).filter(email => emailCounts[email] > 1);
+        
+        // Check for duplicates against existing students
         const existingCNEDuplicates = checkExistingDuplicates(data, 'cne');
-        const existingEmailDuplicates = processedData
-          .map(row => row.processed_mail_academique)
-          .filter(email => email && students.some(student => student.mail_academique === email));
+        const existingEmails = students.map(s => s.mail_academique?.toLowerCase()).filter(Boolean);
 
-        const preview = processedData.map((row, index) => {
+        const preview = data.map((row, index) => {
           const rowErrors = [];
           const rowNumber = index + 2; // Excel row number (starting from 2)
 
@@ -225,13 +234,14 @@ const StudentDataTable = ({
             rowErrors.push('CNE requis');
           } else {
             const cne = row.cne.toString().trim();
+            const cneLower = cne.toLowerCase();
             if (!validateCNE(cne)) {
-              rowErrors.push('CNE invalide (8-20 caractères alphanumériques)');
+              rowErrors.push('CNE invalide (3-20 caractères alphanumériques)');
             }
-            if (cneDuplicates.includes(cne)) {
+            if (cneDuplicates.includes(cneLower)) {
               rowErrors.push('CNE dupliqué dans le fichier');
             }
-            if (existingCNEDuplicates.includes(cne)) {
+            if (existingCNEDuplicates.includes(cneLower)) {
               rowErrors.push('CNE existe déjà dans la base de données');
             }
           }
@@ -254,17 +264,20 @@ const StudentDataTable = ({
             rowErrors.push('Prénom trop long (maximum 50 caractères)');
           }
 
-          // 4. Email Académique Validation (Required) with Auto-Generation
-          const finalEmail = row.processed_mail_academique;
+          // 4. Email Académique Validation (Required) - NO auto-generation
+          const emailValue = row.mail_academique ? row.mail_academique.toString().trim() : '';
           
-          if (!finalEmail) {
-            rowErrors.push('Email académique requis (impossible de générer automatiquement sans nom et prénom)');
+          if (!emailValue) {
+            rowErrors.push('Email académique requis');
+          } else if (!validateEmail(emailValue)) {
+            rowErrors.push('Format email académique invalide');
           } else {
-            // Check for duplicates with the final email (original or auto-generated)
-            if (emailDuplicates.includes(finalEmail)) {
+            // Check for duplicates (case-insensitive)
+            const emailLower = emailValue.toLowerCase();
+            if (emailDuplicatesInFile.includes(emailLower)) {
               rowErrors.push('Email académique dupliqué dans le fichier');
             }
-            if (existingEmailDuplicates.includes(finalEmail)) {
+            if (existingEmails.includes(emailLower)) {
               rowErrors.push('Email académique existe déjà dans la base de données');
             }
           }
@@ -276,8 +289,7 @@ const StudentDataTable = ({
             cne: row.cne ? row.cne.toString().trim() : '',
             nom: row.nom ? row.nom.toString().trim() : '',
             prenom: row.prenom ? row.prenom.toString().trim() : '',
-
-            mail_academique: finalEmail, // Use auto-generated or corrected email
+            mail_academique: emailValue,
             mail_personnel: row.mail_personnel ? row.mail_personnel.toString().trim() : '',
             date_naissance: row.date_naissance || '',
             telephone: row.telephone ? row.telephone.toString().trim() : '',
@@ -305,16 +317,47 @@ const StudentDataTable = ({
         setImportPreview(preview);
         setImportErrors(errors);
 
-        // Show summary
+        // Show summary with appropriate notification type
         if (errors.length > 0) {
-          toast.error(`${errors.length} erreurs détectées sur ${data.length} lignes`);
+          const validCount = data.length - errors.length;
+          if (validCount > 0) {
+            // Partial success - some valid, some errors
+            toast.warning(
+              `Fichier analysé: ${validCount} étudiant${validCount > 1 ? 's' : ''} valide${validCount > 1 ? 's' : ''}, ${errors.length} avec erreurs. Corrigez les erreurs ou importez uniquement les valides.`,
+              {
+                icon: '⚠️',
+                autoClose: 6000
+              }
+            );
+          } else {
+            // All rows have errors
+            toast.error(
+              `Aucun étudiant valide: ${errors.length} erreur${errors.length > 1 ? 's' : ''} détectée${errors.length > 1 ? 's' : ''}. Veuillez corriger le fichier Excel.`,
+              {
+                icon: '❌',
+                autoClose: 6000
+              }
+            );
+          }
         } else {
-          toast.success(`${data.length} étudiants valides prêts à importer`);
+          toast.success(
+            `Fichier validé: ${data.length} étudiant${data.length > 1 ? 's' : ''} prêt${data.length > 1 ? 's' : ''} à importer.`,
+            {
+              icon: '✅',
+              autoClose: 4000
+            }
+          );
         }
 
       } catch (error) {
         console.error('Excel parsing error:', error);
-        toast.error('Erreur lors de la lecture du fichier Excel. Vérifiez le format du fichier.');
+        toast.error(
+          'Erreur lors de la lecture du fichier Excel. Vérifiez que le fichier est au format .xlsx ou .xls valide.',
+          {
+            icon: '📄',
+            autoClose: 5000
+          }
+        );
       }
     };
 
@@ -322,7 +365,10 @@ const StudentDataTable = ({
   };
 
   // Submit bulk import
-  const handleBulkImport = () => {
+  const handleBulkImport = async () => {
+    // Clear any previous backend errors
+    setBackendErrors([]);
+    
     // Filter out students with errors - only send valid students
     const validStudents = importPreview.filter(student => {
       return !importErrors.some(error => 
@@ -337,55 +383,350 @@ const StudentDataTable = ({
       id_section: selectedImportSection || s.id_section || '',
     }));
 
-    console.log('Frontend validation errors:', importErrors);
-    console.log('Sending valid students payload:', studentsPayload);
-    console.log('Total students in preview:', importPreview.length);
-    console.log('Valid students to send:', studentsPayload.length);
+    // Calculate summary counts
+    const totalRows = importPreview.length;
+    const validCount = validStudents.length;
+    const frontendSkippedCount = importErrors.length;
+
+    console.log('Import Summary:');
+    console.log('- Total rows in file:', totalRows);
+    console.log('- Valid students to import:', validCount);
+    console.log('- Skipped due to frontend errors:', frontendSkippedCount);
+    console.log('Payload:', studentsPayload);
 
     if (studentsPayload.length === 0) {
-      toast.error('Aucun étudiant valide à importer');
+      toast.error(
+        'Aucun étudiant valide à importer. Veuillez corriger les erreurs dans votre fichier Excel.',
+        {
+          icon: '❌',
+          autoClose: 5000
+        }
+      );
       return;
     }
 
-    router.post('/inscriptions/etudiants', { students: studentsPayload }, {
-      onSuccess: (response) => {
-        console.log('✅ Bulk import successful:', response);
+    setIsImporting(true);
+
+    try {
+      // Use axios to get the full response including import errors
+      const response = await axios.post('/inscriptions/etudiants', { students: studentsPayload }, {
+        headers: {
+          'Accept': 'application/json',
+          'X-Requested-With': 'XMLHttpRequest'
+        }
+      });
+      
+      console.log('✅ Import response:', response);
+      const responseData = response.data;
+      
+      // Check if there are backend errors in the response (partial import)
+      if (responseData.import_errors && responseData.import_errors.length > 0) {
+        // Partial import - some students had errors
+        const backendImportErrors = responseData.import_errors;
+        setBackendErrors(backendImportErrors);
+        
+        if (responseData.created > 0) {
+          toast.warning(
+            `Import partiel: ${responseData.created} créé${responseData.created > 1 ? 's' : ''}, ${backendImportErrors.length} erreur${backendImportErrors.length > 1 ? 's' : ''} détectée${backendImportErrors.length > 1 ? 's' : ''} par le serveur.`,
+            {
+              icon: '⚠️',
+              autoClose: 6000
+            }
+          );
+          // Refresh the students list to show newly created ones
+          router.reload({ only: ['students'] });
+        } else {
+          toast.error(
+            `Import échoué: ${backendImportErrors.length} erreur${backendImportErrors.length > 1 ? 's' : ''} détectée${backendImportErrors.length > 1 ? 's' : ''} par le serveur. Consultez le détail ci-dessous.`,
+            {
+              icon: '❌',
+              autoClose: 6000
+            }
+          );
+        }
+      } else {
+        // All students imported successfully
+        const createdCount = responseData.created || validCount;
+        toast.success(
+          `Import réussi: ${createdCount} étudiant${createdCount > 1 ? 's' : ''} créé${createdCount > 1 ? 's' : ''} avec succès!`,
+          {
+            icon: '🎉',
+            autoClose: 4000
+          }
+        );
+        
         // Close the modal and reset state
         setShowImportModal(false);
         setImportFile(null);
         setImportPreview([]);
         setImportErrors([]);
+        setBackendErrors([]);
         
         // Force refresh the page data
         router.reload({ only: ['students'] });
-      },
-      onError: (errors) => {
-        console.error('Import error:', errors);
-        toast.error('Erreur lors de l\'import: ' + JSON.stringify(errors));
       }
-    });
+      
+    } catch (error) {
+      console.error('Import error:', error);
+      
+      if (error.response) {
+        const responseData = error.response.data;
+        
+        // Check for backend import errors (duplicates, etc.) - status 422
+        if (responseData.import_errors && responseData.import_errors.length > 0) {
+          const backendImportErrors = responseData.import_errors;
+          setBackendErrors(backendImportErrors);
+          
+          if (responseData.created > 0) {
+            toast.warning(
+              `Import partiel: ${responseData.created} créé${responseData.created > 1 ? 's' : ''}, ${backendImportErrors.length} erreur${backendImportErrors.length > 1 ? 's' : ''}.`,
+              {
+                icon: '⚠️',
+                autoClose: 6000
+              }
+            );
+            router.reload({ only: ['students'] });
+          } else {
+            toast.error(
+              `${backendImportErrors.length} erreur${backendImportErrors.length > 1 ? 's' : ''} détectée${backendImportErrors.length > 1 ? 's' : ''} par le serveur. Consultez le détail ci-dessous.`,
+              {
+                icon: '❌',
+                autoClose: 6000
+              }
+            );
+          }
+        } else if (error.response.status === 422 && responseData.errors) {
+          // Laravel validation errors
+          const errorMessages = Object.values(responseData.errors).flat();
+          toast.error(
+            `Erreur de validation: ${errorMessages.join(', ')}`,
+            {
+              icon: '❌',
+              autoClose: 6000
+            }
+          );
+        } else {
+          toast.error(
+            `Erreur lors de l'import: ${responseData.message || 'Erreur inconnue'}`,
+            {
+              icon: '❌',
+              autoClose: 6000
+            }
+          );
+        }
+      } else {
+        toast.error(
+          `Erreur de connexion: ${error.message}`,
+          {
+            icon: '❌',
+            autoClose: 6000
+          }
+        );
+      }
+    } finally {
+      setIsImporting(false);
+    }
   };
 
-  // Download error report
+  // Download error report with comprehensive details
   const downloadErrorReport = () => {
     if (importErrors.length === 0) return;
 
-    const errorData = importErrors.map(error => ({
+    const now = new Date();
+    const timestamp = now.toLocaleString('fr-FR', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+    const dateForFilename = now.toISOString().split('T')[0];
+    const timeForFilename = now.toTimeString().split(' ')[0].replace(/:/g, '-');
+
+    // Calculate summary statistics
+    const totalRows = importPreview.length;
+    const validCount = totalRows - importErrors.length;
+    const errorCount = importErrors.length;
+
+    // Create summary sheet data
+    const summaryData = [
+      { 'Information': 'Rapport d\'erreurs - Import Étudiants', 'Valeur': '' },
+      { 'Information': '', 'Valeur': '' },
+      { 'Information': 'Date et heure du rapport', 'Valeur': timestamp },
+      { 'Information': 'Fichier source', 'Valeur': importFile?.name || 'Non spécifié' },
+      { 'Information': '', 'Valeur': '' },
+      { 'Information': '--- RÉSUMÉ ---', 'Valeur': '' },
+      { 'Information': 'Total de lignes dans le fichier', 'Valeur': totalRows },
+      { 'Information': 'Étudiants valides', 'Valeur': validCount },
+      { 'Information': 'Étudiants avec erreurs', 'Valeur': errorCount },
+      { 'Information': 'Taux de réussite', 'Valeur': totalRows > 0 ? `${Math.round((validCount / totalRows) * 100)}%` : '0%' },
+      { 'Information': '', 'Valeur': '' },
+      { 'Information': '--- TYPES D\'ERREURS ---', 'Valeur': '' },
+    ];
+
+    // Count error types
+    const errorTypeCounts = {};
+    importErrors.forEach(error => {
+      error.errors.forEach(err => {
+        errorTypeCounts[err] = (errorTypeCounts[err] || 0) + 1;
+      });
+    });
+
+    Object.entries(errorTypeCounts).forEach(([errorType, count]) => {
+      summaryData.push({ 'Information': errorType, 'Valeur': count });
+    });
+
+    // Create detailed errors sheet data
+    const errorData = importErrors.map((error, index) => ({
+      '#': index + 1,
       'Ligne Excel': error.row,
-      'CNE': error.cne || '',
-      'Nom': error.nom || '',
-      'Prénom': error.prenom || '',
-      'Email Académique': error.mail_academique || '',
-      'Erreurs': error.errors.join(' | '),
-      'Date du Rapport': new Date().toLocaleString('fr-FR')
+      'CNE': error.cne || '(vide)',
+      'Nom': error.nom || '(vide)',
+      'Prénom': error.prenom || '(vide)',
+      'Email Académique': error.mail_academique || '(vide)',
+      'Email Personnel': error.data?.mail_personnel || '',
+      'Téléphone': error.data?.telephone || '',
+      'Date Naissance': error.data?.date_naissance || '',
+      'Nombre d\'erreurs': error.errors.length,
+      'Erreur 1': error.errors[0] || '',
+      'Erreur 2': error.errors[1] || '',
+      'Erreur 3': error.errors[2] || '',
+      'Erreur 4': error.errors[3] || '',
+      'Toutes les erreurs': error.errors.join(' | ')
     }));
 
-    const ws = XLSX.utils.json_to_sheet(errorData);
+    // Create workbook with multiple sheets
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Erreurs Import');
-    const fileName = `rapport_erreurs_etudiants_${new Date().toISOString().split('T')[0]}.xlsx`;
+
+    // Add summary sheet
+    const wsSummary = XLSX.utils.json_to_sheet(summaryData);
+    // Set column widths for summary
+    wsSummary['!cols'] = [{ wch: 35 }, { wch: 40 }];
+    XLSX.utils.book_append_sheet(wb, wsSummary, 'Résumé');
+
+    // Add detailed errors sheet
+    const wsErrors = XLSX.utils.json_to_sheet(errorData);
+    // Set column widths for errors
+    wsErrors['!cols'] = [
+      { wch: 5 },   // #
+      { wch: 10 },  // Ligne Excel
+      { wch: 15 },  // CNE
+      { wch: 15 },  // Nom
+      { wch: 15 },  // Prénom
+      { wch: 30 },  // Email Académique
+      { wch: 25 },  // Email Personnel
+      { wch: 15 },  // Téléphone
+      { wch: 12 },  // Date Naissance
+      { wch: 15 },  // Nombre d'erreurs
+      { wch: 35 },  // Erreur 1
+      { wch: 35 },  // Erreur 2
+      { wch: 35 },  // Erreur 3
+      { wch: 35 },  // Erreur 4
+      { wch: 60 },  // Toutes les erreurs
+    ];
+    XLSX.utils.book_append_sheet(wb, wsErrors, 'Détails Erreurs');
+
+    const fileName = `rapport_erreurs_etudiants_${dateForFilename}_${timeForFilename}.xlsx`;
     XLSX.writeFile(wb, fileName);
-    toast.success('Rapport d\'erreurs téléchargé');
+    toast.success(`Rapport d'erreurs téléchargé: ${errorCount} erreurs sur ${totalRows} lignes`);
+  };
+
+  // Download server error report (for backend validation errors)
+  const downloadServerErrorReport = () => {
+    if (serverImportErrors.length === 0) return;
+
+    const now = new Date();
+    const timestamp = now.toLocaleString('fr-FR', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit'
+    });
+    const dateForFilename = now.toISOString().split('T')[0];
+    const timeForFilename = now.toTimeString().split(' ')[0].replace(/:/g, '-');
+
+    const errorCount = serverImportErrors.length;
+
+    // Create summary sheet data
+    const summaryData = [
+      { 'Information': 'Rapport d\'erreurs Backend - Import Étudiants', 'Valeur': '' },
+      { 'Information': '', 'Valeur': '' },
+      { 'Information': 'Date et heure du rapport', 'Valeur': timestamp },
+      { 'Information': 'Source', 'Valeur': 'Validation serveur (Backend)' },
+      { 'Information': '', 'Valeur': '' },
+      { 'Information': '--- RÉSUMÉ ---', 'Valeur': '' },
+      { 'Information': 'Total d\'erreurs détectées', 'Valeur': errorCount },
+      { 'Information': '', 'Valeur': '' },
+      { 'Information': '--- TYPES D\'ERREURS ---', 'Valeur': '' },
+    ];
+
+    // Count error types
+    const errorTypeCounts = {};
+    serverImportErrors.forEach(error => {
+      const errors = Array.isArray(error.errors) ? error.errors : [error.errors];
+      errors.forEach(err => {
+        errorTypeCounts[err] = (errorTypeCounts[err] || 0) + 1;
+      });
+    });
+
+    Object.entries(errorTypeCounts).forEach(([errorType, count]) => {
+      summaryData.push({ 'Information': errorType, 'Valeur': count });
+    });
+
+    // Create detailed errors sheet data
+    const errorData = serverImportErrors.map((error, index) => {
+      const errors = Array.isArray(error.errors) ? error.errors : [error.errors];
+      return {
+        '#': index + 1,
+        'Ligne Excel': error.row || 'N/A',
+        'CNE': error.cne || '(vide)',
+        'Nom': error.nom || '(vide)',
+        'Prénom': error.prenom || '(vide)',
+        'Email Académique': error.mail_academique || '(vide)',
+        'Nombre d\'erreurs': errors.length,
+        'Erreur 1': errors[0] || '',
+        'Erreur 2': errors[1] || '',
+        'Erreur 3': errors[2] || '',
+        'Erreur 4': errors[3] || '',
+        'Toutes les erreurs': errors.join(' | ')
+      };
+    });
+
+    // Create workbook with multiple sheets
+    const wb = XLSX.utils.book_new();
+
+    // Add summary sheet
+    const wsSummary = XLSX.utils.json_to_sheet(summaryData);
+    wsSummary['!cols'] = [{ wch: 35 }, { wch: 40 }];
+    XLSX.utils.book_append_sheet(wb, wsSummary, 'Résumé');
+
+    // Add detailed errors sheet
+    const wsErrors = XLSX.utils.json_to_sheet(errorData);
+    wsErrors['!cols'] = [
+      { wch: 5 },   // #
+      { wch: 10 },  // Ligne Excel
+      { wch: 15 },  // CNE
+      { wch: 15 },  // Nom
+      { wch: 15 },  // Prénom
+      { wch: 30 },  // Email Académique
+      { wch: 15 },  // Nombre d'erreurs
+      { wch: 35 },  // Erreur 1
+      { wch: 35 },  // Erreur 2
+      { wch: 35 },  // Erreur 3
+      { wch: 35 },  // Erreur 4
+      { wch: 60 },  // Toutes les erreurs
+    ];
+    XLSX.utils.book_append_sheet(wb, wsErrors, 'Détails Erreurs');
+
+    const fileName = `rapport_erreurs_serveur_${dateForFilename}_${timeForFilename}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+    toast.success(`Rapport d'erreurs serveur téléchargé: ${errorCount} erreurs`, {
+      icon: '📥',
+      autoClose: 4000
+    });
   };
 
   // Download Excel template
@@ -486,15 +827,30 @@ const StudentDataTable = ({
         {/* Server Import Errors Banner */}
         {serverImportErrors.length > 0 && (
           <div className="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-            <h3 className="text-yellow-800 dark:text-yellow-300 font-medium mb-2">Erreurs d\'import depuis le serveur:</h3>
-            <div className="space-y-1 text-sm text-yellow-800 dark:text-yellow-300">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-yellow-800 dark:text-yellow-300 font-medium">
+                Erreurs d'import depuis le serveur ({serverImportErrors.length} erreur{serverImportErrors.length > 1 ? 's' : ''})
+              </h3>
+              <button
+                onClick={downloadServerErrorReport}
+                className="px-3 py-1 bg-yellow-600 text-white text-sm rounded hover:bg-yellow-700 flex items-center gap-1"
+              >
+                <FileSpreadsheet className="w-3 h-3" />
+                Télécharger Rapport
+              </button>
+            </div>
+            <div className="space-y-1 text-sm text-yellow-800 dark:text-yellow-300 max-h-48 overflow-y-auto">
               {serverImportErrors.slice(0, 50).map((err, i) => (
-                <div key={i}>
-                  Ligne {err.row} {err.cne ? `(CNE: ${err.cne})` : ''}: {Array.isArray(err.errors) ? err.errors.join(', ') : err.errors}
+                <div key={i} className="flex items-start gap-2">
+                  <span className="font-medium whitespace-nowrap">Ligne {err.row}</span>
+                  {err.cne && <span className="text-yellow-600 dark:text-yellow-400">(CNE: {err.cne})</span>}
+                  <span>: {Array.isArray(err.errors) ? err.errors.join(', ') : err.errors}</span>
                 </div>
               ))}
               {serverImportErrors.length > 50 && (
-                <div className="text-yellow-700 dark:text-yellow-400">... et {serverImportErrors.length - 50} autres</div>
+                <div className="text-yellow-700 dark:text-yellow-400 font-medium mt-2">
+                  ... et {serverImportErrors.length - 50} autres erreurs (téléchargez le rapport pour voir tout)
+                </div>
               )}
             </div>
           </div>
@@ -906,21 +1262,25 @@ const StudentDataTable = ({
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 />
                 <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                  Colonnes requises: cne, nom, prenom, mail_academique<br/>
-                  <span className="text-green-600 dark:text-green-400">
-                    ✓ Si mail_academique est manquant ou invalide, il sera généré automatiquement: prenom.nom@usmba.ac.ma
-                  </span>
+                  Colonnes requises: cne, nom, prenom, mail_academique
                 </p>
               </div>
 
               <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Affecter une filière (Section) à l\'import</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Affecter une filière (Section) à l'import <span className="text-red-500">*</span>
+                </label>
                 <select
                   value={selectedImportSection}
                   onChange={(e) => setSelectedImportSection(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${
+                    !selectedImportSection && importPreview.length > 0 
+                      ? 'border-red-500 dark:border-red-500' 
+                      : 'border-gray-300 dark:border-gray-600'
+                  }`}
+                  required
                 >
-                  <option value="">--Aucune (utiliser id_section du fichier)--</option>
+                  <option value="">--Sélectionnez une filière (obligatoire)--</option>
                   {sections.map(section => (
                     <option key={section.id_section} value={section.id_section}>
                       {section.filiere?.nom_filiere 
@@ -929,8 +1289,13 @@ const StudentDataTable = ({
                     </option>
                   ))}
                 </select>
+                {!selectedImportSection && importPreview.length > 0 && (
+                  <p className="mt-1 text-xs text-red-500">
+                    Veuillez sélectionner une filière avant d'importer
+                  </p>
+                )}
                 <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                  Si vous choisissez une section ici, elle sera appliquée à tous les étudiants importés.
+                  La filière sélectionnée sera appliquée à tous les étudiants importés.
                 </p>
               </div>
 
@@ -1005,56 +1370,158 @@ const StudentDataTable = ({
                   </div>
                 )}
 
-                {/* Preview Section - Only show valid students */}
-                {importPreview.length > 0 && importErrors.length < importPreview.length && (
+                {/* Backend Error Display (errors from server validation) */}
+                {backendErrors.length > 0 && (
+                  <div className="mb-6 p-4 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-orange-800 dark:text-orange-300 font-medium">
+                        ⚠️ Erreurs serveur - {backendErrors.length} étudiant{backendErrors.length > 1 ? 's' : ''} rejeté{backendErrors.length > 1 ? 's' : ''}
+                      </h3>
+                      <button
+                        onClick={() => {
+                          // Download backend error report
+                          const now = new Date();
+                          const timestamp = now.toLocaleString('fr-FR');
+                          const dateForFilename = now.toISOString().split('T')[0];
+                          
+                          const errorData = backendErrors.map((error, index) => {
+                            const errors = Array.isArray(error.errors) ? error.errors : [error.errors];
+                            return {
+                              '#': index + 1,
+                              'Ligne Excel': error.row || 'N/A',
+                              'CNE': error.cne || '(vide)',
+                              'Nom': error.nom || '(vide)',
+                              'Prénom': error.prenom || '(vide)',
+                              'Email Académique': error.mail_academique || '(vide)',
+                              'Erreurs': errors.join(' | '),
+                              'Date du Rapport': timestamp
+                            };
+                          });
+                          
+                          const ws = XLSX.utils.json_to_sheet(errorData);
+                          const wb = XLSX.utils.book_new();
+                          XLSX.utils.book_append_sheet(wb, ws, 'Erreurs Serveur');
+                          XLSX.writeFile(wb, `erreurs_serveur_${dateForFilename}.xlsx`);
+                          toast.success('Rapport d\'erreurs serveur téléchargé');
+                        }}
+                        className="px-3 py-1 bg-orange-600 text-white text-sm rounded hover:bg-orange-700 flex items-center gap-1"
+                      >
+                        <FileSpreadsheet className="w-3 h-3" />
+                        Télécharger Rapport
+                      </button>
+                    </div>
+                    <div className="max-h-64 overflow-y-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-orange-100 dark:bg-orange-900/50 sticky top-0">
+                          <tr>
+                            <th className="px-3 py-2 text-left text-orange-800 dark:text-orange-300">Ligne</th>
+                            <th className="px-3 py-2 text-left text-orange-800 dark:text-orange-300">CNE</th>
+                            <th className="px-3 py-2 text-left text-orange-800 dark:text-orange-300">Nom</th>
+                            <th className="px-3 py-2 text-left text-orange-800 dark:text-orange-300">Email</th>
+                            <th className="px-3 py-2 text-left text-orange-800 dark:text-orange-300">Erreurs</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-orange-200 dark:divide-orange-800">
+                          {backendErrors.map((error, i) => {
+                            const errors = Array.isArray(error.errors) ? error.errors : [error.errors];
+                            return (
+                              <tr key={i} className="text-orange-700 dark:text-orange-300">
+                                <td className="px-3 py-2 font-medium">{error.row || 'N/A'}</td>
+                                <td className="px-3 py-2">{error.cne || '-'}</td>
+                                <td className="px-3 py-2">{error.nom || '-'} {error.prenom || ''}</td>
+                                <td className="px-3 py-2">{error.mail_academique || '-'}</td>
+                                <td className="px-3 py-2">
+                                  <div className="space-y-1">
+                                    {errors.map((err, j) => (
+                                      <div key={j} className="text-xs bg-orange-100 dark:bg-orange-900/30 px-2 py-1 rounded">
+                                        {err}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="mt-3 text-xs text-orange-600 dark:text-orange-400">
+                      Ces erreurs ont été détectées par le serveur (doublons dans la base de données, etc.). Corrigez votre fichier et réessayez.
+                    </div>
+                  </div>
+                )}
+
+                {/* Preview Section - Show ALL students with validation status per row */}
+                {importPreview.length > 0 && (
                   <div>
                     <h3 className="font-medium text-gray-900 dark:text-white mb-3">
-                      Aperçu des étudiants valides ({importPreview.length - importErrors.length} étudiants)
+                      Aperçu de l'import ({importPreview.length} étudiants - {importPreview.length - importErrors.length} valides, {importErrors.length} avec erreurs)
                     </h3>
                     <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
                       <div className="max-h-96 overflow-y-auto">
                         <table className="w-full text-sm">
                           <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0">
                             <tr>
+                              <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-300">Ligne</th>
                               <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-300">Statut</th>
                               <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-300">CNE</th>
                               <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-300">Nom</th>
                               <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-300">Prénom</th>
                               <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-300">Email</th>
+                              <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-300">Erreurs</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                            {importPreview.slice(0, 15).map((student, i) => {
-                              const hasError = importErrors.some(error => error.data && 
+                            {importPreview.map((student, i) => {
+                              const rowError = importErrors.find(error => error.data && 
                                 error.data.cne === student.cne && 
                                 error.data.mail_academique === student.mail_academique
                               );
-                              
-                              if (hasError) return null; // Don't show students with errors in preview
+                              const hasError = !!rowError;
+                              const rowNumber = i + 2; // Excel row number (starting from 2)
                               
                               return (
-                                <tr key={i} className="text-gray-900 dark:text-white">
+                                <tr 
+                                  key={i} 
+                                  className={`${hasError 
+                                    ? 'bg-red-50 dark:bg-red-900/20 text-red-900 dark:text-red-200' 
+                                    : 'bg-green-50 dark:bg-green-900/10 text-gray-900 dark:text-white'
+                                  }`}
+                                >
+                                  <td className="px-4 py-2 font-medium text-gray-600 dark:text-gray-400">{rowNumber}</td>
                                   <td className="px-4 py-2">
-                                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
-                                      ✓ Valide
-                                    </span>
+                                    {hasError ? (
+                                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300">
+                                        ✗ Invalide
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300">
+                                        ✓ Valide
+                                      </span>
+                                    )}
                                   </td>
-                                  <td className="px-4 py-2 font-medium">{student.cne}</td>
-                                  <td className="px-4 py-2">{student.nom}</td>
-                                  <td className="px-4 py-2">{student.prenom}</td>
-                                  <td className="px-4 py-2">{student.mail_academique}</td>
+                                  <td className="px-4 py-2 font-medium">{student.cne || '-'}</td>
+                                  <td className="px-4 py-2">{student.nom || '-'}</td>
+                                  <td className="px-4 py-2">{student.prenom || '-'}</td>
+                                  <td className="px-4 py-2">{student.mail_academique || '-'}</td>
+                                  <td className="px-4 py-2">
+                                    {hasError && rowError.errors && (
+                                      <div className="space-y-1">
+                                        {rowError.errors.map((err, j) => (
+                                          <div key={j} className="text-xs bg-red-100 dark:bg-red-900/30 px-2 py-1 rounded text-red-700 dark:text-red-300">
+                                            {err}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )}
+                                  </td>
                                 </tr>
                               );
-                            }).filter(Boolean)}
+                            })}
                           </tbody>
                         </table>
                       </div>
                     </div>
-                    {(importPreview.length - importErrors.length) > 15 && (
-                      <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                        ... et {(importPreview.length - importErrors.length) - 15} autres étudiants valides
-                      </p>
-                    )}
                   </div>
                 )}
 
@@ -1065,44 +1532,92 @@ const StudentDataTable = ({
                   >
                     Annuler
                   </button>
-                  {importErrors.length > 0 && importPreview.length > importErrors.length ? (
-                    <>
-                      <button
-                        onClick={handleBulkImport}
-                        className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
-                      >
-                        Importer seulement les {importPreview.length - importErrors.length} étudiants valides
-                      </button>
-                      <button
-                        onClick={() => {
-                          // Test server validation by sending all data including invalid ones
-                          const studentsPayload = importPreview.map((s) => ({
-                            ...s,
-                            id_section: selectedImportSection || s.id_section || '',
-                          }));
-                          console.log('Testing server validation with all data:', studentsPayload);
-                          router.post('/inscriptions/etudiants', { students: studentsPayload });
-                        }}
-                        className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
-                      >
-                        Test Server Validation
-                      </button>
-                    </>
-                  ) : importErrors.length === 0 && importPreview.length > 0 ? (
-                    <button
-                      onClick={handleBulkImport}
-                      className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
-                    >
-                      Importer {importPreview.length} étudiants
-                    </button>
-                  ) : (
-                    <button
-                      disabled
-                      className="px-4 py-2 bg-gray-400 text-white rounded-lg cursor-not-allowed"
-                    >
-                      {importPreview.length === 0 ? 'Aucun étudiant à importer' : 'Corrigez les erreurs pour importer'}
-                    </button>
-                  )}
+                  {(() => {
+                    const validCount = importPreview.length - importErrors.length;
+                    const hasValidRows = validCount > 0;
+                    const hasErrors = importErrors.length > 0;
+                    const hasMixedResults = hasValidRows && hasErrors;
+                    const allValid = hasValidRows && !hasErrors;
+                    const noValidRows = !hasValidRows;
+                    const sectionSelected = !!selectedImportSection;
+
+                    // Case 1: No file loaded or no students
+                    if (importPreview.length === 0) {
+                      return (
+                        <button
+                          disabled
+                          className="px-4 py-2 bg-gray-400 text-white rounded-lg cursor-not-allowed"
+                        >
+                          Sélectionnez un fichier Excel
+                        </button>
+                      );
+                    }
+
+                    // Case 2: No section selected - require section
+                    if (!sectionSelected) {
+                      return (
+                        <button
+                          disabled
+                          className="px-4 py-2 bg-gray-400 text-white rounded-lg cursor-not-allowed"
+                        >
+                          Sélectionnez une filière
+                        </button>
+                      );
+                    }
+
+                    // Case 3: All rows have errors - disable import
+                    if (noValidRows) {
+                      return (
+                        <button
+                          disabled
+                          className="px-4 py-2 bg-gray-400 text-white rounded-lg cursor-not-allowed"
+                        >
+                          Aucun étudiant valide - Corrigez les erreurs
+                        </button>
+                      );
+                    }
+
+                    // Case 4: Currently importing - show loading state
+                    if (isImporting) {
+                      return (
+                        <button
+                          disabled
+                          className="px-4 py-2 bg-gray-400 text-white rounded-lg cursor-not-allowed flex items-center gap-2"
+                        >
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Import en cours...
+                        </button>
+                      );
+                    }
+
+                    // Case 5: Mixed valid/invalid - show "Import valid only" option
+                    if (hasMixedResults) {
+                      return (
+                        <button
+                          onClick={handleBulkImport}
+                          disabled={isImporting}
+                          className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                        >
+                          Importer seulement les {validCount} étudiants valides
+                        </button>
+                      );
+                    }
+
+                    // Case 6: All valid - normal import
+                    if (allValid) {
+                      return (
+                        <button
+                          onClick={handleBulkImport}
+                          disabled={isImporting}
+                          className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+                        >
+                          Importer {validCount} étudiants
+                        </button>
+                      );
+                    }
+
+                    return null;
+                  })()}
                 </div>
               </div>
             </div>

@@ -1,8 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import { router, useForm } from '@inertiajs/react';
-import { Search, Plus, Upload, Download, Trash2, X, FileSpreadsheet, Users, ChevronLeft, ChevronRight, Eye, Edit, Filter } from 'lucide-react';
+import { Search, Plus, Upload, Download, Trash2, X, FileSpreadsheet, Users, ChevronLeft, ChevronRight, Eye, Edit, Filter, Loader2 } from 'lucide-react';
+import { ToastContainer, toast } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 import * as XLSX from 'xlsx';
 import Swal from 'sweetalert2';
+import axios from 'axios';
 
 // Inertia props from controller
 const Display = ({ 
@@ -53,6 +56,8 @@ const Display = ({
   const [importFile, setImportFile] = useState(null);
   const [importPreview, setImportPreview] = useState([]);
   const [importErrors, setImportErrors] = useState([]);
+  const [backendErrors, setBackendErrors] = useState([]);
+  const [isImporting, setIsImporting] = useState(false);
   const [selectedImportAnnee, setSelectedImportAnnee] = useState('');
   const [selectedImportNiveau, setSelectedImportNiveau] = useState('');
   const [selectedImportSection, setSelectedImportSection] = useState('');
@@ -119,6 +124,7 @@ const Display = ({
     if (!file) return;
 
     setImportFile(file);
+    setBackendErrors([]); // Clear previous backend errors
     const reader = new FileReader();
 
     reader.onload = (event) => {
@@ -128,29 +134,91 @@ const Display = ({
         const sheet = workbook.Sheets[sheetName];
         const data = XLSX.utils.sheet_to_json(sheet);
 
+        if (data.length === 0) {
+          toast.error('Le fichier Excel est vide', { icon: '📄', autoClose: 4000 });
+          return;
+        }
+
         // Validate and format data - only CNE is required
         const errors = [];
+        const cneDuplicates = [];
+        const cneList = data.map(row => row.cne ? row.cne.toString().trim().toUpperCase() : '');
+        
+        // Find duplicates in file
+        const cneCounts = {};
+        cneList.forEach(cne => {
+          if (cne) cneCounts[cne] = (cneCounts[cne] || 0) + 1;
+        });
+        const duplicatesInFile = Object.keys(cneCounts).filter(cne => cneCounts[cne] > 1);
+
         const preview = data.map((row, index) => {
           const rowErrors = [];
+          const rowNumber = index + 2; // Excel row number
+          const cne = row.cne ? row.cne.toString().trim().toUpperCase() : '';
           
-          // Only check for CNE
-          if (!row.cne) rowErrors.push('CNE requis');
+          // Check for CNE
+          if (!cne) {
+            rowErrors.push('CNE requis');
+          } else {
+            // Check for duplicates in file
+            if (duplicatesInFile.includes(cne)) {
+              rowErrors.push('CNE dupliqué dans le fichier');
+            }
+          }
           
+          // Find student by CNE (case-insensitive)
+          const student = students.find(s => s.cne?.toUpperCase() === cne);
+          
+          if (cne && !student) {
+            rowErrors.push('Étudiant non trouvé dans la base de données');
+          }
+
           if (rowErrors.length > 0) {
-            errors.push({ row: index + 2, errors: rowErrors });
+            errors.push({ 
+              row: rowNumber, 
+              cne: cne,
+              errors: rowErrors,
+              student: student
+            });
           }
 
           return {
-            cne: row.cne || '',
-            // Find student by CNE
-            student: students.find(s => s.cne === row.cne)
+            cne: cne,
+            student: student,
+            rowNumber: rowNumber,
+            hasError: rowErrors.length > 0,
+            errors: rowErrors
           };
         });
 
         setImportPreview(preview);
         setImportErrors(errors);
+
+        // Show summary toast
+        const validCount = preview.filter(p => !p.hasError && p.student).length;
+        const errorCount = errors.length;
+        
+        if (errorCount > 0) {
+          if (validCount > 0) {
+            toast.warning(
+              `Fichier analysé: ${validCount} valide${validCount > 1 ? 's' : ''}, ${errorCount} avec erreurs`,
+              { icon: '⚠️', autoClose: 5000 }
+            );
+          } else {
+            toast.error(
+              `Aucune inscription valide: ${errorCount} erreur${errorCount > 1 ? 's' : ''} détectée${errorCount > 1 ? 's' : ''}`,
+              { icon: '❌', autoClose: 5000 }
+            );
+          }
+        } else {
+          toast.success(
+            `Fichier validé: ${validCount} inscription${validCount > 1 ? 's' : ''} prête${validCount > 1 ? 's' : ''} à importer`,
+            { icon: '✅', autoClose: 4000 }
+          );
+        }
       } catch (error) {
-        alert('Erreur lors de la lecture du fichier Excel');
+        console.error('Excel parsing error:', error);
+        toast.error('Erreur lors de la lecture du fichier Excel', { icon: '📄', autoClose: 5000 });
       }
     };
 
@@ -158,65 +226,191 @@ const Display = ({
   };
 
   // Submit bulk import
-  const handleBulkImport = () => {
+  const handleBulkImport = async () => {
     if (!selectedImportAnnee || !selectedImportNiveau || !selectedImportSection) {
-      alert('Veuillez sélectionner une année, un niveau et une section pour l\'import.');
+      toast.error('Veuillez sélectionner une année, un niveau et une section pour l\'import.', { icon: '⚠️' });
       return;
     }
 
-    if (importErrors.length > 0) {
-      alert('Veuillez corriger les erreurs avant d\'importer');
+    // Filter valid inscriptions (students found and no errors)
+    const validItems = importPreview.filter(item => item.student && !item.hasError);
+
+    if (validItems.length === 0) {
+      toast.error('Aucun étudiant valide trouvé pour l\'import', { icon: '❌' });
       return;
     }
 
-    const inscriptionsToImport = importPreview
-      .filter(item => item.student) // Only include items with found students
-      .map(item => ({
-        id_etudiant: item.student.id_etudiant,
-        id_annee: selectedImportAnnee,
-        id_niveau: selectedImportNiveau,
-        id_section: selectedImportSection,
-        date_inscription: importDate,
-        statut: importStatut,
-        type_inscription: importType
-      }));
+    const inscriptionsToImport = validItems.map(item => ({
+      id_etudiant: item.student.id_etudiant,
+      id_annee: selectedImportAnnee,
+      id_niveau: selectedImportNiveau,
+      id_section: selectedImportSection,
+      date_inscription: importDate,
+      statut: importStatut,
+      type_inscription: importType
+    }));
 
-    if (inscriptionsToImport.length === 0) {
-      alert('Aucun étudiant valide trouvé pour l\'import');
-      return;
-    }
+    setIsImporting(true);
+    setBackendErrors([]);
 
-    router.post('/inscriptions/administratives', { inscriptions: inscriptionsToImport }, {
-      onSuccess: () => {
+    try {
+      const response = await axios.post('/inscriptions/administratives', 
+        { inscriptions: inscriptionsToImport },
+        {
+          headers: {
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest'
+          }
+        }
+      );
+
+      console.log('Import response:', response);
+      const responseData = response.data;
+
+      // Check for backend errors
+      if (responseData.import_errors && responseData.import_errors.length > 0) {
+        setBackendErrors(responseData.import_errors);
+        
+        if (responseData.created > 0) {
+          toast.warning(
+            `Import partiel: ${responseData.created} créée${responseData.created > 1 ? 's' : ''}, ${responseData.import_errors.length} erreur${responseData.import_errors.length > 1 ? 's' : ''}`,
+            { icon: '⚠️', autoClose: 6000 }
+          );
+          router.reload({ only: ['inscriptions'] });
+        } else {
+          toast.error(
+            `Import échoué: ${responseData.import_errors.length} erreur${responseData.import_errors.length > 1 ? 's' : ''}`,
+            { icon: '❌', autoClose: 6000 }
+          );
+        }
+      } else {
+        // Success
+        const createdCount = responseData.created || validItems.length;
+        toast.success(
+          `Import réussi: ${createdCount} inscription${createdCount > 1 ? 's' : ''} créée${createdCount > 1 ? 's' : ''}!`,
+          { icon: '🎉', autoClose: 4000 }
+        );
+        
+        // Reset and close modal
         setShowImportModal(false);
         setImportFile(null);
         setImportPreview([]);
         setImportErrors([]);
+        setBackendErrors([]);
         setSelectedImportAnnee('');
         setSelectedImportNiveau('');
         setSelectedImportSection('');
         setImportDate(new Date().toISOString().split('T')[0]);
         setImportStatut('Active');
         setImportType('nouveau');
-        Swal.fire({
-          icon: 'success',
-          title: 'Inscriptions ajoutées',
-          text: `${inscriptionsToImport.length} inscriptions ont été ajoutées avec succès`,
-          showConfirmButton: false,
-          timer: 1500
-        }).then(() => {
-          // Redirect to the inscriptions page after success
-          router.visit(route('inscriptions.administratives.index'));
-        });
-      },
-      onError: () => {
-        Swal.fire({
-          icon: 'error',
-          title: 'Erreur',
-          text: 'Une erreur est survenue lors de l\'importation des inscriptions'
-        });
+        
+        router.reload({ only: ['inscriptions'] });
       }
+    } catch (error) {
+      console.error('Import error:', error);
+      
+      if (error.response) {
+        const responseData = error.response.data;
+        
+        if (responseData.import_errors && responseData.import_errors.length > 0) {
+          setBackendErrors(responseData.import_errors);
+          toast.error(
+            `${responseData.import_errors.length} erreur${responseData.import_errors.length > 1 ? 's' : ''} détectée${responseData.import_errors.length > 1 ? 's' : ''} par le serveur`,
+            { icon: '❌', autoClose: 6000 }
+          );
+        } else if (error.response.status === 422 && responseData.errors) {
+          const errorMessages = Object.values(responseData.errors).flat();
+          toast.error(`Erreur de validation: ${errorMessages.join(', ')}`, { icon: '❌', autoClose: 6000 });
+        } else {
+          toast.error(`Erreur: ${responseData.message || 'Erreur inconnue'}`, { icon: '❌', autoClose: 6000 });
+        }
+      } else {
+        toast.error(`Erreur de connexion: ${error.message}`, { icon: '❌', autoClose: 6000 });
+      }
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  // Download error report
+  const downloadErrorReport = () => {
+    const allErrors = [...importErrors, ...backendErrors];
+    if (allErrors.length === 0) return;
+
+    const now = new Date();
+    const timestamp = now.toLocaleString('fr-FR');
+    const dateForFilename = now.toISOString().split('T')[0];
+    const timeForFilename = now.toTimeString().split(' ')[0].replace(/:/g, '-');
+
+    const totalRows = importPreview.length;
+    const validCount = importPreview.filter(p => !p.hasError && p.student).length;
+    const errorCount = allErrors.length;
+
+    // Summary sheet
+    const summaryData = [
+      { 'Information': 'Rapport d\'erreurs - Import Inscriptions Administratives', 'Valeur': '' },
+      { 'Information': '', 'Valeur': '' },
+      { 'Information': 'Date et heure du rapport', 'Valeur': timestamp },
+      { 'Information': 'Fichier source', 'Valeur': importFile?.name || 'Non spécifié' },
+      { 'Information': '', 'Valeur': '' },
+      { 'Information': '--- RÉSUMÉ ---', 'Valeur': '' },
+      { 'Information': 'Total de lignes', 'Valeur': totalRows },
+      { 'Information': 'Inscriptions valides', 'Valeur': validCount },
+      { 'Information': 'Erreurs', 'Valeur': errorCount },
+      { 'Information': '', 'Valeur': '' },
+      { 'Information': '--- PARAMÈTRES D\'IMPORT ---', 'Valeur': '' },
+      { 'Information': 'Année universitaire', 'Valeur': annees.find(a => a.id_annee == selectedImportAnnee)?.annee_univ || 'Non sélectionnée' },
+      { 'Information': 'Niveau', 'Valeur': niveaux.find(n => n.id_niveau == selectedImportNiveau)?.nom_niveau || 'Non sélectionné' },
+      { 'Information': 'Section', 'Valeur': sections.find(s => s.id_section == selectedImportSection)?.nom_section || 'Non sélectionnée' },
+    ];
+
+    // Error types count
+    const errorTypeCounts = {};
+    allErrors.forEach(error => {
+      const errors = Array.isArray(error.errors) ? error.errors : [error.errors];
+      errors.forEach(err => {
+        errorTypeCounts[err] = (errorTypeCounts[err] || 0) + 1;
+      });
     });
+
+    summaryData.push({ 'Information': '', 'Valeur': '' });
+    summaryData.push({ 'Information': '--- TYPES D\'ERREURS ---', 'Valeur': '' });
+    Object.entries(errorTypeCounts).forEach(([errorType, count]) => {
+      summaryData.push({ 'Information': errorType, 'Valeur': count });
+    });
+
+    // Detailed errors sheet
+    const errorData = allErrors.map((error, index) => {
+      const errors = Array.isArray(error.errors) ? error.errors : [error.errors];
+      return {
+        '#': index + 1,
+        'Ligne Excel': error.row || 'N/A',
+        'CNE': error.cne || '(vide)',
+        'Étudiant': error.student ? `${error.student.nom} ${error.student.prenom}` : 'Non trouvé',
+        'Nombre d\'erreurs': errors.length,
+        'Erreur 1': errors[0] || '',
+        'Erreur 2': errors[1] || '',
+        'Erreur 3': errors[2] || '',
+        'Toutes les erreurs': errors.join(' | ')
+      };
+    });
+
+    const wb = XLSX.utils.book_new();
+    
+    const wsSummary = XLSX.utils.json_to_sheet(summaryData);
+    wsSummary['!cols'] = [{ wch: 35 }, { wch: 40 }];
+    XLSX.utils.book_append_sheet(wb, wsSummary, 'Résumé');
+
+    const wsErrors = XLSX.utils.json_to_sheet(errorData);
+    wsErrors['!cols'] = [
+      { wch: 5 }, { wch: 10 }, { wch: 15 }, { wch: 25 },
+      { wch: 15 }, { wch: 35 }, { wch: 35 }, { wch: 35 }, { wch: 60 }
+    ];
+    XLSX.utils.book_append_sheet(wb, wsErrors, 'Détails Erreurs');
+
+    const fileName = `rapport_erreurs_inscriptions_${dateForFilename}_${timeForFilename}.xlsx`;
+    XLSX.writeFile(wb, fileName);
+    toast.success(`Rapport téléchargé: ${errorCount} erreurs`, { icon: '📥', autoClose: 4000 });
   };
 
   // Download Excel template
@@ -380,6 +574,7 @@ const Display = ({
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
+      <ToastContainer position="top-right" autoClose={3000} />
       <div className="p-4">
         {/* Header */}
         <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-3 mb-6 transition-colors">
@@ -1193,48 +1388,173 @@ const Display = ({
                   </div>
                 </div>
 
-                {importErrors.length > 0 && (
-                  <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                    <h3 className="text-red-800 dark:text-red-400 font-medium mb-2">Erreurs détectées:</h3>
-                    {importErrors.map((error, i) => (
-                      <div key={i} className="text-sm text-red-700 dark:text-red-300">
-                        Ligne {error.row}: {error.errors.join(', ')}
+                {/* Validation Summary */}
+                {importPreview.length > 0 && (
+                  <div className="mb-6 grid grid-cols-3 gap-4">
+                    <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+                      <div className="text-blue-800 dark:text-blue-300 font-medium">Total</div>
+                      <div className="text-2xl font-bold text-blue-900 dark:text-blue-100">{importPreview.length}</div>
+                    </div>
+                    <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border border-green-200 dark:border-green-800">
+                      <div className="text-green-800 dark:text-green-300 font-medium">Valides</div>
+                      <div className="text-2xl font-bold text-green-900 dark:text-green-100">
+                        {importPreview.filter(p => !p.hasError && p.student).length}
                       </div>
-                    ))}
+                    </div>
+                    <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg border border-red-200 dark:border-red-800">
+                      <div className="text-red-800 dark:text-red-300 font-medium">Erreurs</div>
+                      <div className="text-2xl font-bold text-red-900 dark:text-red-100">{importErrors.length}</div>
+                    </div>
                   </div>
                 )}
 
+                {/* Frontend Errors Display */}
+                {importErrors.length > 0 && (
+                  <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-red-800 dark:text-red-300 font-medium">
+                        Erreurs de validation - {importErrors.length} ligne{importErrors.length > 1 ? 's' : ''}
+                      </h3>
+                      <button
+                        onClick={downloadErrorReport}
+                        className="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 flex items-center gap-1"
+                      >
+                        <FileSpreadsheet className="w-3 h-3" />
+                        Télécharger Rapport
+                      </button>
+                    </div>
+                    <div className="max-h-48 overflow-y-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-red-100 dark:bg-red-900/50 sticky top-0">
+                          <tr>
+                            <th className="px-3 py-2 text-left text-red-800 dark:text-red-300">Ligne</th>
+                            <th className="px-3 py-2 text-left text-red-800 dark:text-red-300">CNE</th>
+                            <th className="px-3 py-2 text-left text-red-800 dark:text-red-300">Erreurs</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-red-200 dark:divide-red-800">
+                          {importErrors.map((error, i) => (
+                            <tr key={i} className="text-red-700 dark:text-red-300">
+                              <td className="px-3 py-2 font-medium">{error.row}</td>
+                              <td className="px-3 py-2">{error.cne || '-'}</td>
+                              <td className="px-3 py-2">
+                                <div className="space-y-1">
+                                  {error.errors.map((err, j) => (
+                                    <div key={j} className="text-xs bg-red-100 dark:bg-red-900/30 px-2 py-1 rounded">
+                                      {err}
+                                    </div>
+                                  ))}
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Backend Errors Display */}
+                {backendErrors.length > 0 && (
+                  <div className="mb-6 p-4 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-orange-800 dark:text-orange-300 font-medium">
+                        ⚠️ Erreurs serveur - {backendErrors.length} inscription{backendErrors.length > 1 ? 's' : ''} rejetée{backendErrors.length > 1 ? 's' : ''}
+                      </h3>
+                      <button
+                        onClick={downloadErrorReport}
+                        className="px-3 py-1 bg-orange-600 text-white text-sm rounded hover:bg-orange-700 flex items-center gap-1"
+                      >
+                        <FileSpreadsheet className="w-3 h-3" />
+                        Télécharger Rapport
+                      </button>
+                    </div>
+                    <div className="max-h-48 overflow-y-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-orange-100 dark:bg-orange-900/50 sticky top-0">
+                          <tr>
+                            <th className="px-3 py-2 text-left text-orange-800 dark:text-orange-300">CNE</th>
+                            <th className="px-3 py-2 text-left text-orange-800 dark:text-orange-300">Étudiant</th>
+                            <th className="px-3 py-2 text-left text-orange-800 dark:text-orange-300">Erreurs</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-orange-200 dark:divide-orange-800">
+                          {backendErrors.map((error, i) => {
+                            const errors = Array.isArray(error.errors) ? error.errors : [error.errors];
+                            return (
+                              <tr key={i} className="text-orange-700 dark:text-orange-300">
+                                <td className="px-3 py-2">{error.cne || '-'}</td>
+                                <td className="px-3 py-2">{error.student_name || '-'}</td>
+                                <td className="px-3 py-2">
+                                  <div className="space-y-1">
+                                    {errors.map((err, j) => (
+                                      <div key={j} className="text-xs bg-orange-100 dark:bg-orange-900/30 px-2 py-1 rounded">
+                                        {err}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Preview Section with validation status */}
                 {importPreview.length > 0 && (
                   <div>
                     <h3 className="font-medium text-gray-900 dark:text-white mb-3">
-                      Aperçu ({importPreview.length} étudiants)
+                      Aperçu ({importPreview.length} lignes - {importPreview.filter(p => !p.hasError && p.student).length} valides)
                     </h3>
                     <div className="border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden">
                       <div className="max-h-96 overflow-y-auto">
                         <table className="w-full text-sm">
                           <thead className="bg-gray-50 dark:bg-gray-700/50 sticky top-0">
                             <tr>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Ligne</th>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Statut</th>
                               <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">CNE</th>
                               <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Étudiant</th>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Statut</th>
+                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Erreurs</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                            {importPreview.slice(0, 10).map((item, i) => (
-                              <tr key={i}>
-                                <td className="px-4 py-2 text-gray-900 dark:text-gray-100">{item.cne}</td>
+                            {importPreview.map((item, i) => (
+                              <tr 
+                                key={i}
+                                className={item.hasError || !item.student
+                                  ? 'bg-red-50 dark:bg-red-900/20'
+                                  : 'bg-green-50 dark:bg-green-900/10'
+                                }
+                              >
+                                <td className="px-4 py-2 text-gray-600 dark:text-gray-400">{item.rowNumber}</td>
+                                <td className="px-4 py-2">
+                                  {item.hasError || !item.student ? (
+                                    <span className="px-2 py-1 text-xs rounded-full bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-100">
+                                      ✗ Invalide
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100">
+                                      ✓ Valide
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-2 text-gray-900 dark:text-gray-100 font-medium">{item.cne || '-'}</td>
                                 <td className="px-4 py-2 text-gray-900 dark:text-gray-100">
                                   {item.student ? `${item.student.nom} ${item.student.prenom}` : 'Non trouvé'}
                                 </td>
                                 <td className="px-4 py-2">
-                                  {item.student ? (
-                                    <span className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100">
-                                      Trouvé
-                                    </span>
-                                  ) : (
-                                    <span className="px-2 py-1 text-xs rounded-full bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-100">
-                                      Non trouvé
-                                    </span>
+                                  {item.errors && item.errors.length > 0 && (
+                                    <div className="space-y-1">
+                                      {item.errors.map((err, j) => (
+                                        <div key={j} className="text-xs bg-red-100 dark:bg-red-900/30 px-2 py-1 rounded text-red-700 dark:text-red-300">
+                                          {err}
+                                        </div>
+                                      ))}
+                                    </div>
                                   )}
                                 </td>
                               </tr>
@@ -1243,11 +1563,6 @@ const Display = ({
                         </table>
                       </div>
                     </div>
-                    {importPreview.length > 10 && (
-                      <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                        ... et {importPreview.length - 10} autres étudiants
-                      </p>
-                    )}
                   </div>
                 )}
 
@@ -1258,13 +1573,65 @@ const Display = ({
                   >
                     Annuler
                   </button>
-                  <button
-                    onClick={handleBulkImport}
-                    disabled={importPreview.length === 0 || importErrors.length > 0 || !selectedImportAnnee || !selectedImportNiveau || !selectedImportSection}
-                    className="px-4 py-2 bg-purple-600 hover:bg-purple-700 dark:bg-purple-500 dark:hover:bg-purple-600 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Importer {importPreview.filter(item => item.student).length} Inscriptions
-                  </button>
+                  {(() => {
+                    const validCount = importPreview.filter(p => !p.hasError && p.student).length;
+                    const hasValidRows = validCount > 0;
+                    const hasErrors = importErrors.length > 0;
+                    const allFieldsSelected = selectedImportAnnee && selectedImportNiveau && selectedImportSection;
+
+                    if (importPreview.length === 0) {
+                      return (
+                        <button disabled className="px-4 py-2 bg-gray-400 text-white rounded-lg cursor-not-allowed">
+                          Sélectionnez un fichier Excel
+                        </button>
+                      );
+                    }
+
+                    if (!allFieldsSelected) {
+                      return (
+                        <button disabled className="px-4 py-2 bg-gray-400 text-white rounded-lg cursor-not-allowed">
+                          Sélectionnez année, niveau et section
+                        </button>
+                      );
+                    }
+
+                    if (!hasValidRows) {
+                      return (
+                        <button disabled className="px-4 py-2 bg-gray-400 text-white rounded-lg cursor-not-allowed">
+                          Aucune inscription valide
+                        </button>
+                      );
+                    }
+
+                    if (isImporting) {
+                      return (
+                        <button disabled className="px-4 py-2 bg-gray-400 text-white rounded-lg cursor-not-allowed flex items-center gap-2">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Import en cours...
+                        </button>
+                      );
+                    }
+
+                    if (hasErrors && hasValidRows) {
+                      return (
+                        <button
+                          onClick={handleBulkImport}
+                          className="px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg"
+                        >
+                          Importer seulement les {validCount} valides
+                        </button>
+                      );
+                    }
+
+                    return (
+                      <button
+                        onClick={handleBulkImport}
+                        className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg"
+                      >
+                        Importer {validCount} inscription{validCount > 1 ? 's' : ''}
+                      </button>
+                    );
+                  })()}
                 </div>
               </div>
             </div>

@@ -219,7 +219,8 @@ class InscriptionPedagogiqueController extends Controller
             'id' => $id,
             'request_method' => request()->method(),
             'request_url' => request()->url(),
-            'request_data' => request()->all()
+            'request_data' => request()->all(),
+            'force_delete' => request()->get('force', false)
         ]);
         
         try {
@@ -230,23 +231,59 @@ class InscriptionPedagogiqueController extends Controller
                 'inscription_data' => $inscription->toArray()
             ]);
             
-            // Check if inscription has related records that would prevent deletion
-            $hasCapitalisations = $inscription->capitalisations()->exists();
-            $hasStages = $inscription->stages()->exists();
-            $hasAnonymats = $inscription->anonymats()->exists();
-            $hasResultats = $inscription->resultatsElements()->exists() || $inscription->resultatsModules()->exists();
+            // Check for force delete parameter (for testing)
+            $forceDelete = request()->get('force', false);
             
-            \Log::info('Checking related records', [
-                'has_capitalisations' => $hasCapitalisations,
-                'has_stages' => $hasStages,
-                'has_anonymats' => $hasAnonymats,
-                'has_resultats' => $hasResultats
-            ]);
-            
-            if ($hasCapitalisations || $hasStages || $hasAnonymats || $hasResultats) {
-                \Log::warning('Cannot delete inscription due to related records');
-                return redirect()->back()
-                    ->withErrors(['error' => 'Impossible de supprimer cette inscription car elle contient des données liées (capitalisations, stages, résultats, etc.).']);
+            if (!$forceDelete) {
+                // Check if inscription has related records that would prevent deletion
+                $capitalisationsCount = $inscription->capitalisations()->count();
+                $stagesCount = $inscription->stages()->count();
+                $anonymatsCount = $inscription->anonymats()->count();
+                $repartitionsCount = $inscription->repartitions()->count();
+                $resultatsElementsCount = $inscription->resultatsElements()->count();
+                $resultatsModulesCount = $inscription->resultatsModules()->count();
+                $reclamationsCount = $inscription->reclamations()->count();
+                
+                \Log::info('Checking related records with counts', [
+                    'capitalisations_count' => $capitalisationsCount,
+                    'stages_count' => $stagesCount,
+                    'anonymats_count' => $anonymatsCount,
+                    'repartitions_count' => $repartitionsCount,
+                    'resultats_elements_count' => $resultatsElementsCount,
+                    'resultats_modules_count' => $resultatsModulesCount,
+                    'reclamations_count' => $reclamationsCount
+                ]);
+                
+                $hasRelatedRecords = $capitalisationsCount > 0 || 
+                                   $stagesCount > 0 || 
+                                   $anonymatsCount > 0 || 
+                                   $repartitionsCount > 0 ||
+                                   $resultatsElementsCount > 0 || 
+                                   $resultatsModulesCount > 0 ||
+                                   $reclamationsCount > 0;
+                
+                if ($hasRelatedRecords) {
+                    $relatedTables = [];
+                    if ($capitalisationsCount > 0) $relatedTables[] = "capitalisations ({$capitalisationsCount})";
+                    if ($stagesCount > 0) $relatedTables[] = "stages ({$stagesCount})";
+                    if ($anonymatsCount > 0) $relatedTables[] = "anonymats ({$anonymatsCount})";
+                    if ($repartitionsCount > 0) $relatedTables[] = "repartitions ({$repartitionsCount})";
+                    if ($resultatsElementsCount > 0) $relatedTables[] = "resultats elements ({$resultatsElementsCount})";
+                    if ($resultatsModulesCount > 0) $relatedTables[] = "resultats modules ({$resultatsModulesCount})";
+                    if ($reclamationsCount > 0) $relatedTables[] = "reclamations ({$reclamationsCount})";
+                    
+                    $errorMessage = 'Impossible de supprimer cette inscription car elle contient des données liées: ' . implode(', ', $relatedTables);
+                    
+                    \Log::warning('Cannot delete inscription due to related records', [
+                        'related_tables' => $relatedTables,
+                        'error_message' => $errorMessage
+                    ]);
+                    
+                    return redirect()->back()
+                        ->withErrors(['error' => $errorMessage]);
+                }
+            } else {
+                \Log::info('Force delete enabled, skipping relationship checks');
             }
             
             $inscription->delete();
