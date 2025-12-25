@@ -1,35 +1,40 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { router, useForm } from '@inertiajs/react';
-import { Search, Plus, Upload, Download, Trash2, X, FileSpreadsheet, Users, ChevronLeft, ChevronRight, Eye, Edit, Filter, Loader2 } from 'lucide-react';
+import { Search, Plus, Upload, Download, Trash2, X, FileSpreadsheet, Users, ChevronLeft, ChevronRight, Eye, Edit, Filter, Loader2, RefreshCw } from 'lucide-react';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import * as XLSX from 'xlsx';
 import Swal from 'sweetalert2';
 import axios from 'axios';
+import debounce from 'lodash/debounce';
 
 // Inertia props from controller
 const Display = ({ 
-  inscriptions: initialInscriptions = [],
+  inscriptions: paginatedInscriptions = { data: [], links: [], current_page: 1, last_page: 1, per_page: 25, total: 0 },
   students = [],
   annees = [],
   niveaux = [],
   sections = [],
-  filters: initialFilters = {}
+  filters: initialFilters = {},
+  totalCount = 0
 }) => {
-  const [inscriptions, setInscriptions] = useState(initialInscriptions);
+  // Handle both paginated and non-paginated data for backwards compatibility
+  const inscriptionsData = Array.isArray(paginatedInscriptions) ? paginatedInscriptions : (paginatedInscriptions.data || []);
+  const pagination = Array.isArray(paginatedInscriptions) ? null : paginatedInscriptions;
+  
   const [searchTerm, setSearchTerm] = useState(initialFilters.search || '');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(25);
   const [selectedInscriptions, setSelectedInscriptions] = useState([]);
   const [editingInscription, setEditingInscription] = useState(null);
-  const [filterAnnee, setFilterAnnee] = useState('');
-  const [filterNiveau, setFilterNiveau] = useState('');
-  const [filterSection, setFilterSection] = useState('');
-  const [filterStatut, setFilterStatut] = useState('');
+  const [filterAnnee, setFilterAnnee] = useState(initialFilters.annee || '');
+  const [filterNiveau, setFilterNiveau] = useState(initialFilters.niveau || '');
+  const [filterSection, setFilterSection] = useState(initialFilters.section || '');
+  const [filterStatut, setFilterStatut] = useState(initialFilters.statut || '');
+  const [itemsPerPage, setItemsPerPage] = useState(initialFilters.per_page || 25);
   const [showFilters, setShowFilters] = useState(false);
+  const [isFiltering, setIsFiltering] = useState(false);
 
   // Using useForm for better error handling
   const inscriptionForm = useForm({
@@ -65,30 +70,102 @@ const Display = ({
   const [importStatut, setImportStatut] = useState('Active');
   const [importType, setImportType] = useState('nouveau');
 
-  // Filter and search inscriptions
-  const filteredInscriptions = useMemo(() => {
-    return inscriptions.filter(inscription => {
-      const matchesSearch = !searchTerm || 
-        inscription.etudiant?.cne?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        inscription.etudiant?.nom?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        inscription.etudiant?.prenom?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        inscription.etudiant?.mail_academique?.toLowerCase().includes(searchTerm.toLowerCase());
-      
-      const matchesAnnee = !filterAnnee || inscription.id_annee == filterAnnee;
-      const matchesNiveau = !filterNiveau || inscription.id_niveau == filterNiveau;
-      const matchesSection = !filterSection || inscription.id_section == filterSection;
-      const matchesStatut = !filterStatut || inscription.statut === filterStatut;
-      
-      return matchesSearch && matchesAnnee && matchesNiveau && matchesSection && matchesStatut;
-    });
-  }, [inscriptions, searchTerm, filterAnnee, filterNiveau, filterSection, filterStatut]);
+  // Backend filtering function with debounce
+  const applyFilters = useCallback((params = {}) => {
+    setIsFiltering(true);
+    const filterParams = {
+      search: params.search !== undefined ? params.search : searchTerm,
+      annee: params.annee !== undefined ? params.annee : filterAnnee,
+      niveau: params.niveau !== undefined ? params.niveau : filterNiveau,
+      section: params.section !== undefined ? params.section : filterSection,
+      statut: params.statut !== undefined ? params.statut : filterStatut,
+      per_page: params.per_page !== undefined ? params.per_page : itemsPerPage,
+    };
 
-  // Pagination
-  const totalPages = Math.ceil(filteredInscriptions.length / itemsPerPage);
-  const paginatedInscriptions = useMemo(() => {
-    const start = (currentPage - 1) * itemsPerPage;
-    return filteredInscriptions.slice(start, start + itemsPerPage);
-  }, [filteredInscriptions, currentPage, itemsPerPage]);
+    router.get(route('inscriptions.administratives.index'), filterParams, {
+      preserveState: true,
+      preserveScroll: true,
+      only: ['inscriptions', 'filters', 'totalCount'],
+      onFinish: () => setIsFiltering(false),
+    });
+  }, [searchTerm, filterAnnee, filterNiveau, filterSection, filterStatut, itemsPerPage]);
+
+  // Debounced search
+  const debouncedSearch = useMemo(
+    () => debounce((value) => applyFilters({ search: value }), 400),
+    [applyFilters]
+  );
+
+  // Handle search input change
+  const handleSearchChange = (e) => {
+    const value = e.target.value;
+    setSearchTerm(value);
+    debouncedSearch(value);
+  };
+
+  // Handle filter changes
+  const handleFilterChange = (filterName, value) => {
+    switch (filterName) {
+      case 'annee':
+        setFilterAnnee(value);
+        applyFilters({ annee: value });
+        break;
+      case 'niveau':
+        setFilterNiveau(value);
+        applyFilters({ niveau: value });
+        break;
+      case 'section':
+        setFilterSection(value);
+        applyFilters({ section: value });
+        break;
+      case 'statut':
+        setFilterStatut(value);
+        applyFilters({ statut: value });
+        break;
+    }
+  };
+
+  // Handle items per page change
+  const handlePerPageChange = (value) => {
+    setItemsPerPage(value);
+    applyFilters({ per_page: value });
+  };
+
+  // Handle pagination
+  const goToPage = (url) => {
+    if (!url) return;
+    setIsFiltering(true);
+    router.get(url, {}, {
+      preserveState: true,
+      preserveScroll: true,
+      only: ['inscriptions', 'filters', 'totalCount'],
+      onFinish: () => setIsFiltering(false),
+    });
+  };
+
+  // Clear all filters
+  const clearFilters = () => {
+    setSearchTerm('');
+    setFilterAnnee('');
+    setFilterNiveau('');
+    setFilterSection('');
+    setFilterStatut('');
+    setItemsPerPage(25);
+    setIsFiltering(true);
+    router.get(route('inscriptions.administratives.index'), { per_page: 25 }, {
+      preserveState: true,
+      preserveScroll: true,
+      only: ['inscriptions', 'filters', 'totalCount'],
+      onFinish: () => setIsFiltering(false),
+    });
+  };
+
+  // Pagination info
+  const currentPage = pagination?.current_page || 1;
+  const lastPage = pagination?.last_page || 1;
+  const total = pagination?.total || inscriptionsData.length;
+  const from = pagination?.from || 1;
+  const to = pagination?.to || inscriptionsData.length;
 
   // Submit single inscription
   const handleSubmit = (e) => {
@@ -435,10 +512,10 @@ const Display = ({
   };
 
   const toggleSelectAll = () => {
-    if (selectedInscriptions.length === paginatedInscriptions.length) {
+    if (selectedInscriptions.length === inscriptionsData.length) {
       setSelectedInscriptions([]);
     } else {
-      setSelectedInscriptions(paginatedInscriptions.map(i => i.id_inscription_admin));
+      setSelectedInscriptions(inscriptionsData.map(i => i.id_inscription_admin));
     }
   };
 
@@ -542,7 +619,7 @@ const Display = ({
 
   // Export to Excel
   const handleExport = () => {
-    const dataToExport = filteredInscriptions.map(inscription => ({
+    const dataToExport = inscriptionsData.map(inscription => ({
       'ID': inscription.id_inscription_admin || '',
       'CNE': inscription.etudiant?.cne || '',
       'Nom': inscription.etudiant?.nom || '',
@@ -563,14 +640,7 @@ const Display = ({
     XLSX.writeFile(wb, `inscriptions_administratives_${new Date().toISOString().split('T')[0]}.xlsx`);
   };
 
-  // Clear filters
-  const clearFilters = () => {
-    setSearchTerm('');
-    setFilterAnnee('');
-    setFilterNiveau('');
-    setFilterSection('');
-    setFilterStatut('');
-  };
+  // Clear filters - moved to earlier in the component
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
@@ -632,9 +702,12 @@ const Display = ({
                 type="text"
                 placeholder="Rechercher par CNE, nom, prénom, email..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={handleSearchChange}
                 className="w-full pl-10 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent"
               />
+              {isFiltering && (
+                <RefreshCw className="absolute right-3 top-1/2 transform -translate-y-1/2 text-blue-500 w-4 h-4 animate-spin" />
+              )}
             </div>
             <button
               onClick={() => setShowFilters(!showFilters)}
@@ -646,6 +719,11 @@ const Display = ({
             >
               <Filter className="w-4 h-4" />
               <span>Filtres</span>
+              {(filterAnnee || filterNiveau || filterSection || filterStatut) && (
+                <span className="bg-blue-500 text-white text-xs px-1.5 py-0.5 rounded-full">
+                  {[filterAnnee, filterNiveau, filterSection, filterStatut].filter(Boolean).length}
+                </span>
+              )}
             </button>
           </div>
 
@@ -656,7 +734,7 @@ const Display = ({
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Année</label>
                 <select
                   value={filterAnnee}
-                  onChange={(e) => setFilterAnnee(e.target.value)}
+                  onChange={(e) => handleFilterChange('annee', e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Toutes</option>
@@ -669,7 +747,7 @@ const Display = ({
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Niveau</label>
                 <select
                   value={filterNiveau}
-                  onChange={(e) => setFilterNiveau(e.target.value)}
+                  onChange={(e) => handleFilterChange('niveau', e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Tous</option>
@@ -682,7 +760,7 @@ const Display = ({
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Section</label>
                 <select
                   value={filterSection}
-                  onChange={(e) => setFilterSection(e.target.value)}
+                  onChange={(e) => handleFilterChange('section', e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Toutes</option>
@@ -697,7 +775,7 @@ const Display = ({
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Statut</label>
                 <select
                   value={filterStatut}
-                  onChange={(e) => setFilterStatut(e.target.value)}
+                  onChange={(e) => handleFilterChange('statut', e.target.value)}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="">Tous</option>
@@ -708,8 +786,9 @@ const Display = ({
               <div className="sm:col-span-2 lg:col-span-4 flex justify-end">
                 <button
                   onClick={clearFilters}
-                  className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white"
+                  className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white flex items-center gap-2"
                 >
+                  <X className="w-4 h-4" />
                   Réinitialiser les filtres
                 </button>
               </div>
@@ -723,7 +802,7 @@ const Display = ({
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Inscriptions</div>
-                <div className="text-2xl font-bold text-gray-900 dark:text-white">{inscriptions.length}</div>
+                <div className="text-2xl font-bold text-gray-900 dark:text-white">{totalCount || total}</div>
               </div>
               <Users className="w-10 h-10 text-blue-500 dark:text-blue-400 opacity-50" />
             </div>
@@ -731,8 +810,8 @@ const Display = ({
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 transition-colors">
             <div className="flex items-center justify-between">
               <div>
-                <div className="text-sm font-medium text-gray-600 dark:text-gray-400">Résultats</div>
-                <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{filteredInscriptions.length}</div>
+                <div className="text-sm font-medium text-gray-600 dark:text-gray-400">Résultats filtrés</div>
+                <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{total}</div>
               </div>
               <Search className="w-10 h-10 text-blue-500 dark:text-blue-400 opacity-50" />
             </div>
@@ -750,7 +829,7 @@ const Display = ({
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-sm font-medium text-gray-600 dark:text-gray-400">Page</div>
-                <div className="text-2xl font-bold text-gray-900 dark:text-white">{currentPage}/{totalPages || 1}</div>
+                <div className="text-2xl font-bold text-gray-900 dark:text-white">{currentPage}/{lastPage || 1}</div>
               </div>
             </div>
           </div>
@@ -765,7 +844,7 @@ const Display = ({
                   <th className="px-6 py-3 text-left">
                     <input
                       type="checkbox"
-                      checked={paginatedInscriptions.length > 0 && selectedInscriptions.length === paginatedInscriptions.length}
+                      checked={inscriptionsData.length > 0 && selectedInscriptions.length === inscriptionsData.length}
                       onChange={toggleSelectAll}
                       className="rounded border-gray-300 dark:border-gray-600 text-blue-600 dark:text-blue-400 focus:ring-blue-500 dark:focus:ring-blue-400"
                     />
@@ -782,7 +861,7 @@ const Display = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                {paginatedInscriptions.map((inscription) => (
+                {inscriptionsData.map((inscription) => (
                   <tr key={inscription.id_inscription_admin} className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                     <td className="px-6 py-4">
                       <input
@@ -840,11 +919,14 @@ const Display = ({
           <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-4">
               <div className="text-sm text-gray-600 dark:text-gray-400">
-                {itemsPerPage >= filteredInscriptions.length ? (
-                  `Affichage de tous les ${filteredInscriptions.length} résultats`
+                {total === 0 ? (
+                  'Aucun résultat'
+                ) : total <= itemsPerPage ? (
+                  `Affichage de tous les ${total} résultats`
                 ) : (
-                  `Affichage ${((currentPage - 1) * itemsPerPage) + 1} à ${Math.min(currentPage * itemsPerPage, filteredInscriptions.length)} sur ${filteredInscriptions.length} résultats`
+                  `Affichage ${from} à ${to} sur ${total} résultats`
                 )}
+                {isFiltering && <span className="ml-2 text-blue-500">(chargement...)</span>}
               </div>
               <div className="flex items-center gap-3">
                 <span className="text-sm text-gray-600 dark:text-gray-400">Afficher:</span>
@@ -852,74 +934,52 @@ const Display = ({
                   <select
                     className="px-8 py-1 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
                     value={itemsPerPage}
-                    onChange={(e) => {
-                      setItemsPerPage(parseInt(e.target.value));
-                      setCurrentPage(1);
-                    }}
+                    onChange={(e) => handlePerPageChange(parseInt(e.target.value))}
                   >
                     <option value={10}>10</option>
                     <option value={25}>25</option>
                     <option value={50}>50</option>
                     <option value={100}>100</option>
+                    <option value={250}>250</option>
                   </select>
-                  <button
-                    onClick={() => {
-                      setItemsPerPage(filteredInscriptions.length);
-                      setCurrentPage(1);
-                    }}
-                    className={`px-3 py-1 border rounded-lg text-sm transition ${
-                      itemsPerPage >= filteredInscriptions.length
-                        ? 'bg-blue-600 dark:bg-blue-500 text-white border-blue-600 dark:border-blue-500'
-                        : 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'
-                    }`}
-                  >
-                    Tout
-                  </button>
                 </div>
               </div>
             </div>
 
-            {itemsPerPage < filteredInscriptions.length && (
+            {pagination && lastPage > 1 && (
               <div className="flex items-center justify-center gap-2">
                 <button
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  disabled={currentPage === 1}
+                  onClick={() => goToPage(pagination.prev_page_url)}
+                  disabled={!pagination.prev_page_url || isFiltering}
                   className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
                 <span className="text-sm text-gray-600 dark:text-gray-400 min-w-fit">
-                  Page {currentPage} sur {totalPages}
+                  Page {currentPage} sur {lastPage}
                 </span>
-                {[...Array(Math.min(5, totalPages))].map((_, i) => {
-                  let pageNum;
-                  if (totalPages <= 5) {
-                    pageNum = i + 1;
-                  } else if (currentPage <= 3) {
-                    pageNum = i + 1;
-                  } else if (currentPage >= totalPages - 2) {
-                    pageNum = totalPages - 4 + i;
-                  } else {
-                    pageNum = currentPage - 2 + i;
+                {pagination.links && pagination.links.slice(1, -1).map((link, i) => {
+                  if (link.label === '...') {
+                    return <span key={i} className="px-2 text-gray-400">...</span>;
                   }
-                  
                   return (
                     <button
-                      key={pageNum}
-                      onClick={() => setCurrentPage(pageNum)}
+                      key={i}
+                      onClick={() => goToPage(link.url)}
+                      disabled={!link.url || isFiltering}
                       className={`px-3 py-1 border rounded-lg text-sm ${
-                        currentPage === pageNum
+                        link.active
                           ? 'bg-blue-600 dark:bg-blue-500 text-white border-blue-600 dark:border-blue-500'
                           : 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'
-                      }`}
+                      } disabled:opacity-50`}
                     >
-                      {pageNum}
+                      {link.label}
                     </button>
                   );
                 })}
                 <button
-                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                  disabled={currentPage === totalPages}
+                  onClick={() => goToPage(pagination.next_page_url)}
+                  disabled={!pagination.next_page_url || isFiltering}
                   className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <ChevronRight className="w-4 h-4" />

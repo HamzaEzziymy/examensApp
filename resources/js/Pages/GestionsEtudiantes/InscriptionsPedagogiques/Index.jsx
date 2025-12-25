@@ -9,6 +9,11 @@ function Index({
   inscriptions_administratives,
   offres_formation,
   etudiants,
+  modules,
+  niveaux,
+  sections,
+  filters,
+  totalCount,
 }) {
 
   return (
@@ -19,7 +24,7 @@ function Index({
         </h2>
       }
     >
-      <Head title="Etudiantes" />
+      <Head title="Inscriptions Pédagogiques" />
       <Header />
       <div className="p-4 rounded-lg">
         <Display
@@ -27,6 +32,11 @@ function Index({
           inscriptions_administratives={inscriptions_administratives}
           offres_formation={offres_formation}
           etudiants={etudiants}
+          modules={modules}
+          niveaux={niveaux}
+          sections={sections}
+          filters={filters}
+          totalCount={totalCount}
         />
       </div>
 

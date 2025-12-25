@@ -27,29 +27,76 @@ class InscriptionAdministrativeController extends Controller
         $selectedFiliere = $userFiliereAnnee ? $userFiliereAnnee->id_filiere : null;
         $selectedAnnee = $userFiliereAnnee ? $userFiliereAnnee->id_annee : null;
         
-        // Build query for inscriptions
+        // Get filter parameters from request
+        $search = $request->input('search', '');
+        $filterAnnee = $request->input('annee', '');
+        $filterNiveau = $request->input('niveau', '');
+        $filterSection = $request->input('section', '');
+        $filterStatut = $request->input('statut', '');
+        $perPage = $request->input('per_page', 25);
+        
+        // Build query for inscriptions with backend filtering
         $inscriptionsQuery = InscriptionAdministrative::with([
             'niveau',
             'anneeUniversitaire',
             'etudiant',
             'section.filiere'
-        ])->orderBy('created_at', 'desc');
+        ]);
         
-        // Apply filiere filter if a specific filiere is selected
+        // Apply user's filiere filter if a specific filiere is selected
         if ($selectedFiliere && $selectedFiliere !== 'all') {
             $inscriptionsQuery->whereHas('section.filiere', function ($query) use ($selectedFiliere) {
                 $query->where('id_filiere', $selectedFiliere);
             });
         }
         
-        // Apply year filter if a specific year is selected
-        if ($selectedAnnee && $selectedAnnee !== 'all') {
+        // Apply user's year filter if a specific year is selected (default context)
+        if ($selectedAnnee && $selectedAnnee !== 'all' && empty($filterAnnee)) {
             $inscriptionsQuery->where('id_annee', $selectedAnnee);
         }
         
-        $inscriptions = $inscriptionsQuery->get();
+        // Apply search filter (CNE, nom, prenom, email)
+        if (!empty($search)) {
+            $inscriptionsQuery->where(function ($query) use ($search) {
+                $query->whereHas('etudiant', function ($q) use ($search) {
+                    $q->where('cne', 'like', "%{$search}%")
+                      ->orWhere('nom', 'like', "%{$search}%")
+                      ->orWhere('prenom', 'like', "%{$search}%")
+                      ->orWhere('mail_academique', 'like', "%{$search}%");
+                });
+            });
+        }
+        
+        // Apply année filter
+        if (!empty($filterAnnee)) {
+            $inscriptionsQuery->where('id_annee', $filterAnnee);
+        }
+        
+        // Apply niveau filter
+        if (!empty($filterNiveau)) {
+            $inscriptionsQuery->where('id_niveau', $filterNiveau);
+        }
+        
+        // Apply section filter
+        if (!empty($filterSection)) {
+            $inscriptionsQuery->where('id_section', $filterSection);
+        }
+        
+        // Apply statut filter
+        if (!empty($filterStatut)) {
+            $inscriptionsQuery->where('statut', $filterStatut);
+        }
+        
+        // Order and paginate
+        $inscriptionsQuery->orderBy('created_at', 'desc');
+        
+        // Get total count before pagination
+        $totalCount = $inscriptionsQuery->count();
+        
+        // Paginate results
+        $inscriptions = $inscriptionsQuery->paginate($perPage)->withQueryString();
 
-        // Filter students based on selected filiere
+        // Filter students based on selected filiere (for add/edit forms)
         $studentsQuery = Etudiant::with('section.filiere')
             ->orderBy('nom')
             ->orderBy('prenom');
@@ -60,12 +107,8 @@ class InscriptionAdministrativeController extends Controller
         }
         $students = $studentsQuery->get();
 
-        // Filter years - show all if "all" is selected, otherwise show selected year
-        $anneesQuery = AnneeUniversitaire::orderBy('annee_univ', 'desc');
-        if ($selectedAnnee && $selectedAnnee !== 'all') {
-            $anneesQuery->where('id_annee', $selectedAnnee);
-        }
-        $annees = $anneesQuery->get();
+        // Get all years for filter dropdown
+        $annees = AnneeUniversitaire::orderBy('annee_univ', 'desc')->get();
         
         $niveaux = Niveau::orderBy('ordre')->get();
         
@@ -84,6 +127,15 @@ class InscriptionAdministrativeController extends Controller
             "annees" => $annees,
             "niveaux" => $niveaux,
             "sections" => $sections,
+            "filters" => [
+                'search' => $search,
+                'annee' => $filterAnnee,
+                'niveau' => $filterNiveau,
+                'section' => $filterSection,
+                'statut' => $filterStatut,
+                'per_page' => $perPage,
+            ],
+            "totalCount" => $totalCount,
         ]);
     }
 

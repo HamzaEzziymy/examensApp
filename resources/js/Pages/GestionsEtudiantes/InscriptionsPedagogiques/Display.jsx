@@ -1,43 +1,38 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { router, useForm } from '@inertiajs/react';
-import { Search, Plus, Upload, Download, X, FileSpreadsheet, BookOpen, ChevronLeft, ChevronRight, Eye, Edit, Trash2, Filter } from 'lucide-react';
+import { Search, Plus, Upload, Download, X, FileSpreadsheet, BookOpen, ChevronLeft, ChevronRight, Eye, Edit, Trash2, Filter, RefreshCw } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import Swal from 'sweetalert2';
+import debounce from 'lodash/debounce';
 
 const InscriptionPedagogiqueDataTable = ({ 
-  inscriptions_pedagogiques: initialInscriptions = [],
+  inscriptions_pedagogiques: paginatedInscriptions = { data: [], links: [], current_page: 1, last_page: 1, per_page: 25, total: 0 },
   inscriptions_administratives = [],
   offres_formation = [],
   etudiants = [],
-  filters: initialFilters = {}
+  modules = [],
+  niveaux = [],
+  sections = [],
+  filters: initialFilters = {},
+  totalCount = 0
 }) => {
+  // Handle both paginated and non-paginated data for backwards compatibility
+  const inscriptionsData = Array.isArray(paginatedInscriptions) ? paginatedInscriptions : (paginatedInscriptions.data || []);
+  const pagination = Array.isArray(paginatedInscriptions) ? null : paginatedInscriptions;
 
-
-  const [inscriptions, setInscriptions] = useState(initialInscriptions.data || initialInscriptions);
   const [searchTerm, setSearchTerm] = useState(initialFilters.search || '');
   const [showAddModal, setShowAddModal] = useState(false);
-
-  // Debug: Check if section/filiere data is loaded
-  if (initialInscriptions && initialInscriptions.length > 0) {
-    console.log('First inscription offre_formation:', initialInscriptions[0]?.offre_formation);
-  }
   const [showImportModal, setShowImportModal] = useState(false);
-  const [currentPage, setCurrentPage] = useState(initialInscriptions.current_page || 1);
-  const [itemsPerPage, setItemsPerPage] = useState(25);
   const [selectedInscriptions, setSelectedInscriptions] = useState([]);
-  const [selectedTypeFilter, setSelectedTypeFilter] = useState('all');
+  const [selectedTypeFilter, setSelectedTypeFilter] = useState(initialFilters.type || '');
+  const [selectedModuleFilter, setSelectedModuleFilter] = useState(initialFilters.module || '');
+  const [selectedNiveauFilter, setSelectedNiveauFilter] = useState(initialFilters.niveau || '');
+  const [selectedSectionFilter, setSelectedSectionFilter] = useState(initialFilters.section || '');
+  const [itemsPerPage, setItemsPerPage] = useState(initialFilters.per_page || 25);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingInscription, setEditingInscription] = useState(null);
-
-  // Handle paginated data from Laravel
-  useEffect(() => {
-    if (initialInscriptions.data) {
-      setInscriptions(initialInscriptions.data);
-      setCurrentPage(initialInscriptions.current_page);
-    } else {
-      setInscriptions(initialInscriptions);
-    }
-  }, [initialInscriptions]);
+  const [showFilters, setShowFilters] = useState(false);
+  const [isFiltering, setIsFiltering] = useState(false);
 
   // Using useForm for better error handling
   const inscriptionForm = useForm({
@@ -63,39 +58,102 @@ const InscriptionPedagogiqueDataTable = ({
   const [importType, setImportType] = useState('Normal');
   const [importCredits, setImportCredits] = useState(0);
 
-  // Filter and search inscriptions
-  const filteredInscriptions = useMemo(() => {
-    let filtered = inscriptions;
-    
-    // Apply search term
-    if (searchTerm) {
-      filtered = filtered.filter(inscription => {
-        return (
-          inscription.inscription_administrative?.etudiant?.cne?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          inscription.inscription_administrative?.etudiant?.nom?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          inscription.inscription_administrative?.etudiant?.prenom?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          inscription.offre_formation?.module?.nom_module?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          inscription.offre_formation?.nom_affiche?.toLowerCase().includes(searchTerm.toLowerCase())
-        );
-      });
+  // Backend filtering function with debounce
+  const applyFilters = useCallback((params = {}) => {
+    setIsFiltering(true);
+    const filterParams = {
+      search: params.search !== undefined ? params.search : searchTerm,
+      type: params.type !== undefined ? params.type : selectedTypeFilter,
+      module: params.module !== undefined ? params.module : selectedModuleFilter,
+      niveau: params.niveau !== undefined ? params.niveau : selectedNiveauFilter,
+      section: params.section !== undefined ? params.section : selectedSectionFilter,
+      per_page: params.per_page !== undefined ? params.per_page : itemsPerPage,
+    };
+
+    router.get(route('inscriptions.pedagogiques.index'), filterParams, {
+      preserveState: true,
+      preserveScroll: true,
+      only: ['inscriptions_pedagogiques', 'filters', 'totalCount'],
+      onFinish: () => setIsFiltering(false),
+    });
+  }, [searchTerm, selectedTypeFilter, selectedModuleFilter, selectedNiveauFilter, selectedSectionFilter, itemsPerPage]);
+
+  // Debounced search
+  const debouncedSearch = useMemo(
+    () => debounce((value) => applyFilters({ search: value }), 400),
+    [applyFilters]
+  );
+
+  // Handle search input change
+  const handleSearchChange = (e) => {
+    const value = e.target.value;
+    setSearchTerm(value);
+    debouncedSearch(value);
+  };
+
+  // Handle filter changes
+  const handleFilterChange = (filterName, value) => {
+    switch (filterName) {
+      case 'type':
+        setSelectedTypeFilter(value);
+        applyFilters({ type: value });
+        break;
+      case 'module':
+        setSelectedModuleFilter(value);
+        applyFilters({ module: value });
+        break;
+      case 'niveau':
+        setSelectedNiveauFilter(value);
+        applyFilters({ niveau: value });
+        break;
+      case 'section':
+        setSelectedSectionFilter(value);
+        applyFilters({ section: value });
+        break;
     }
+  };
 
-    // Apply type filter
-    if (selectedTypeFilter !== 'all') {
-      filtered = filtered.filter(inscription => 
-        inscription.type_inscription === selectedTypeFilter
-      );
-    }
+  // Handle items per page change
+  const handlePerPageChange = (value) => {
+    setItemsPerPage(value);
+    applyFilters({ per_page: value });
+  };
 
-    return filtered;
-  }, [inscriptions, searchTerm, selectedTypeFilter]);
+  // Handle pagination
+  const goToPage = (url) => {
+    if (!url) return;
+    setIsFiltering(true);
+    router.get(url, {}, {
+      preserveState: true,
+      preserveScroll: true,
+      only: ['inscriptions_pedagogiques', 'filters', 'totalCount'],
+      onFinish: () => setIsFiltering(false),
+    });
+  };
 
-  // Pagination for client-side filtering (if not using server-side)
-  const totalPages = Math.ceil(filteredInscriptions.length / itemsPerPage);
-  const paginatedInscriptions = useMemo(() => {
-    const start = (currentPage - 1) * itemsPerPage;
-    return filteredInscriptions.slice(start, start + itemsPerPage);
-  }, [filteredInscriptions, currentPage, itemsPerPage]);
+  // Clear all filters
+  const clearFilters = () => {
+    setSearchTerm('');
+    setSelectedTypeFilter('');
+    setSelectedModuleFilter('');
+    setSelectedNiveauFilter('');
+    setSelectedSectionFilter('');
+    setItemsPerPage(25);
+    setIsFiltering(true);
+    router.get(route('inscriptions.pedagogiques.index'), { per_page: 25 }, {
+      preserveState: true,
+      preserveScroll: true,
+      only: ['inscriptions_pedagogiques', 'filters', 'totalCount'],
+      onFinish: () => setIsFiltering(false),
+    });
+  };
+
+  // Pagination info
+  const currentPage = pagination?.current_page || 1;
+  const lastPage = pagination?.last_page || 1;
+  const total = pagination?.total || inscriptionsData.length;
+  const from = pagination?.from || 1;
+  const to = pagination?.to || inscriptionsData.length;
 
   // Get related student name safely
   const getStudentName = (inscription) => {
@@ -519,23 +577,23 @@ const InscriptionPedagogiqueDataTable = ({
   };
 
   const toggleSelectAll = () => {
-    if (selectedInscriptions.length === paginatedInscriptions.length) {
+    if (selectedInscriptions.length === inscriptionsData.length) {
       setSelectedInscriptions([]);
     } else {
-      setSelectedInscriptions(paginatedInscriptions.map(i => i.id_inscription_pedagogique));
+      setSelectedInscriptions(inscriptionsData.map(i => i.id_inscription_pedagogique));
     }
   };
 
   // Stats calculations
   const stats = useMemo(() => {
-    const total = inscriptions.length;
-    const normal = inscriptions.filter(i => i.type_inscription === 'Normal').length;
-    const credit = inscriptions.filter(i => i.type_inscription === 'Credit').length;
-    const anticipe = inscriptions.filter(i => i.type_inscription === 'Anticipe').length;
-    const totalCredits = inscriptions.reduce((sum, i) => sum + (parseInt(i.credits_acquis) || 0), 0);
+    const totalStats = totalCount || total;
+    const normal = inscriptionsData.filter(i => i.type_inscription === 'Normal').length;
+    const credit = inscriptionsData.filter(i => i.type_inscription === 'Credit').length;
+    const anticipe = inscriptionsData.filter(i => i.type_inscription === 'Anticipe').length;
+    const totalCredits = inscriptionsData.reduce((sum, i) => sum + (parseInt(i.credits_acquis) || 0), 0);
     
-    return { total, normal, credit, anticipe, totalCredits };
-  }, [inscriptions]);
+    return { total: totalStats, normal, credit, anticipe, totalCredits };
+  }, [inscriptionsData, totalCount, total]);
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
@@ -583,9 +641,12 @@ const InscriptionPedagogiqueDataTable = ({
                 type="text"
                 placeholder="Rechercher par CNE, étudiant, module..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={handleSearchChange}
                 className="w-full pl-10 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 focus:border-transparent"
               />
+              {isFiltering && (
+                <RefreshCw className="absolute right-3 top-1/2 transform -translate-y-1/2 text-blue-500 w-4 h-4 animate-spin" />
+              )}
             </div>
             
             <div className="flex flex-wrap gap-3">
@@ -593,17 +654,91 @@ const InscriptionPedagogiqueDataTable = ({
                 <Filter className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-4 h-4" />
                 <select
                   value={selectedTypeFilter}
-                  onChange={(e) => setSelectedTypeFilter(e.target.value)}
+                  onChange={(e) => handleFilterChange('type', e.target.value)}
                   className="pl-9 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
                 >
-                  <option value="all">Tous les types</option>
+                  <option value="">Tous les types</option>
                   <option value="Normal">Normal</option>
                   <option value="Credit">Crédit</option>
                   <option value="Anticipe">Anticipé</option>
                 </select>
               </div>
+              <button
+                onClick={() => setShowFilters(!showFilters)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+                  showFilters 
+                    ? 'bg-blue-600 text-white' 
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'
+                }`}
+              >
+                <Filter className="w-4 h-4" />
+                <span>Plus de filtres</span>
+                {(selectedModuleFilter || selectedNiveauFilter || selectedSectionFilter) && (
+                  <span className="bg-blue-500 text-white text-xs px-1.5 py-0.5 rounded-full">
+                    {[selectedModuleFilter, selectedNiveauFilter, selectedSectionFilter].filter(Boolean).length}
+                  </span>
+                )}
+              </button>
             </div>
           </div>
+
+          {/* Extended Filters */}
+          {showFilters && (
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Module</label>
+                <select
+                  value={selectedModuleFilter}
+                  onChange={(e) => handleFilterChange('module', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Tous les modules</option>
+                  {modules.map(module => (
+                    <option key={module.id_module} value={module.id_module}>
+                      {module.nom_module} ({module.code_module})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Niveau</label>
+                <select
+                  value={selectedNiveauFilter}
+                  onChange={(e) => handleFilterChange('niveau', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Tous les niveaux</option>
+                  {niveaux.map(niveau => (
+                    <option key={niveau.id_niveau} value={niveau.id_niveau}>{niveau.nom_niveau}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Section</label>
+                <select
+                  value={selectedSectionFilter}
+                  onChange={(e) => handleFilterChange('section', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Toutes les sections</option>
+                  {sections.map(section => (
+                    <option key={section.id_section} value={section.id_section}>
+                      {section.filiere?.nom_filiere} ({section.nom_section})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="sm:col-span-2 lg:col-span-3 flex justify-end">
+                <button
+                  onClick={clearFilters}
+                  className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white flex items-center gap-2"
+                >
+                  <X className="w-4 h-4" />
+                  Réinitialiser les filtres
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Stats */}
@@ -655,7 +790,7 @@ const InscriptionPedagogiqueDataTable = ({
                   <th className="px-6 py-3 text-left w-12">
                     <input
                       type="checkbox"
-                      checked={paginatedInscriptions.length > 0 && selectedInscriptions.length === paginatedInscriptions.length}
+                      checked={inscriptionsData.length > 0 && selectedInscriptions.length === inscriptionsData.length}
                       onChange={toggleSelectAll}
                       className="rounded border-gray-300 dark:border-gray-600 text-blue-600 dark:text-blue-400 focus:ring-blue-500 dark:focus:ring-blue-400"
                     />
@@ -669,8 +804,8 @@ const InscriptionPedagogiqueDataTable = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                {paginatedInscriptions.length > 0 ? (
-                  paginatedInscriptions.map((inscription) => {
+                {inscriptionsData.length > 0 ? (
+                  inscriptionsData.map((inscription) => {
                     const typeColors = {
                       'Normal': 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
                       'Credit': 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300',
@@ -787,11 +922,14 @@ const InscriptionPedagogiqueDataTable = ({
           <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
             <div className="flex flex-col sm:flex-row items-center justify-between gap-4 mb-4">
               <div className="text-sm text-gray-600 dark:text-gray-400">
-                {itemsPerPage >= filteredInscriptions.length ? (
-                  `Affichage de tous les ${filteredInscriptions.length} résultats`
+                {total === 0 ? (
+                  'Aucun résultat'
+                ) : total <= itemsPerPage ? (
+                  `Affichage de tous les ${total} résultats`
                 ) : (
-                  `Affichage ${((currentPage - 1) * itemsPerPage) + 1} à ${Math.min(currentPage * itemsPerPage, filteredInscriptions.length)} sur ${filteredInscriptions.length} résultats`
+                  `Affichage ${from} à ${to} sur ${total} résultats`
                 )}
+                {isFiltering && <span className="ml-2 text-blue-500">(chargement...)</span>}
               </div>
               <div className="flex items-center gap-3">
                 <span className="text-sm text-gray-600 dark:text-gray-400">Afficher:</span>
@@ -799,74 +937,52 @@ const InscriptionPedagogiqueDataTable = ({
                   <select
                     className="px-8 py-1 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
                     value={itemsPerPage}
-                    onChange={(e) => {
-                      setItemsPerPage(parseInt(e.target.value));
-                      setCurrentPage(1);
-                    }}
+                    onChange={(e) => handlePerPageChange(parseInt(e.target.value))}
                   >
                     <option value={10}>10</option>
                     <option value={25}>25</option>
                     <option value={50}>50</option>
                     <option value={100}>100</option>
+                    <option value={250}>250</option>
                   </select>
-                  <button
-                    onClick={() => {
-                      setItemsPerPage(filteredInscriptions.length);
-                      setCurrentPage(1);
-                    }}
-                    className={`px-3 py-1 border rounded-lg text-sm transition ${
-                      itemsPerPage >= filteredInscriptions.length
-                        ? 'bg-blue-600 dark:bg-blue-500 text-white border-blue-600 dark:border-blue-500'
-                        : 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'
-                    }`}
-                  >
-                    Tout
-                  </button>
                 </div>
               </div>
             </div>
 
-            {itemsPerPage < filteredInscriptions.length && totalPages > 1 && (
+            {pagination && lastPage > 1 && (
               <div className="flex items-center justify-center gap-2">
                 <button
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  disabled={currentPage === 1}
+                  onClick={() => goToPage(pagination.prev_page_url)}
+                  disabled={!pagination.prev_page_url || isFiltering}
                   className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
                 <span className="text-sm text-gray-600 dark:text-gray-400 min-w-fit">
-                  Page {currentPage} sur {totalPages}
+                  Page {currentPage} sur {lastPage}
                 </span>
-                {[...Array(Math.min(5, totalPages))].map((_, i) => {
-                  let pageNum;
-                  if (totalPages <= 5) {
-                    pageNum = i + 1;
-                  } else if (currentPage <= 3) {
-                    pageNum = i + 1;
-                  } else if (currentPage >= totalPages - 2) {
-                    pageNum = totalPages - 4 + i;
-                  } else {
-                    pageNum = currentPage - 2 + i;
+                {pagination.links && pagination.links.slice(1, -1).map((link, i) => {
+                  if (link.label === '...') {
+                    return <span key={i} className="px-2 text-gray-400">...</span>;
                   }
-                  
                   return (
                     <button
-                      key={pageNum}
-                      onClick={() => setCurrentPage(pageNum)}
+                      key={i}
+                      onClick={() => goToPage(link.url)}
+                      disabled={!link.url || isFiltering}
                       className={`px-3 py-1 border rounded-lg text-sm ${
-                        currentPage === pageNum
+                        link.active
                           ? 'bg-blue-600 dark:bg-blue-500 text-white border-blue-600 dark:border-blue-500'
                           : 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'
-                      }`}
+                      } disabled:opacity-50`}
                     >
-                      {pageNum}
+                      {link.label}
                     </button>
                   );
                 })}
                 <button
-                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                  disabled={currentPage === totalPages}
+                  onClick={() => goToPage(pagination.next_page_url)}
+                  disabled={!pagination.next_page_url || isFiltering}
                   className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <ChevronRight className="w-4 h-4" />

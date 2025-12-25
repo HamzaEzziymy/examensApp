@@ -18,14 +18,22 @@ class InscriptionPedagogiqueController extends Controller
     /**
      * Display a listing of the resource.
      */
-    public function index()
+    public function index(Request $request)
     {
         // Get user's selected filiere and year
         $userFiliereAnnee = auth()->user()->userFiliereAnnees()->first();
         $selectedFiliere = $userFiliereAnnee ? $userFiliereAnnee->id_filiere : null;
         $selectedAnnee = $userFiliereAnnee ? $userFiliereAnnee->id_annee : null;
         
-        // Build query for pedagogical inscriptions
+        // Get filter parameters from request
+        $search = $request->input('search', '');
+        $filterType = $request->input('type', '');
+        $filterModule = $request->input('module', '');
+        $filterNiveau = $request->input('niveau', '');
+        $filterSection = $request->input('section', '');
+        $perPage = $request->input('per_page', 25);
+        
+        // Build query for pedagogical inscriptions with backend filtering
         $inscriptionsQuery = InscriptionPedagogique::with([
             'inscriptionAdministrative.etudiant',
             'inscriptionAdministrative.anneeUniversitaire',
@@ -33,23 +41,69 @@ class InscriptionPedagogiqueController extends Controller
             'offreFormation.module',
             'offreFormation.semestre.niveau',
             'offreFormation.section.filiere'
-        ])->orderBy('created_at', 'desc');
+        ]);
         
-        // Apply filiere filter if a specific filiere is selected
+        // Apply user's filiere filter if a specific filiere is selected
         if ($selectedFiliere && $selectedFiliere !== 'all') {
             $inscriptionsQuery->whereHas('inscriptionAdministrative.section.filiere', function ($query) use ($selectedFiliere) {
                 $query->where('id_filiere', $selectedFiliere);
             });
         }
         
-        // Apply year filter if a specific year is selected
+        // Apply user's year filter if a specific year is selected (default context)
         if ($selectedAnnee && $selectedAnnee !== 'all') {
             $inscriptionsQuery->whereHas('inscriptionAdministrative', function ($query) use ($selectedAnnee) {
                 $query->where('id_annee', $selectedAnnee);
             });
         }
         
-        $inscriptions_pedagogiques = $inscriptionsQuery->get();
+        // Apply search filter (CNE, nom, prenom, module name)
+        if (!empty($search)) {
+            $inscriptionsQuery->where(function ($query) use ($search) {
+                $query->whereHas('inscriptionAdministrative.etudiant', function ($q) use ($search) {
+                    $q->where('cne', 'like', "%{$search}%")
+                      ->orWhere('nom', 'like', "%{$search}%")
+                      ->orWhere('prenom', 'like', "%{$search}%");
+                })
+                ->orWhereHas('offreFormation.module', function ($q) use ($search) {
+                    $q->where('nom_module', 'like', "%{$search}%")
+                      ->orWhere('code_module', 'like', "%{$search}%");
+                });
+            });
+        }
+        
+        // Apply type filter
+        if (!empty($filterType)) {
+            $inscriptionsQuery->where('type_inscription', $filterType);
+        }
+        
+        // Apply module filter
+        if (!empty($filterModule)) {
+            $inscriptionsQuery->whereHas('offreFormation', function ($q) use ($filterModule) {
+                $q->where('id_module', $filterModule);
+            });
+        }
+        
+        // Apply niveau filter
+        if (!empty($filterNiveau)) {
+            $inscriptionsQuery->whereHas('offreFormation.semestre.niveau', function ($q) use ($filterNiveau) {
+                $q->where('id_niveau', $filterNiveau);
+            });
+        }
+        
+        // Apply section filter
+        if (!empty($filterSection)) {
+            $inscriptionsQuery->whereHas('offreFormation', function ($q) use ($filterSection) {
+                $q->where('id_section', $filterSection);
+            });
+        }
+        
+        // Order and get total count
+        $inscriptionsQuery->orderBy('created_at', 'desc');
+        $totalCount = $inscriptionsQuery->count();
+        
+        // Paginate results
+        $inscriptions_pedagogiques = $inscriptionsQuery->paginate($perPage)->withQueryString();
 
         // Filter supporting data based on selections
         $offres_formation = OffreFormation::with([
@@ -58,7 +112,22 @@ class InscriptionPedagogiqueController extends Controller
             'section.filiere'
         ])->get();
         
-        // Filter administrative inscriptions
+        // Get modules for filter dropdown
+        $modules = Module::orderBy('nom_module')->get();
+        
+        // Get niveaux for filter dropdown
+        $niveaux = \App\Models\Niveau::orderBy('ordre')->get();
+        
+        // Get sections for filter dropdown
+        $sectionsQuery = \App\Models\Section::with('filiere');
+        if ($selectedFiliere && $selectedFiliere !== 'all') {
+            $sectionsQuery->whereHas('filiere', function ($query) use ($selectedFiliere) {
+                $query->where('id_filiere', $selectedFiliere);
+            });
+        }
+        $sections = $sectionsQuery->get();
+        
+        // Filter administrative inscriptions (for add/edit forms)
         $inscriptionsAdminQuery = InscriptionAdministrative::with(['etudiant', 'section.filiere'])
             ->orderBy('created_at', 'desc');
         if ($selectedFiliere && $selectedFiliere !== 'all') {
@@ -86,6 +155,18 @@ class InscriptionPedagogiqueController extends Controller
             'offres_formation' => $offres_formation,
             'inscriptions_administratives' => $inscriptions_administratives,
             'etudiants' => $etudiants,
+            'modules' => $modules,
+            'niveaux' => $niveaux,
+            'sections' => $sections,
+            'filters' => [
+                'search' => $search,
+                'type' => $filterType,
+                'module' => $filterModule,
+                'niveau' => $filterNiveau,
+                'section' => $filterSection,
+                'per_page' => $perPage,
+            ],
+            'totalCount' => $totalCount,
         ]);
     }
 
