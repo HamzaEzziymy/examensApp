@@ -17,12 +17,19 @@ class StageController extends Controller
     /**
      * Display a listing of the resource.
      */
-    public function index()
+    public function index(Request $request)
     {
         // Get user's selected filiere and year for filtering
         $userFiliereAnnee = auth()->user()->userFiliereAnnees()->first();
         $selectedFiliere = $userFiliereAnnee ? $userFiliereAnnee->id_filiere : null;
         $selectedAnnee = $userFiliereAnnee ? $userFiliereAnnee->id_annee : null;
+
+        // Get filter parameters from request
+        $search = $request->input('search', '');
+        $filterStatut = $request->input('statut', '');
+        $filterNiveau = $request->input('niveau', '');
+        $filterSection = $request->input('section', '');
+        $perPage = $request->input('per_page', 25);
 
         // Build query for stages with relationships
         $stagesQuery = Stage::with([
@@ -31,7 +38,7 @@ class StageController extends Controller
             'inscriptionPedagogique.inscriptionAdministrative.niveau',
             'module',
             'encadrantFaculte'
-        ])->orderBy('created_at', 'desc');
+        ]);
 
         // Apply filiere filter if a specific filiere is selected
         if ($selectedFiliere && $selectedFiliere !== 'all') {
@@ -47,14 +54,68 @@ class StageController extends Controller
             });
         }
 
-        $stages = $stagesQuery->get();
+        // Apply search filter
+        if (!empty($search)) {
+            $stagesQuery->where(function ($query) use ($search) {
+                $query->where('nom_hopital', 'like', "%{$search}%")
+                    ->orWhere('service', 'like', "%{$search}%")
+                    ->orWhere('encadrant_hopital', 'like', "%{$search}%")
+                    ->orWhereHas('inscriptionPedagogique.inscriptionAdministrative.etudiant', function ($q) use ($search) {
+                        $q->where('cne', 'like', "%{$search}%")
+                          ->orWhere('nom', 'like', "%{$search}%")
+                          ->orWhere('prenom', 'like', "%{$search}%");
+                    })
+                    ->orWhereHas('module', function ($q) use ($search) {
+                        $q->where('nom_module', 'like', "%{$search}%");
+                    })
+                    ->orWhereHas('encadrantFaculte', function ($q) use ($search) {
+                        $q->where('nom', 'like', "%{$search}%")
+                          ->orWhere('prenom', 'like', "%{$search}%");
+                    });
+            });
+        }
 
-        // Get data for form dropdowns
+        // Apply statut filter (en_cours, termine, a_venir)
+        if (!empty($filterStatut)) {
+            $now = now()->toDateString();
+            
+            if ($filterStatut === 'en_cours') {
+                $stagesQuery->where('date_debut', '<=', $now)
+                    ->where('date_fin', '>=', $now);
+            } elseif ($filterStatut === 'termine') {
+                $stagesQuery->where('date_fin', '<', $now);
+            } elseif ($filterStatut === 'a_venir') {
+                $stagesQuery->where('date_debut', '>', $now);
+            }
+        }
+
+        // Apply niveau filter
+        if (!empty($filterNiveau)) {
+            $stagesQuery->whereHas('inscriptionPedagogique.inscriptionAdministrative', function ($q) use ($filterNiveau) {
+                $q->where('id_niveau', $filterNiveau);
+            });
+        }
+
+        // Apply section filter
+        if (!empty($filterSection)) {
+            $stagesQuery->whereHas('inscriptionPedagogique.inscriptionAdministrative', function ($q) use ($filterSection) {
+                $q->where('id_section', $filterSection);
+            });
+        }
+
+        // Order and get total count
+        $stagesQuery->orderBy('created_at', 'desc');
+        $totalCount = $stagesQuery->count();
+
+        // Paginate results
+        $stages = $stagesQuery->paginate($perPage)->withQueryString();
+
+        // Get data for form dropdowns - LIMIT to avoid loading too much data
         $inscriptionsPedagogiquesQuery = InscriptionPedagogique::with([
-            'inscriptionAdministrative.etudiant',
-            'inscriptionAdministrative.section.filiere',
-            'offreFormation.module'
-        ]);
+            'inscriptionAdministrative.etudiant:id_etudiant,cne,nom,prenom',
+            'inscriptionAdministrative.section:id_section,nom_section,id_filiere',
+            'inscriptionAdministrative.section.filiere:id_filiere,nom_filiere'
+        ])->select('id_inscription_pedagogique', 'id_inscription_admin');
 
         // Apply same filters to inscriptions
         if ($selectedFiliere && $selectedFiliere !== 'all') {
@@ -69,19 +130,41 @@ class StageController extends Controller
             });
         }
 
-        $inscriptionsPedagogiques = $inscriptionsPedagogiquesQuery->get();
+        $inscriptionsPedagogiques = $inscriptionsPedagogiquesQuery->limit(500)->get();
 
         // Get modules that are stage-related
         $modules = Module::where('type_module', 'STAGE')->orderBy('nom_module')->get();
         
-        // Get enseignants for faculty supervisors
-        $enseignants = Enseignant::orderBy('nom')->orderBy('prenom')->get();
+        // Get enseignants for faculty supervisors - only essential fields
+        $enseignants = Enseignant::select('id_enseignant', 'nom', 'prenom')
+            ->orderBy('nom')->orderBy('prenom')->get();
+
+        // Get niveaux for filter dropdown
+        $niveaux = \App\Models\Niveau::orderBy('ordre')->get();
+        
+        // Get sections for filter dropdown
+        $sectionsQuery = \App\Models\Section::with('filiere:id_filiere,nom_filiere')
+            ->select('id_section', 'nom_section', 'id_filiere');
+        if ($selectedFiliere && $selectedFiliere !== 'all') {
+            $sectionsQuery->where('id_filiere', $selectedFiliere);
+        }
+        $sections = $sectionsQuery->get();
 
         return Inertia::render('GestionsEtudiantes/Stages/Index', [
             'stages' => $stages,
             'inscriptionsPedagogiques' => $inscriptionsPedagogiques,
             'modules' => $modules,
             'enseignants' => $enseignants,
+            'niveaux' => $niveaux,
+            'sections' => $sections,
+            'filters' => [
+                'search' => $search,
+                'statut' => $filterStatut,
+                'niveau' => $filterNiveau,
+                'section' => $filterSection,
+                'per_page' => $perPage,
+            ],
+            'totalCount' => $totalCount,
         ]);
     }
 

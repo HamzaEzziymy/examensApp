@@ -17,37 +17,124 @@ class CapitalisationController extends Controller
     /**
      * Display a listing of the resource.
      */
-    public function index()
+    public function index(Request $request)
     {
         // Get user's selected filiere and year
         $userFiliereAnnee = auth()->user()->userFiliereAnnees()->first();
         $selectedFiliere = $userFiliereAnnee ? $userFiliereAnnee->id_filiere : null;
+        $selectedAnnee = $userFiliereAnnee ? $userFiliereAnnee->id_annee : null;
         
-        // Build query for capitalisations
+        // Get filter parameters from request
+        $search = $request->input('search', '');
+        $filterModule = $request->input('module', '');
+        $filterNiveau = $request->input('niveau', '');
+        $filterSection = $request->input('section', '');
+        $filterStatut = $request->input('statut', '');
+        $perPage = $request->input('per_page', 25);
+        
+        // Build query for capitalisations with backend filtering
         $capitalisationsQuery = Capitalisation::with([
             'inscriptionPedagogique.inscriptionAdministrative.etudiant',
             'inscriptionPedagogique.inscriptionAdministrative.section.filiere',
             'inscriptionPedagogique.inscriptionAdministrative.niveau',
             'inscriptionPedagogique.inscriptionAdministrative.anneeUniversitaire',
             'module'
-        ])->orderBy('date_capitalisation', 'desc');
+        ]);
         
-        // Apply filiere filter if a specific filiere is selected
+        // Apply user's filiere filter if a specific filiere is selected
         if ($selectedFiliere && $selectedFiliere !== 'all') {
             $capitalisationsQuery->whereHas('inscriptionPedagogique.inscriptionAdministrative.section.filiere', function ($query) use ($selectedFiliere) {
                 $query->where('id_filiere', $selectedFiliere);
             });
         }
         
-        $capitalisations = $capitalisationsQuery->get();
+        // Apply user's year filter if a specific year is selected
+        if ($selectedAnnee && $selectedAnnee !== 'all') {
+            $capitalisationsQuery->whereHas('inscriptionPedagogique.inscriptionAdministrative', function ($query) use ($selectedAnnee) {
+                $query->where('id_annee', $selectedAnnee);
+            });
+        }
+        
+        // Apply search filter (CNE, nom, prenom, email, module name, section, filiere, niveau, annee)
+        if (!empty($search)) {
+            $capitalisationsQuery->where(function ($query) use ($search) {
+                $query->whereHas('inscriptionPedagogique.inscriptionAdministrative.etudiant', function ($q) use ($search) {
+                    $q->where('cne', 'like', "%{$search}%")
+                      ->orWhere('nom', 'like', "%{$search}%")
+                      ->orWhere('prenom', 'like', "%{$search}%")
+                      ->orWhere('mail_academique', 'like', "%{$search}%");
+                })
+                ->orWhereHas('module', function ($q) use ($search) {
+                    $q->where('nom_module', 'like', "%{$search}%")
+                      ->orWhere('code_module', 'like', "%{$search}%");
+                })
+                ->orWhereHas('inscriptionPedagogique.inscriptionAdministrative.section', function ($q) use ($search) {
+                    $q->where('nom_section', 'like', "%{$search}%");
+                })
+                ->orWhereHas('inscriptionPedagogique.inscriptionAdministrative.section.filiere', function ($q) use ($search) {
+                    $q->where('nom_filiere', 'like', "%{$search}%");
+                })
+                ->orWhereHas('inscriptionPedagogique.inscriptionAdministrative.niveau', function ($q) use ($search) {
+                    $q->where('nom_niveau', 'like', "%{$search}%");
+                })
+                ->orWhereHas('inscriptionPedagogique.inscriptionAdministrative.anneeUniversitaire', function ($q) use ($search) {
+                    $q->where('annee_univ', 'like', "%{$search}%");
+                });
+            });
+        }
+        
+        // Apply module filter
+        if (!empty($filterModule)) {
+            $capitalisationsQuery->where('id_module', $filterModule);
+        }
+        
+        // Apply niveau filter
+        if (!empty($filterNiveau)) {
+            $capitalisationsQuery->whereHas('inscriptionPedagogique.inscriptionAdministrative', function ($q) use ($filterNiveau) {
+                $q->where('id_niveau', $filterNiveau);
+            });
+        }
+        
+        // Apply section filter
+        if (!empty($filterSection)) {
+            $capitalisationsQuery->whereHas('inscriptionPedagogique.inscriptionAdministrative', function ($q) use ($filterSection) {
+                $q->where('id_section', $filterSection);
+            });
+        }
+        
+        // Apply statut filter (valide, expiree, expire_bientot)
+        if (!empty($filterStatut)) {
+            $now = now();
+            $thirtyDaysFromNow = now()->addDays(30);
+            
+            if ($filterStatut === 'valide') {
+                $capitalisationsQuery->where(function ($q) use ($now) {
+                    $q->whereNull('date_expiration')
+                      ->orWhere('date_expiration', '>', $now);
+                });
+            } elseif ($filterStatut === 'expiree') {
+                $capitalisationsQuery->where('date_expiration', '<', $now);
+            } elseif ($filterStatut === 'expire_bientot') {
+                $capitalisationsQuery->where('date_expiration', '>', $now)
+                    ->where('date_expiration', '<=', $thirtyDaysFromNow);
+            }
+        }
+        
+        // Order and get total count
+        $capitalisationsQuery->orderBy('date_capitalisation', 'desc');
+        $totalCount = $capitalisationsQuery->count();
+        
+        // Paginate results
+        $capitalisations = $capitalisationsQuery->paginate($perPage)->withQueryString();
 
-        // Get pedagogical inscriptions for the dropdown
+        // Get pedagogical inscriptions for the dropdown (for add/edit forms) - LIMIT to avoid loading too much data
         $inscriptionsPedagogiquesQuery = InscriptionPedagogique::with([
-            'inscriptionAdministrative.etudiant',
-            'inscriptionAdministrative.section.filiere',
-            'inscriptionAdministrative.niveau',
-            'offreFormation.module'
-        ]);
+            'inscriptionAdministrative.etudiant:id_etudiant,cne,nom,prenom',
+            'inscriptionAdministrative.section:id_section,nom_section,id_filiere',
+            'inscriptionAdministrative.section.filiere:id_filiere,nom_filiere',
+            'inscriptionAdministrative.niveau:id_niveau,nom_niveau',
+            'offreFormation.module:id_module,nom_module,code_module'
+        ])->select('id_inscription_pedagogique', 'id_inscription_admin', 'id_offre');
         
         if ($selectedFiliere && $selectedFiliere !== 'all') {
             $inscriptionsPedagogiquesQuery->whereHas('inscriptionAdministrative.section.filiere', function ($query) use ($selectedFiliere) {
@@ -55,7 +142,7 @@ class CapitalisationController extends Controller
             });
         }
         
-        $inscriptionsPedagogiques = $inscriptionsPedagogiquesQuery->get();
+        $inscriptionsPedagogiques = $inscriptionsPedagogiquesQuery->limit(500)->get();
 
         // Get modules for the dropdown
         $modulesQuery = Module::orderBy('nom_module');
@@ -66,10 +153,33 @@ class CapitalisationController extends Controller
         }
         $modules = $modulesQuery->get();
         
+        // Get niveaux for filter dropdown
+        $niveaux = \App\Models\Niveau::orderBy('ordre')->get();
+        
+        // Get sections for filter dropdown
+        $sectionsQuery = \App\Models\Section::with('filiere');
+        if ($selectedFiliere && $selectedFiliere !== 'all') {
+            $sectionsQuery->whereHas('filiere', function ($query) use ($selectedFiliere) {
+                $query->where('id_filiere', $selectedFiliere);
+            });
+        }
+        $sections = $sectionsQuery->get();
+        
         return Inertia::render('GestionsEtudiantes/Capitalisations/Index', [
             'capitalisations' => $capitalisations,
             'inscriptionsPedagogiques' => $inscriptionsPedagogiques,
-            'modules' => $modules
+            'modules' => $modules,
+            'niveaux' => $niveaux,
+            'sections' => $sections,
+            'filters' => [
+                'search' => $search,
+                'module' => $filterModule,
+                'niveau' => $filterNiveau,
+                'section' => $filterSection,
+                'statut' => $filterStatut,
+                'per_page' => $perPage,
+            ],
+            'totalCount' => $totalCount,
         ]);
     }
 

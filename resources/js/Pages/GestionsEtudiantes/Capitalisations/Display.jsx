@@ -1,30 +1,38 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { router, usePage } from '@inertiajs/react';
-import { Search, Plus, Upload, Download, Edit, Trash2, X, FileSpreadsheet, Award, ChevronLeft, ChevronRight, Eye, Calendar } from 'lucide-react';
+import { Search, Plus, Upload, Download, Edit, Trash2, X, FileSpreadsheet, Award, ChevronLeft, ChevronRight, Eye, Calendar, Filter, RefreshCw } from 'lucide-react';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import * as XLSX from 'xlsx';
+import debounce from 'lodash/debounce';
 
 const CapitalisationDataTable = ({ 
-  capitalisations: initialCapitalisations = [],
+  capitalisations: paginatedCapitalisations = { data: [], links: [], current_page: 1, last_page: 1, per_page: 25, total: 0 },
   inscriptionsPedagogiques = [],
   modules = [],
-  filters: initialFilters = {}
+  niveaux = [],
+  sections = [],
+  filters: initialFilters = {},
+  totalCount = 0
 }) => {
-  const [capitalisations, setCapitalisations] = useState(initialCapitalisations);
-  
-  // Sync local state with props when they change
-  useEffect(() => {
-    setCapitalisations(initialCapitalisations);
-  }, [initialCapitalisations]);
+  // Handle both paginated and non-paginated data for backwards compatibility
+  const capitalisationsData = Array.isArray(paginatedCapitalisations) ? paginatedCapitalisations : (paginatedCapitalisations.data || []);
+  const pagination = Array.isArray(paginatedCapitalisations) ? null : paginatedCapitalisations;
 
   const [searchTerm, setSearchTerm] = useState(initialFilters.search || '');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState(25);
   const [selectedCapitalisations, setSelectedCapitalisations] = useState([]);
   const [formErrors, setFormErrors] = useState({});
+  const [showFilters, setShowFilters] = useState(false);
+  const [isFiltering, setIsFiltering] = useState(false);
+  
+  // Filter states
+  const [filterModule, setFilterModule] = useState(initialFilters.module || '');
+  const [filterNiveau, setFilterNiveau] = useState(initialFilters.niveau || '');
+  const [filterSection, setFilterSection] = useState(initialFilters.section || '');
+  const [filterStatut, setFilterStatut] = useState(initialFilters.statut || '');
+  const [itemsPerPage, setItemsPerPage] = useState(initialFilters.per_page || 25);
 
   // Form state for adding capitalisation
   const [formData, setFormData] = useState({
@@ -62,36 +70,102 @@ const CapitalisationDataTable = ({
     }
   }, [flash?.success, flash?.import_partial, flash?.import_errors]);
 
-  // Filter and search capitalisations
-  const filteredCapitalisations = useMemo(() => {
-    return capitalisations.filter(capitalisation => {
-      const etudiant = capitalisation.inscription_pedagogique?.inscription_administrative?.etudiant;
-      const module = capitalisation.module;
-      const section = capitalisation.inscription_pedagogique?.inscription_administrative?.section;
-      const niveau = capitalisation.inscription_pedagogique?.inscription_administrative?.niveau;
-      const anneeUniversitaire = capitalisation.inscription_pedagogique?.inscription_administrative?.annee_universitaire;
-      
-      const matchesSearch = !searchTerm || 
-        etudiant?.cne?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        etudiant?.nom?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        etudiant?.prenom?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        etudiant?.mail_academique?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        module?.nom_module?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        module?.code_module?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        section?.nom_section?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        section?.filiere?.nom_filiere?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        niveau?.nom_niveau?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        anneeUniversitaire?.annee_univ?.toLowerCase().includes(searchTerm.toLowerCase());
-      return matchesSearch;
-    });
-  }, [capitalisations, searchTerm]);
+  // Backend filtering function with debounce
+  const applyFilters = useCallback((params = {}) => {
+    setIsFiltering(true);
+    const filterParams = {
+      search: params.search !== undefined ? params.search : searchTerm,
+      module: params.module !== undefined ? params.module : filterModule,
+      niveau: params.niveau !== undefined ? params.niveau : filterNiveau,
+      section: params.section !== undefined ? params.section : filterSection,
+      statut: params.statut !== undefined ? params.statut : filterStatut,
+      per_page: params.per_page !== undefined ? params.per_page : itemsPerPage,
+    };
 
-  // Pagination
-  const totalPages = Math.ceil(filteredCapitalisations.length / itemsPerPage);
-  const paginatedCapitalisations = useMemo(() => {
-    const start = (currentPage - 1) * itemsPerPage;
-    return filteredCapitalisations.slice(start, start + itemsPerPage);
-  }, [filteredCapitalisations, currentPage, itemsPerPage]);
+    router.get(route('inscriptions.capitalisations.index'), filterParams, {
+      preserveState: true,
+      preserveScroll: true,
+      only: ['capitalisations', 'filters', 'totalCount'],
+      onFinish: () => setIsFiltering(false),
+    });
+  }, [searchTerm, filterModule, filterNiveau, filterSection, filterStatut, itemsPerPage]);
+
+  // Debounced search
+  const debouncedSearch = useMemo(
+    () => debounce((value) => applyFilters({ search: value }), 400),
+    [applyFilters]
+  );
+
+  // Handle search input change
+  const handleSearchChange = (e) => {
+    const value = e.target.value;
+    setSearchTerm(value);
+    debouncedSearch(value);
+  };
+
+  // Handle filter changes
+  const handleFilterChange = (filterName, value) => {
+    switch (filterName) {
+      case 'module':
+        setFilterModule(value);
+        applyFilters({ module: value });
+        break;
+      case 'niveau':
+        setFilterNiveau(value);
+        applyFilters({ niveau: value });
+        break;
+      case 'section':
+        setFilterSection(value);
+        applyFilters({ section: value });
+        break;
+      case 'statut':
+        setFilterStatut(value);
+        applyFilters({ statut: value });
+        break;
+    }
+  };
+
+  // Handle items per page change
+  const handlePerPageChange = (value) => {
+    setItemsPerPage(value);
+    applyFilters({ per_page: value });
+  };
+
+  // Handle pagination
+  const goToPage = (url) => {
+    if (!url) return;
+    setIsFiltering(true);
+    router.get(url, {}, {
+      preserveState: true,
+      preserveScroll: true,
+      only: ['capitalisations', 'filters', 'totalCount'],
+      onFinish: () => setIsFiltering(false),
+    });
+  };
+
+  // Clear all filters
+  const clearFilters = () => {
+    setSearchTerm('');
+    setFilterModule('');
+    setFilterNiveau('');
+    setFilterSection('');
+    setFilterStatut('');
+    setItemsPerPage(25);
+    setIsFiltering(true);
+    router.get(route('inscriptions.capitalisations.index'), { per_page: 25 }, {
+      preserveState: true,
+      preserveScroll: true,
+      only: ['capitalisations', 'filters', 'totalCount'],
+      onFinish: () => setIsFiltering(false),
+    });
+  };
+
+  // Pagination info
+  const currentPage = pagination?.current_page || 1;
+  const lastPage = pagination?.last_page || 1;
+  const total = pagination?.total || capitalisationsData.length;
+  const from = pagination?.from || 1;
+  const to = pagination?.to || capitalisationsData.length;
 
   // Handle form input
   const handleInputChange = (e) => {
@@ -367,10 +441,10 @@ const CapitalisationDataTable = ({
   };
 
   const toggleSelectAll = () => {
-    if (selectedCapitalisations.length === paginatedCapitalisations.length) {
+    if (selectedCapitalisations.length === capitalisationsData.length) {
       setSelectedCapitalisations([]);
     } else {
-      setSelectedCapitalisations(paginatedCapitalisations.map(s => s.id_capitalisation));
+      setSelectedCapitalisations(capitalisationsData.map(s => s.id_capitalisation));
     }
   };
 
@@ -412,18 +486,107 @@ const CapitalisationDataTable = ({
           </div>
 
           {/* Search */}
-          <div className="flex gap-4">
+          <div className="flex flex-col lg:flex-row gap-4">
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-5 h-5" />
               <input
                 type="text"
                 placeholder="Rechercher par CNE, nom, prénom, email, module, section, filière, niveau, année..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={handleSearchChange}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               />
+              {isFiltering && (
+                <RefreshCw className="absolute right-3 top-1/2 transform -translate-y-1/2 text-blue-500 w-4 h-4 animate-spin" />
+              )}
+            </div>
+            <div className="flex gap-3">
+              <select
+                value={filterStatut}
+                onChange={(e) => handleFilterChange('statut', e.target.value)}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              >
+                <option value="">Tous les statuts</option>
+                <option value="valide">Valide</option>
+                <option value="expire_bientot">Expire bientôt</option>
+                <option value="expiree">Expirée</option>
+              </select>
+              <button
+                onClick={() => setShowFilters(!showFilters)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+                  showFilters 
+                    ? 'bg-blue-600 text-white' 
+                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'
+                }`}
+              >
+                <Filter className="w-4 h-4" />
+                <span>Plus de filtres</span>
+                {(filterModule || filterNiveau || filterSection) && (
+                  <span className="bg-blue-500 text-white text-xs px-1.5 py-0.5 rounded-full">
+                    {[filterModule, filterNiveau, filterSection].filter(Boolean).length}
+                  </span>
+                )}
+              </button>
             </div>
           </div>
+
+          {/* Extended Filters */}
+          {showFilters && (
+            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Module</label>
+                <select
+                  value={filterModule}
+                  onChange={(e) => handleFilterChange('module', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Tous les modules</option>
+                  {modules.map(module => (
+                    <option key={module.id_module} value={module.id_module}>
+                      {module.nom_module} ({module.code_module})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Niveau</label>
+                <select
+                  value={filterNiveau}
+                  onChange={(e) => handleFilterChange('niveau', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Tous les niveaux</option>
+                  {niveaux.map(niveau => (
+                    <option key={niveau.id_niveau} value={niveau.id_niveau}>{niveau.nom_niveau}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Section</label>
+                <select
+                  value={filterSection}
+                  onChange={(e) => handleFilterChange('section', e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="">Toutes les sections</option>
+                  {sections.map(section => (
+                    <option key={section.id_section} value={section.id_section}>
+                      {section.filiere?.nom_filiere} ({section.nom_section})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="sm:col-span-2 lg:col-span-3 flex justify-end">
+                <button
+                  onClick={clearFilters}
+                  className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white flex items-center gap-2"
+                >
+                  <X className="w-4 h-4" />
+                  Réinitialiser les filtres
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Server Import Errors Banner */}
@@ -447,22 +610,22 @@ const CapitalisationDataTable = ({
         <div className="grid grid-cols-6 gap-4 mb-6">
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
             <div className="text-sm text-gray-600 dark:text-gray-400">Total Capitalisations</div>
-            <div className="text-2xl font-bold text-gray-900 dark:text-white">{capitalisations.length}</div>
+            <div className="text-2xl font-bold text-gray-900 dark:text-white">{totalCount || total}</div>
           </div>
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
-            <div className="text-sm text-gray-600 dark:text-gray-400">Résultats</div>
-            <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{filteredCapitalisations.length}</div>
+            <div className="text-sm text-gray-600 dark:text-gray-400">Résultats filtrés</div>
+            <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{total}</div>
           </div>
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
-            <div className="text-sm text-gray-600 dark:text-gray-400">Valides</div>
+            <div className="text-sm text-gray-600 dark:text-gray-400">Valides (page)</div>
             <div className="text-2xl font-bold text-green-600 dark:text-green-400">
-              {capitalisations.filter(cap => !cap.date_expiration || new Date(cap.date_expiration) > new Date()).length}
+              {capitalisationsData.filter(cap => !cap.date_expiration || new Date(cap.date_expiration) > new Date()).length}
             </div>
           </div>
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
-            <div className="text-sm text-gray-600 dark:text-gray-400">Expirées</div>
+            <div className="text-sm text-gray-600 dark:text-gray-400">Expirées (page)</div>
             <div className="text-2xl font-bold text-red-600 dark:text-red-400">
-              {capitalisations.filter(cap => cap.date_expiration && new Date(cap.date_expiration) < new Date()).length}
+              {capitalisationsData.filter(cap => cap.date_expiration && new Date(cap.date_expiration) < new Date()).length}
             </div>
           </div>
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
@@ -471,7 +634,7 @@ const CapitalisationDataTable = ({
           </div>
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
             <div className="text-sm text-gray-600 dark:text-gray-400">Page</div>
-            <div className="text-2xl font-bold text-gray-900 dark:text-white">{currentPage}/{totalPages}</div>
+            <div className="text-2xl font-bold text-gray-900 dark:text-white">{currentPage}/{lastPage || 1}</div>
           </div>
         </div>
 
@@ -484,7 +647,7 @@ const CapitalisationDataTable = ({
                   <th className="px-6 py-3 text-left">
                     <input
                       type="checkbox"
-                      checked={selectedCapitalisations.length === paginatedCapitalisations.length && paginatedCapitalisations.length > 0}
+                      checked={selectedCapitalisations.length === capitalisationsData.length && capitalisationsData.length > 0}
                       onChange={toggleSelectAll}
                       className="rounded border-gray-300 dark:border-gray-600"
                     />
@@ -501,7 +664,7 @@ const CapitalisationDataTable = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                {paginatedCapitalisations.map((capitalisation) => {
+                {capitalisationsData.map((capitalisation) => {
                   const etudiant = capitalisation.inscription_pedagogique?.inscription_administrative?.etudiant;
                   const niveau = capitalisation.inscription_pedagogique?.inscription_administrative?.niveau;
                   const section = capitalisation.inscription_pedagogique?.inscription_administrative?.section;
@@ -641,11 +804,14 @@ const CapitalisationDataTable = ({
           <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
             <div className="flex items-center justify-between mb-4">
               <div className="text-sm text-gray-600 dark:text-gray-400">
-                {itemsPerPage === filteredCapitalisations.length ? (
-                  `Affichage de toutes les ${filteredCapitalisations.length} capitalisations`
+                {total === 0 ? (
+                  'Aucun résultat'
+                ) : total <= itemsPerPage ? (
+                  `Affichage de toutes les ${total} capitalisations`
                 ) : (
-                  `Affichage ${((currentPage - 1) * itemsPerPage) + 1} à ${Math.min(currentPage * itemsPerPage, filteredCapitalisations.length)} sur ${filteredCapitalisations.length} capitalisations`
+                  `Affichage ${from} à ${to} sur ${total} capitalisations`
                 )}
+                {isFiltering && <span className="ml-2 text-blue-500">(chargement...)</span>}
               </div>
               <div className="flex items-center gap-3">
                 <span className="text-sm text-gray-600 dark:text-gray-400">Afficher par page:</span>
@@ -653,76 +819,52 @@ const CapitalisationDataTable = ({
                   <select
                     className="px-8 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                     value={itemsPerPage}
-                    onChange={(e) => {
-                      setItemsPerPage(parseInt(e.target.value));
-                      setCurrentPage(1);
-                    }}
+                    onChange={(e) => handlePerPageChange(parseInt(e.target.value))}
                   >
                     <option value={10}>10</option>
                     <option value={25}>25</option>
                     <option value={50}>50</option>
                     <option value={100}>100</option>
                     <option value={250}>250</option>
-                    <option value={500}>500</option>
                   </select>
-                  <button
-                    onClick={() => {
-                      setItemsPerPage(filteredCapitalisations.length);
-                      setCurrentPage(1);
-                    }}
-                    className={`px-3 py-1 border rounded-lg text-sm transition ${
-                      itemsPerPage === filteredCapitalisations.length
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
-                    }`}
-                  >
-                    Tout
-                  </button>
                 </div>
               </div>
             </div>
 
-            {itemsPerPage < filteredCapitalisations.length && (
+            {pagination && lastPage > 1 && (
               <div className="flex items-center justify-center gap-2">
                 <button
-                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                  disabled={currentPage === 1}
+                  onClick={() => goToPage(pagination.prev_page_url)}
+                  disabled={!pagination.prev_page_url || isFiltering}
                   className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
                 <span className="text-sm text-gray-600 dark:text-gray-400 min-w-fit">
-                  Page {currentPage} sur {totalPages}
+                  Page {currentPage} sur {lastPage}
                 </span>
-                {[...Array(Math.min(5, totalPages))].map((_, i) => {
-                  let pageNum;
-                  if (totalPages <= 5) {
-                    pageNum = i + 1;
-                  } else if (currentPage <= 3) {
-                    pageNum = i + 1;
-                  } else if (currentPage >= totalPages - 2) {
-                    pageNum = totalPages - 4 + i;
-                  } else {
-                    pageNum = currentPage - 2 + i;
+                {pagination.links && pagination.links.slice(1, -1).map((link, i) => {
+                  if (link.label === '...') {
+                    return <span key={i} className="px-2 text-gray-400">...</span>;
                   }
-                  
                   return (
                     <button
-                      key={pageNum}
-                      onClick={() => setCurrentPage(pageNum)}
+                      key={i}
+                      onClick={() => goToPage(link.url)}
+                      disabled={!link.url || isFiltering}
                       className={`px-3 py-1 border rounded-lg text-sm ${
-                        currentPage === pageNum
+                        link.active
                           ? 'bg-blue-600 text-white border-blue-600'
                           : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
-                      }`}
+                      } disabled:opacity-50`}
                     >
-                      {pageNum}
+                      {link.label}
                     </button>
                   );
                 })}
                 <button
-                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                  disabled={currentPage === totalPages}
+                  onClick={() => goToPage(pagination.next_page_url)}
+                  disabled={!pagination.next_page_url || isFiltering}
                   className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <ChevronRight className="w-4 h-4" />

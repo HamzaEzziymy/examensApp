@@ -4,7 +4,15 @@ import React from 'react'
 import Header from '../Header'
 import Display from './Display';
 
-function Index({ capitalisations, inscriptionsPedagogiques, modules }) {
+function Index({ 
+  capitalisations, 
+  inscriptionsPedagogiques, 
+  modules,
+  niveaux,
+  sections,
+  filters,
+  totalCount
+}) {
 
   return (
     <AuthenticatedLayout
@@ -21,6 +29,10 @@ function Index({ capitalisations, inscriptionsPedagogiques, modules }) {
           capitalisations={capitalisations}
           inscriptionsPedagogiques={inscriptionsPedagogiques}
           modules={modules}
+          niveaux={niveaux}
+          sections={sections}
+          filters={filters}
+          totalCount={totalCount}
         />
       </div>
 
