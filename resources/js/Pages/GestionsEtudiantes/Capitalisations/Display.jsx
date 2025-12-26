@@ -1,232 +1,393 @@
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
-import { router, usePage } from '@inertiajs/react';
-import { Search, Plus, Upload, Download, Edit, Trash2, X, FileSpreadsheet, Award, ChevronLeft, ChevronRight, Eye, Calendar, Filter, RefreshCw } from 'lucide-react';
+import { router, useForm } from '@inertiajs/react';
+import { Search, Plus, Upload, Download, Edit, Trash2, X, Award, ChevronLeft, ChevronRight, Filter, RefreshCw } from 'lucide-react';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import * as XLSX from 'xlsx';
 import debounce from 'lodash/debounce';
+import Swal from 'sweetalert2';
 
 const CapitalisationDataTable = ({ 
   capitalisations: paginatedCapitalisations = { data: [], links: [], current_page: 1, last_page: 1, per_page: 25, total: 0 },
-  inscriptionsPedagogiques = [],
-  modules = [],
+  inscriptionsAdmin = [],
+  offres = [],
   niveaux = [],
   sections = [],
   filters: initialFilters = {},
   totalCount = 0
 }) => {
-  // Handle both paginated and non-paginated data for backwards compatibility
   const capitalisationsData = Array.isArray(paginatedCapitalisations) ? paginatedCapitalisations : (paginatedCapitalisations.data || []);
   const pagination = Array.isArray(paginatedCapitalisations) ? null : paginatedCapitalisations;
 
   const [searchTerm, setSearchTerm] = useState(initialFilters.search || '');
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [editingCapitalisation, setEditingCapitalisation] = useState(null);
   const [selectedCapitalisations, setSelectedCapitalisations] = useState([]);
-  const [formErrors, setFormErrors] = useState({});
   const [showFilters, setShowFilters] = useState(false);
   const [isFiltering, setIsFiltering] = useState(false);
   
-  // Filter states
-  const [filterModule, setFilterModule] = useState(initialFilters.module || '');
+  const [filterOffre, setFilterOffre] = useState(initialFilters.offre || '');
   const [filterNiveau, setFilterNiveau] = useState(initialFilters.niveau || '');
   const [filterSection, setFilterSection] = useState(initialFilters.section || '');
   const [filterStatut, setFilterStatut] = useState(initialFilters.statut || '');
   const [itemsPerPage, setItemsPerPage] = useState(initialFilters.per_page || 25);
 
-  // Form state for adding capitalisation
-  const [formData, setFormData] = useState({
-    id_inscription_pedagogique: '',
-    id_module: '',
+  // Using useForm for better error handling
+  const capitalisationForm = useForm({
+    id_inscription_admin: '',
+    id_offre: '',
+    note: '',
+    date_capitalisation: new Date().toISOString().split('T')[0],
+    date_expiration: ''
+  });
+
+  const editForm = useForm({
+    id_inscription_admin: '',
+    id_offre: '',
+    note: '',
     date_capitalisation: '',
     date_expiration: ''
   });
+
 
   // Import state
   const [importFile, setImportFile] = useState(null);
   const [importPreview, setImportPreview] = useState([]);
   const [importErrors, setImportErrors] = useState([]);
-
-  // Server flash messages and import errors
-  const { flash } = usePage().props;
-  const serverImportErrors = useMemo(() => {
-    const raw = flash?.import_errors;
-    if (!raw) return [];
-    if (Array.isArray(raw)) return raw;
-    if (raw.error) return [raw.error];
-    if (raw.errors && Array.isArray(raw.errors)) return raw.errors;
-    return [raw];
-  }, [flash?.import_errors]);
-
-  useEffect(() => {
-    if (flash?.success) {
-      toast.success(flash.success);
-    }
-    if (flash?.import_partial) {
-      toast.info(flash.import_partial);
-    }
-    if (flash?.import_errors && flash.import_errors.length > 0) {
-      toast.error(`${flash.import_errors.length} capitalisations avec erreurs de validation`);
-    }
-  }, [flash?.success, flash?.import_partial, flash?.import_errors]);
+  const [selectedImportOffre, setSelectedImportOffre] = useState('');
+  const [importNote, setImportNote] = useState('');
+  const [importDateCapitalisation, setImportDateCapitalisation] = useState(new Date().toISOString().split('T')[0]);
+  const [importDateExpiration, setImportDateExpiration] = useState('');
 
   // Backend filtering function with debounce
   const applyFilters = useCallback((params = {}) => {
     setIsFiltering(true);
     const filterParams = {
       search: params.search !== undefined ? params.search : searchTerm,
-      module: params.module !== undefined ? params.module : filterModule,
+      offre: params.offre !== undefined ? params.offre : filterOffre,
       niveau: params.niveau !== undefined ? params.niveau : filterNiveau,
       section: params.section !== undefined ? params.section : filterSection,
       statut: params.statut !== undefined ? params.statut : filterStatut,
       per_page: params.per_page !== undefined ? params.per_page : itemsPerPage,
     };
-
     router.get(route('inscriptions.capitalisations.index'), filterParams, {
       preserveState: true,
       preserveScroll: true,
       only: ['capitalisations', 'filters', 'totalCount'],
       onFinish: () => setIsFiltering(false),
     });
-  }, [searchTerm, filterModule, filterNiveau, filterSection, filterStatut, itemsPerPage]);
+  }, [searchTerm, filterOffre, filterNiveau, filterSection, filterStatut, itemsPerPage]);
 
-  // Debounced search
-  const debouncedSearch = useMemo(
-    () => debounce((value) => applyFilters({ search: value }), 400),
-    [applyFilters]
-  );
+  const debouncedSearch = useMemo(() => debounce((value) => applyFilters({ search: value }), 400), [applyFilters]);
 
-  // Handle search input change
   const handleSearchChange = (e) => {
-    const value = e.target.value;
-    setSearchTerm(value);
-    debouncedSearch(value);
+    setSearchTerm(e.target.value);
+    debouncedSearch(e.target.value);
   };
 
-  // Handle filter changes
   const handleFilterChange = (filterName, value) => {
-    switch (filterName) {
-      case 'module':
-        setFilterModule(value);
-        applyFilters({ module: value });
-        break;
-      case 'niveau':
-        setFilterNiveau(value);
-        applyFilters({ niveau: value });
-        break;
-      case 'section':
-        setFilterSection(value);
-        applyFilters({ section: value });
-        break;
-      case 'statut':
-        setFilterStatut(value);
-        applyFilters({ statut: value });
-        break;
-    }
+    if (filterName === 'offre') { setFilterOffre(value); applyFilters({ offre: value }); }
+    else if (filterName === 'niveau') { setFilterNiveau(value); applyFilters({ niveau: value }); }
+    else if (filterName === 'section') { setFilterSection(value); applyFilters({ section: value }); }
+    else if (filterName === 'statut') { setFilterStatut(value); applyFilters({ statut: value }); }
   };
 
-  // Handle items per page change
-  const handlePerPageChange = (value) => {
-    setItemsPerPage(value);
-    applyFilters({ per_page: value });
-  };
+  const handlePerPageChange = (value) => { setItemsPerPage(value); applyFilters({ per_page: value }); };
 
-  // Handle pagination
   const goToPage = (url) => {
     if (!url) return;
     setIsFiltering(true);
-    router.get(url, {}, {
-      preserveState: true,
-      preserveScroll: true,
-      only: ['capitalisations', 'filters', 'totalCount'],
-      onFinish: () => setIsFiltering(false),
-    });
+    router.get(url, {}, { preserveState: true, preserveScroll: true, only: ['capitalisations', 'filters', 'totalCount'], onFinish: () => setIsFiltering(false) });
   };
 
-  // Clear all filters
   const clearFilters = () => {
-    setSearchTerm('');
-    setFilterModule('');
-    setFilterNiveau('');
-    setFilterSection('');
-    setFilterStatut('');
-    setItemsPerPage(25);
+    setSearchTerm(''); setFilterOffre(''); setFilterNiveau(''); setFilterSection(''); setFilterStatut(''); setItemsPerPage(25);
     setIsFiltering(true);
-    router.get(route('inscriptions.capitalisations.index'), { per_page: 25 }, {
-      preserveState: true,
-      preserveScroll: true,
-      only: ['capitalisations', 'filters', 'totalCount'],
-      onFinish: () => setIsFiltering(false),
-    });
+    router.get(route('inscriptions.capitalisations.index'), { per_page: 25 }, { preserveState: true, preserveScroll: true, only: ['capitalisations', 'filters', 'totalCount'], onFinish: () => setIsFiltering(false) });
   };
 
-  // Pagination info
   const currentPage = pagination?.current_page || 1;
   const lastPage = pagination?.last_page || 1;
   const total = pagination?.total || capitalisationsData.length;
   const from = pagination?.from || 1;
   const to = pagination?.to || capitalisationsData.length;
 
-  // Handle form input
-  const handleInputChange = (e) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
-  };
-
-  // Submit single capitalisation
-  const handleSubmit = () => {
-    console.log('=== DEBUGGING CAPITALISATION CREATION ===');
-    console.log('Form data being sent:', formData);
+  // Submit single capitalisation with validation
+  const handleSubmit = (e) => {
+    e.preventDefault();
     
-    router.post('/inscriptions/capitalisations', formData, {
-      onSuccess: (response) => {
-        console.log('✅ Capitalisation creation successful:', response);
-        setShowAddModal(false);
-        setFormData({
-          id_inscription_pedagogique: '',
-          id_module: '',
-          date_capitalisation: '',
-          date_expiration: ''
+    // Basic validation
+    if (!capitalisationForm.data.id_inscription_admin || !capitalisationForm.data.id_offre) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Champs requis',
+        text: 'Veuillez sélectionner une inscription administrative et une offre de formation.'
+      });
+      return;
+    }
+
+    if (!capitalisationForm.data.date_capitalisation) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Champ requis',
+        text: 'Veuillez saisir la date de capitalisation.'
+      });
+      return;
+    }
+
+    // Validate note if provided
+    if (capitalisationForm.data.note && (isNaN(capitalisationForm.data.note) || capitalisationForm.data.note < 0 || capitalisationForm.data.note > 20)) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Note invalide',
+        text: 'La note doit être comprise entre 0 et 20.'
+      });
+      return;
+    }
+
+    // Validate expiration date if provided
+    if (capitalisationForm.data.date_expiration && capitalisationForm.data.date_capitalisation) {
+      if (new Date(capitalisationForm.data.date_expiration) <= new Date(capitalisationForm.data.date_capitalisation)) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Date invalide',
+          text: 'La date d\'expiration doit être postérieure à la date de capitalisation.'
         });
-        setFormErrors({});
-        router.reload({ only: ['capitalisations'] });
+        return;
+      }
+    }
+    
+    capitalisationForm.post('/inscriptions/capitalisations', {
+      onSuccess: () => {
+        setShowAddModal(false);
+        capitalisationForm.reset();
+        Swal.fire({
+          icon: 'success',
+          title: 'Succès',
+          text: 'Capitalisation ajoutée avec succès',
+          showConfirmButton: false,
+          timer: 1500
+        });
       },
       onError: (errors) => {
-        console.log('❌ Capitalisation creation failed with errors:', errors);
-        setFormErrors(errors || {});
+        let errorMessage = 'Veuillez corriger les erreurs dans le formulaire';
+        if (errors.error) errorMessage = errors.error;
+        else if (errors.message) errorMessage = errors.message;
+        else if (typeof errors === 'string') errorMessage = errors;
+        else if (Object.keys(errors).length > 0) errorMessage = Object.values(errors).flat().join(', ');
         
-        if (errors) {
-          const errorMessages = Object.values(errors).flat().join(', ');
-          toast.error(`Erreur de validation: ${errorMessages}`);
-        }
+        Swal.fire({
+          icon: 'error',
+          title: 'Erreur',
+          text: errorMessage
+        });
       }
     });
   };
 
-  // Validation functions
-  const validateDate = (date) => {
-    return date && !isNaN(Date.parse(date));
+
+  // Handle edit click
+  const handleEditClick = (cap) => {
+    setEditingCapitalisation(cap);
+    editForm.setData({
+      id_inscription_admin: cap.id_inscription_admin || '',
+      id_offre: cap.id_offre || '',
+      note: cap.note || '',
+      date_capitalisation: cap.date_capitalisation || '',
+      date_expiration: cap.date_expiration || ''
+    });
+    setShowEditModal(true);
   };
 
-  // Check for duplicates in current data
-  const checkDuplicates = (data, field1, field2) => {
-    const combinations = data.map(row => `${row[field1]}_${row[field2]}`).filter(val => val !== '_');
-    const duplicates = combinations.filter((val, index) => combinations.indexOf(val) !== index);
-    return [...new Set(duplicates)];
+  // Handle update with validation
+  const handleUpdate = (e) => {
+    e.preventDefault();
+    
+    if (!editForm.data.id_inscription_admin || !editForm.data.id_offre) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Champs requis',
+        text: 'Veuillez sélectionner une inscription administrative et une offre de formation.'
+      });
+      return;
+    }
+
+    if (!editForm.data.date_capitalisation) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Champ requis',
+        text: 'Veuillez saisir la date de capitalisation.'
+      });
+      return;
+    }
+
+    if (editForm.data.note && (isNaN(editForm.data.note) || editForm.data.note < 0 || editForm.data.note > 20)) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Note invalide',
+        text: 'La note doit être comprise entre 0 et 20.'
+      });
+      return;
+    }
+
+    if (editForm.data.date_expiration && editForm.data.date_capitalisation) {
+      if (new Date(editForm.data.date_expiration) <= new Date(editForm.data.date_capitalisation)) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Date invalide',
+          text: 'La date d\'expiration doit être postérieure à la date de capitalisation.'
+        });
+        return;
+      }
+    }
+
+    editForm.put(`/inscriptions/capitalisations/${editingCapitalisation.id_capitalisation}`, {
+      onSuccess: () => {
+        setShowEditModal(false);
+        setEditingCapitalisation(null);
+        Swal.fire({
+          icon: 'success',
+          title: 'Succès',
+          text: 'Capitalisation mise à jour avec succès',
+          showConfirmButton: false,
+          timer: 1500
+        });
+      },
+      onError: (errors) => {
+        let errorMessage = 'Erreur lors de la mise à jour';
+        if (errors.error) errorMessage = errors.error;
+        else if (errors.message) errorMessage = errors.message;
+        else if (typeof errors === 'string') errorMessage = errors;
+        else if (Object.keys(errors).length > 0) errorMessage = Object.values(errors).flat().join(', ');
+        
+        Swal.fire({
+          icon: 'error',
+          title: 'Erreur',
+          text: errorMessage
+        });
+      }
+    });
   };
 
-  // Check for duplicates against existing capitalisations
-  const checkExistingDuplicates = (data) => {
-    const existingCombinations = capitalisations.map(cap => 
-      `${cap.id_inscription_pedagogique}_${cap.id_module}`
-    );
-    const newCombinations = data.map(row => 
-      `${row.id_inscription_pedagogique}_${row.id_module}`
-    ).filter(val => val !== '_');
-    return newCombinations.filter(val => existingCombinations.includes(val));
+  // Handle delete with confirmation
+  const handleDelete = (id, force = false) => {
+    const confirmTitle = force ? 'FORCE DELETE - Attention !' : 'Êtes-vous sûr ?';
+    const confirmText = force 
+      ? 'Vous allez supprimer cette capitalisation en ignorant les relations.'
+      : 'Cette action est irréversible !';
+    
+    Swal.fire({
+      title: confirmTitle,
+      text: confirmText,
+      icon: force ? 'error' : 'warning',
+      showCancelButton: true,
+      confirmButtonColor: force ? '#dc2626' : '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: force ? 'Oui, forcer !' : 'Oui, supprimer !',
+      cancelButtonText: 'Annuler'
+    }).then((result) => {
+      if (!result.isConfirmed) return;
+      
+      const deleteUrl = force ? `/inscriptions/capitalisations/${id}?force=1` : `/inscriptions/capitalisations/${id}`;
+      
+      router.delete(deleteUrl, {
+        onSuccess: () => {
+          Swal.fire('Supprimé !', 'La capitalisation a été supprimée.', 'success');
+        },
+        onError: (errors) => {
+          const errorMessage = errors.error || Object.values(errors).flat().join(', ') || 'Erreur lors de la suppression';
+          
+          if (!force && errorMessage.includes('données liées')) {
+            Swal.fire({
+              title: 'Suppression impossible',
+              text: errorMessage,
+              icon: 'error',
+              showCancelButton: true,
+              confirmButtonColor: '#dc2626',
+              confirmButtonText: 'Forcer la suppression',
+              cancelButtonText: 'Annuler'
+            }).then((forceResult) => {
+              if (forceResult.isConfirmed) handleDelete(id, true);
+            });
+          } else {
+            Swal.fire('Erreur !', errorMessage, 'error');
+          }
+        }
+      });
+    });
   };
 
-  // Handle Excel file selection
+  const toggleSelectCapitalisation = (id) => setSelectedCapitalisations(prev => prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]);
+  const toggleSelectAll = () => setSelectedCapitalisations(selectedCapitalisations.length === capitalisationsData.length ? [] : capitalisationsData.map(s => s.id_capitalisation));
+
+  // Bulk delete with confirmation
+  const handleBulkDelete = () => {
+    if (selectedCapitalisations.length === 0) {
+      Swal.fire({ icon: 'warning', title: 'Attention', text: 'Veuillez sélectionner au moins une capitalisation.' });
+      return;
+    }
+    
+    Swal.fire({
+      title: 'Êtes-vous sûr ?',
+      text: `Vous allez supprimer ${selectedCapitalisations.length} capitalisation(s). Cette action est irréversible !`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Oui, supprimer !',
+      cancelButtonText: 'Annuler'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        router.post('/inscriptions/capitalisations/bulk-destroy', { ids: selectedCapitalisations }, {
+          onSuccess: () => {
+            setSelectedCapitalisations([]);
+            Swal.fire('Supprimé !', 'Les capitalisations sélectionnées ont été supprimées.', 'success');
+          },
+          onError: (errors) => {
+            Swal.fire('Erreur !', errors.error || 'Erreur lors de la suppression.', 'error');
+          }
+        });
+      }
+    });
+  };
+
+
+  // Download Excel template
+  const downloadTemplate = () => {
+    const template = [
+      { cne: '12345678', note: '15.5', date_capitalisation: '2024-01-15', date_expiration: '2026-01-15' },
+      { cne: '87654321', note: '18.0', date_capitalisation: '2024-02-01', date_expiration: '' }
+    ];
+    const ws = XLSX.utils.json_to_sheet(template);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Capitalisations');
+    
+    // Add instructions sheet
+    const instructions = [
+      ['INSTRUCTIONS POUR L\'IMPORT DES CAPITALISATIONS'],
+      [''],
+      ['COLONNES OBLIGATOIRES:'],
+      ['• cne: Code National Étudiant (doit exister dans le système)'],
+      [''],
+      ['COLONNES OPTIONNELLES:'],
+      ['• note: Note de capitalisation (entre 0 et 20)'],
+      ['• date_capitalisation: Date de capitalisation (format: YYYY-MM-DD)'],
+      ['• date_expiration: Date d\'expiration (format: YYYY-MM-DD)'],
+      [''],
+      ['NOTES:'],
+      ['• L\'offre de formation sera sélectionnée dans le formulaire d\'import'],
+      ['• La date de capitalisation par défaut est la date du jour'],
+      ['• Les doublons seront automatiquement ignorés']
+    ];
+    const ws2 = XLSX.utils.aoa_to_sheet(instructions);
+    XLSX.utils.book_append_sheet(wb, ws2, 'Instructions');
+    
+    XLSX.writeFile(wb, 'template_capitalisations.xlsx');
+  };
+
+  // Handle Excel file selection with validation
   const handleFileSelect = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -237,948 +398,633 @@ const CapitalisationDataTable = ({
     reader.onload = (event) => {
       try {
         const workbook = XLSX.read(event.target.result, { type: 'binary' });
-        const sheetName = workbook.SheetNames[0];
-        const sheet = workbook.Sheets[sheetName];
-        const data = XLSX.utils.sheet_to_json(sheet);
-
+        const data = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+        
         if (data.length === 0) {
-          toast.error('Le fichier Excel est vide');
+          Swal.fire({ icon: 'error', title: 'Fichier vide', text: 'Le fichier Excel ne contient aucune donnée.' });
           return;
         }
 
-        // Comprehensive validation
         const errors = [];
-        const validRows = [];
-        const invalidRows = [];
-
-        // Check for duplicates in the file
-        const duplicatesInFile = checkDuplicates(data, 'id_inscription_pedagogique', 'id_module');
-        
-        // Check for duplicates against existing capitalisations
-        const existingDuplicates = checkExistingDuplicates(data);
-
         const preview = data.map((row, index) => {
           const rowErrors = [];
-          const rowNumber = index + 2; // Excel row number (starting from 2)
+          const rowNumber = index + 2;
 
-          // 1. Inscription Pédagogique Validation (Required)
-          if (!row.id_inscription_pedagogique || row.id_inscription_pedagogique.toString().trim() === '') {
-            rowErrors.push('ID inscription pédagogique requis');
+          // Validate CNE
+          if (!row.cne) {
+            rowErrors.push('CNE requis');
           } else {
-            const inscriptionId = row.id_inscription_pedagogique.toString().trim();
-            const inscriptionExists = inscriptionsPedagogiques.some(ip => 
-              ip.id_inscription_pedagogique.toString() === inscriptionId
-            );
-            if (!inscriptionExists) {
-              rowErrors.push('Inscription pédagogique inexistante');
+            const inscription = inscriptionsAdmin.find(ia => ia.etudiant?.cne === row.cne?.toString());
+            if (!inscription) {
+              rowErrors.push(`Étudiant avec CNE "${row.cne}" non trouvé`);
             }
           }
 
-          // 2. Module Validation (Required)
-          if (!row.id_module || row.id_module.toString().trim() === '') {
-            rowErrors.push('ID module requis');
-          } else {
-            const moduleId = row.id_module.toString().trim();
-            const moduleExists = modules.some(m => m.id_module.toString() === moduleId);
-            if (!moduleExists) {
-              rowErrors.push('Module inexistant');
+          // Validate note if provided
+          if (row.note !== undefined && row.note !== '') {
+            const note = parseFloat(row.note);
+            if (isNaN(note) || note < 0 || note > 20) {
+              rowErrors.push('Note invalide (doit être entre 0 et 20)');
             }
           }
 
-          // 3. Date Capitalisation Validation (Required)
-          if (!row.date_capitalisation || row.date_capitalisation.toString().trim() === '') {
-            rowErrors.push('Date de capitalisation requise');
-          } else if (!validateDate(row.date_capitalisation)) {
+          // Validate dates
+          if (row.date_capitalisation && isNaN(Date.parse(row.date_capitalisation))) {
             rowErrors.push('Format de date de capitalisation invalide');
           }
-
-          // 4. Date Expiration Validation (Optional)
-          if (row.date_expiration && row.date_expiration.toString().trim() !== '') {
-            if (!validateDate(row.date_expiration)) {
-              rowErrors.push('Format de date d\'expiration invalide');
-            } else if (new Date(row.date_expiration) <= new Date(row.date_capitalisation)) {
+          if (row.date_expiration && isNaN(Date.parse(row.date_expiration))) {
+            rowErrors.push('Format de date d\'expiration invalide');
+          }
+          if (row.date_capitalisation && row.date_expiration) {
+            if (new Date(row.date_expiration) <= new Date(row.date_capitalisation)) {
               rowErrors.push('Date d\'expiration doit être après la date de capitalisation');
             }
           }
 
-          // 5. Check for duplicates
-          const combination = `${row.id_inscription_pedagogique}_${row.id_module}`;
-          if (duplicatesInFile.includes(combination)) {
-            rowErrors.push('Combinaison inscription/module dupliquée dans le fichier');
-          }
-          if (existingDuplicates.includes(combination)) {
-            rowErrors.push('Capitalisation existe déjà dans la base de données');
-          }
-
-          const capitalisationData = {
-            id_inscription_pedagogique: row.id_inscription_pedagogique ? row.id_inscription_pedagogique.toString().trim() : '',
-            id_module: row.id_module ? row.id_module.toString().trim() : '',
-            date_capitalisation: row.date_capitalisation ? row.date_capitalisation.toString().trim() : '',
-            date_expiration: row.date_expiration ? row.date_expiration.toString().trim() : ''
+          const capData = {
+            cne: row.cne?.toString().trim() || '',
+            note: row.note?.toString().trim() || '',
+            date_capitalisation: row.date_capitalisation?.toString().trim() || '',
+            date_expiration: row.date_expiration?.toString().trim() || '',
+            inscription: inscriptionsAdmin.find(ia => ia.etudiant?.cne === row.cne?.toString())
           };
 
           if (rowErrors.length > 0) {
-            errors.push({ 
-              row: rowNumber, 
-              errors: rowErrors,
-              data: capitalisationData
-            });
-            invalidRows.push(capitalisationData);
-          } else {
-            validRows.push(capitalisationData);
+            errors.push({ row: rowNumber, errors: rowErrors, data: capData });
           }
 
-          return capitalisationData;
+          return capData;
         });
 
         setImportPreview(preview);
         setImportErrors(errors);
 
-        // Show summary
         if (errors.length > 0) {
-          toast.error(`${errors.length} erreurs détectées sur ${data.length} lignes`);
+          Swal.fire({
+            icon: 'warning',
+            title: 'Erreurs détectées',
+            text: `${errors.length} erreur(s) sur ${data.length} lignes. Corrigez les erreurs avant d'importer.`
+          });
         } else {
-          toast.success(`${data.length} capitalisations valides prêtes à importer`);
+          Swal.fire({
+            icon: 'success',
+            title: 'Fichier valide',
+            text: `${data.length} capitalisation(s) prête(s) à importer.`,
+            showConfirmButton: false,
+            timer: 1500
+          });
         }
-
       } catch (error) {
-        console.error('Excel parsing error:', error);
-        toast.error('Erreur lors de la lecture du fichier Excel. Vérifiez le format du fichier.');
+        Swal.fire({ icon: 'error', title: 'Erreur', text: 'Erreur lors de la lecture du fichier Excel.' });
       }
     };
-
     reader.readAsBinaryString(file);
   };
 
-  // Submit bulk import
+
+  // Handle bulk import with validation
   const handleBulkImport = () => {
-    // Filter out capitalisations with errors - only send valid ones
-    const validCapitalisations = importPreview.filter(capitalisation => {
-      return !importErrors.some(error => 
-        error.data && 
-        error.data.id_inscription_pedagogique === capitalisation.id_inscription_pedagogique &&
-        error.data.id_module === capitalisation.id_module
-      );
-    });
-
-    console.log('Frontend validation errors:', importErrors);
-    console.log('Sending valid capitalisations payload:', validCapitalisations);
-    console.log('Total capitalisations in preview:', importPreview.length);
-    console.log('Valid capitalisations to send:', validCapitalisations.length);
-
-    if (validCapitalisations.length === 0) {
-      toast.error('Aucune capitalisation valide à importer');
+    if (!selectedImportOffre) {
+      Swal.fire({ icon: 'error', title: 'Champ requis', text: 'Veuillez sélectionner une offre de formation.' });
       return;
     }
 
-    router.post('/inscriptions/capitalisations', { capitalisations: validCapitalisations }, {
-      onSuccess: (response) => {
-        console.log('✅ Bulk import successful:', response);
-        setShowImportModal(false);
-        setImportFile(null);
-        setImportPreview([]);
-        setImportErrors([]);
-        router.reload({ only: ['capitalisations'] });
-      },
-      onError: (errors) => {
-        console.error('Import error:', errors);
-        toast.error('Erreur lors de l\'import: ' + JSON.stringify(errors));
+    const validCaps = importPreview.filter(cap => 
+      cap.inscription && !importErrors.some(err => err.data?.cne === cap.cne)
+    ).map(cap => ({
+      id_inscription_admin: cap.inscription.id_inscription_admin,
+      id_offre: selectedImportOffre,
+      note: cap.note || importNote || null,
+      date_capitalisation: cap.date_capitalisation || importDateCapitalisation,
+      date_expiration: cap.date_expiration || importDateExpiration || null
+    }));
+
+    if (validCaps.length === 0) {
+      Swal.fire({ icon: 'error', title: 'Aucune donnée valide', text: 'Aucune capitalisation valide à importer.' });
+      return;
+    }
+
+    Swal.fire({
+      title: 'Confirmer l\'import',
+      text: `Vous allez importer ${validCaps.length} capitalisation(s).`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Importer',
+      cancelButtonText: 'Annuler'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        router.post('/inscriptions/capitalisations', { capitalisations: validCaps }, {
+          onSuccess: () => {
+            setShowImportModal(false);
+            setImportFile(null);
+            setImportPreview([]);
+            setImportErrors([]);
+            setSelectedImportOffre('');
+            Swal.fire({
+              icon: 'success',
+              title: 'Import réussi',
+              text: `${validCaps.length} capitalisation(s) importée(s) avec succès.`,
+              showConfirmButton: false,
+              timer: 1500
+            });
+          },
+          onError: (errors) => {
+            Swal.fire({
+              icon: 'error',
+              title: 'Erreur d\'import',
+              text: errors.error || 'Erreur lors de l\'import des capitalisations.'
+            });
+          }
+        });
       }
     });
   };
 
-  // Download error report
-  const downloadErrorReport = () => {
-    if (importErrors.length === 0) return;
-
-    const errorData = importErrors.map(error => ({
-      'Ligne Excel': error.row,
-      'ID Inscription Pédagogique': error.data?.id_inscription_pedagogique || '',
-      'ID Module': error.data?.id_module || '',
-      'Date Capitalisation': error.data?.date_capitalisation || '',
-      'Date Expiration': error.data?.date_expiration || '',
-      'Erreurs': error.errors.join(' | '),
-      'Date du Rapport': new Date().toLocaleString('fr-FR')
-    }));
-
-    const ws = XLSX.utils.json_to_sheet(errorData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Erreurs Import');
-    const fileName = `rapport_erreurs_capitalisations_${new Date().toISOString().split('T')[0]}.xlsx`;
-    XLSX.writeFile(wb, fileName);
-    toast.success('Rapport d\'erreurs téléchargé');
-  };
-
-  // Download Excel template
-  const downloadTemplate = () => {
-    const template = [
-      {
-        id_inscription_pedagogique: '1',
-        id_module: '1',
-        date_capitalisation: '2024-01-15',
-        date_expiration: '2026-01-15'
-      }
-    ];
-
-    const ws = XLSX.utils.json_to_sheet(template);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Capitalisations');
-    XLSX.writeFile(wb, 'template_capitalisations.xlsx');
-  };
-
-  // Delete capitalisation
-  const handleDelete = (id) => {
-    if (confirm('Êtes-vous sûr de vouloir supprimer cette capitalisation ?')) {
-      router.delete(`/inscriptions/capitalisations/${id}`);
-    }
-  };
-
-  // Select/deselect capitalisations
-  const toggleSelectCapitalisation = (id) => {
-    setSelectedCapitalisations(prev => 
-      prev.includes(id) ? prev.filter(s => s !== id) : [...prev, id]
-    );
-  };
-
-  const toggleSelectAll = () => {
-    if (selectedCapitalisations.length === capitalisationsData.length) {
-      setSelectedCapitalisations([]);
-    } else {
-      setSelectedCapitalisations(capitalisationsData.map(s => s.id_capitalisation));
-    }
+  // Get status badge
+  const getStatusBadge = (cap) => {
+    if (!cap.date_expiration) return <span className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">Valide</span>;
+    const exp = new Date(cap.date_expiration);
+    const now = new Date();
+    const thirtyDays = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    if (exp < now) return <span className="px-2 py-1 text-xs rounded-full bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">Expirée</span>;
+    if (exp <= thirtyDays) return <span className="px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300">Expire bientôt</span>;
+    return <span className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">Valide</span>;
   };
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
-      <div className="mx-auto">
-        <ToastContainer position="top-right" autoClose={3000} />
-        
-        {/* Header */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 mb-6">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <Award className="w-8 h-8 text-blue-600 dark:text-blue-400" />
-              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Gestion des Capitalisations</h1>
-            </div>
-            <div className="flex gap-3">
-              <button
-                onClick={downloadTemplate}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
-              >
-                <Download className="w-4 h-4" />
-                Télécharger Template
+      <ToastContainer position="top-right" autoClose={3000} />
+      
+      {/* Header */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 mb-6">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <Award className="w-8 h-8 text-blue-600 dark:text-blue-400" />
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Gestion des Capitalisations</h1>
+          </div>
+          <div className="flex gap-3">
+            {selectedCapitalisations.length > 0 && (
+              <button onClick={handleBulkDelete} className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700">
+                <Trash2 className="w-4 h-4" /> Supprimer ({selectedCapitalisations.length})
               </button>
-              <button
-                onClick={() => setShowImportModal(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition"
-              >
-                <Upload className="w-4 h-4" />
-                Import Excel
-              </button>
-              <button
-                onClick={() => { setFormErrors({}); setShowAddModal(true); }}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-              >
-                <Plus className="w-4 h-4" />
-                Ajouter Capitalisation
-              </button>
-            </div>
-          </div>
-
-          {/* Search */}
-          <div className="flex flex-col lg:flex-row gap-4">
-            <div className="flex-1 relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 dark:text-gray-500 w-5 h-5" />
-              <input
-                type="text"
-                placeholder="Rechercher par CNE, nom, prénom, email, module, section, filière, niveau, année..."
-                value={searchTerm}
-                onChange={handleSearchChange}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              />
-              {isFiltering && (
-                <RefreshCw className="absolute right-3 top-1/2 transform -translate-y-1/2 text-blue-500 w-4 h-4 animate-spin" />
-              )}
-            </div>
-            <div className="flex gap-3">
-              <select
-                value={filterStatut}
-                onChange={(e) => handleFilterChange('statut', e.target.value)}
-                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              >
-                <option value="">Tous les statuts</option>
-                <option value="valide">Valide</option>
-                <option value="expire_bientot">Expire bientôt</option>
-                <option value="expiree">Expirée</option>
-              </select>
-              <button
-                onClick={() => setShowFilters(!showFilters)}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-                  showFilters 
-                    ? 'bg-blue-600 text-white' 
-                    : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'
-                }`}
-              >
-                <Filter className="w-4 h-4" />
-                <span>Plus de filtres</span>
-                {(filterModule || filterNiveau || filterSection) && (
-                  <span className="bg-blue-500 text-white text-xs px-1.5 py-0.5 rounded-full">
-                    {[filterModule, filterNiveau, filterSection].filter(Boolean).length}
-                  </span>
-                )}
-              </button>
-            </div>
-          </div>
-
-          {/* Extended Filters */}
-          {showFilters && (
-            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Module</label>
-                <select
-                  value={filterModule}
-                  onChange={(e) => handleFilterChange('module', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Tous les modules</option>
-                  {modules.map(module => (
-                    <option key={module.id_module} value={module.id_module}>
-                      {module.nom_module} ({module.code_module})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Niveau</label>
-                <select
-                  value={filterNiveau}
-                  onChange={(e) => handleFilterChange('niveau', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Tous les niveaux</option>
-                  {niveaux.map(niveau => (
-                    <option key={niveau.id_niveau} value={niveau.id_niveau}>{niveau.nom_niveau}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Section</label>
-                <select
-                  value={filterSection}
-                  onChange={(e) => handleFilterChange('section', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Toutes les sections</option>
-                  {sections.map(section => (
-                    <option key={section.id_section} value={section.id_section}>
-                      {section.filiere?.nom_filiere} ({section.nom_section})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="sm:col-span-2 lg:col-span-3 flex justify-end">
-                <button
-                  onClick={clearFilters}
-                  className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white flex items-center gap-2"
-                >
-                  <X className="w-4 h-4" />
-                  Réinitialiser les filtres
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Server Import Errors Banner */}
-        {serverImportErrors.length > 0 && (
-          <div className="mb-6 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-            <h3 className="text-yellow-800 dark:text-yellow-300 font-medium mb-2">Erreurs d\'import depuis le serveur:</h3>
-            <div className="space-y-1 text-sm text-yellow-800 dark:text-yellow-300">
-              {serverImportErrors.slice(0, 50).map((err, i) => (
-                <div key={i}>
-                  Ligne {err.row}: {Array.isArray(err.errors) ? err.errors.join(', ') : err.errors}
-                </div>
-              ))}
-              {serverImportErrors.length > 50 && (
-                <div className="text-yellow-700 dark:text-yellow-400">... et {serverImportErrors.length - 50} autres</div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Stats */}
-        <div className="grid grid-cols-6 gap-4 mb-6">
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
-            <div className="text-sm text-gray-600 dark:text-gray-400">Total Capitalisations</div>
-            <div className="text-2xl font-bold text-gray-900 dark:text-white">{totalCount || total}</div>
-          </div>
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
-            <div className="text-sm text-gray-600 dark:text-gray-400">Résultats filtrés</div>
-            <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{total}</div>
-          </div>
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
-            <div className="text-sm text-gray-600 dark:text-gray-400">Valides (page)</div>
-            <div className="text-2xl font-bold text-green-600 dark:text-green-400">
-              {capitalisationsData.filter(cap => !cap.date_expiration || new Date(cap.date_expiration) > new Date()).length}
-            </div>
-          </div>
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
-            <div className="text-sm text-gray-600 dark:text-gray-400">Expirées (page)</div>
-            <div className="text-2xl font-bold text-red-600 dark:text-red-400">
-              {capitalisationsData.filter(cap => cap.date_expiration && new Date(cap.date_expiration) < new Date()).length}
-            </div>
-          </div>
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
-            <div className="text-sm text-gray-600 dark:text-gray-400">Sélectionnées</div>
-            <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">{selectedCapitalisations.length}</div>
-          </div>
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
-            <div className="text-sm text-gray-600 dark:text-gray-400">Page</div>
-            <div className="text-2xl font-bold text-gray-900 dark:text-white">{currentPage}/{lastPage || 1}</div>
-          </div>
-        </div>
-
-        {/* Table */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
-                <tr>
-                  <th className="px-6 py-3 text-left">
-                    <input
-                      type="checkbox"
-                      checked={selectedCapitalisations.length === capitalisationsData.length && capitalisationsData.length > 0}
-                      onChange={toggleSelectAll}
-                      className="rounded border-gray-300 dark:border-gray-600"
-                    />
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Étudiant</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Module</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Section</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Niveau</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Année Universitaire</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Date Capitalisation</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Date Expiration</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Statut</th>
-                  <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                {capitalisationsData.map((capitalisation) => {
-                  const etudiant = capitalisation.inscription_pedagogique?.inscription_administrative?.etudiant;
-                  const niveau = capitalisation.inscription_pedagogique?.inscription_administrative?.niveau;
-                  const section = capitalisation.inscription_pedagogique?.inscription_administrative?.section;
-                  const anneeUniversitaire = capitalisation.inscription_pedagogique?.inscription_administrative?.annee_universitaire;
-                  const module = capitalisation.module;
-                  
-                  // Calculate status based on expiration date
-                  const isExpired = capitalisation.date_expiration && new Date(capitalisation.date_expiration) < new Date();
-                  const isExpiringSoon = capitalisation.date_expiration && 
-                    new Date(capitalisation.date_expiration) > new Date() && 
-                    new Date(capitalisation.date_expiration) <= new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
-                  
-                  return (
-                    <tr key={capitalisation.id_capitalisation} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
-                      <td className="px-6 py-4">
-                        <input
-                          type="checkbox"
-                          checked={selectedCapitalisations.includes(capitalisation.id_capitalisation)}
-                          onChange={() => toggleSelectCapitalisation(capitalisation.id_capitalisation)}
-                          className="rounded border-gray-300 dark:border-gray-600"
-                        />
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
-                        <div>
-                          <div className="font-medium">{etudiant?.nom} {etudiant?.prenom}</div>
-                          <div className="text-gray-500 dark:text-gray-400 text-xs">{etudiant?.cne}</div>
-                          <div className="text-gray-500 dark:text-gray-400 text-xs">{etudiant?.mail_academique}</div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">
-                        <div>
-                          <div className="font-medium">{module?.nom_module}</div>
-                          <div className="text-gray-500 dark:text-gray-400 text-xs">
-                            {module?.code_module} • {module?.credits} crédits
-                          </div>
-                          <div className="text-gray-500 dark:text-gray-400 text-xs">
-                            {module?.type_module}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
-                        <div>
-                          <div className="font-medium">{section?.nom_section}</div>
-                          <div className="text-gray-500 dark:text-gray-400 text-xs">
-                            {section?.filiere?.nom_filiere}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
-                        <div>
-                          <div className="font-medium">{niveau?.nom_niveau}</div>
-                          <div className="text-gray-500 dark:text-gray-400 text-xs">
-                            Ordre: {niveau?.ordre}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
-                        {anneeUniversitaire?.annee_univ}
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
-                        <div>
-                          <div className="font-medium">
-                            {new Date(capitalisation.date_capitalisation).toLocaleDateString('fr-FR')}
-                          </div>
-                          <div className="text-gray-500 dark:text-gray-400 text-xs">
-                            {new Date(capitalisation.date_capitalisation).toLocaleDateString('fr-FR', { 
-                              weekday: 'long', 
-                              year: 'numeric', 
-                              month: 'long', 
-                              day: 'numeric' 
-                            })}
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-gray-600 dark:text-gray-300">
-                        {capitalisation.date_expiration ? (
-                          <div>
-                            <div className="font-medium">
-                              {new Date(capitalisation.date_expiration).toLocaleDateString('fr-FR')}
-                            </div>
-                            <div className="text-gray-500 dark:text-gray-400 text-xs">
-                              {Math.ceil((new Date(capitalisation.date_expiration) - new Date()) / (1000 * 60 * 60 * 24))} jours restants
-                            </div>
-                          </div>
-                        ) : (
-                          <span className="text-gray-400 dark:text-gray-500">Pas d'expiration</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 text-sm">
-                        {isExpired ? (
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">
-                            Expirée
-                          </span>
-                        ) : isExpiringSoon ? (
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300">
-                            Expire bientôt
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
-                            Valide
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 text-right text-sm font-medium">
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => {/* Add view functionality */}}
-                            className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300"
-                            title="Voir les détails"
-                          >
-                            <Eye className="w-4 h-4 inline" />
-                          </button>
-                          <button
-                            onClick={() => {/* Add edit functionality */}}
-                            className="text-green-600 dark:text-green-400 hover:text-green-900 dark:hover:text-green-300"
-                            title="Modifier"
-                          >
-                            <Edit className="w-4 h-4 inline" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(capitalisation.id_capitalisation)}
-                            className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300"
-                            title="Supprimer"
-                          >
-                            <Trash2 className="w-4 h-4 inline" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          {/* Pagination */}
-          <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
-            <div className="flex items-center justify-between mb-4">
-              <div className="text-sm text-gray-600 dark:text-gray-400">
-                {total === 0 ? (
-                  'Aucun résultat'
-                ) : total <= itemsPerPage ? (
-                  `Affichage de toutes les ${total} capitalisations`
-                ) : (
-                  `Affichage ${from} à ${to} sur ${total} capitalisations`
-                )}
-                {isFiltering && <span className="ml-2 text-blue-500">(chargement...)</span>}
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-sm text-gray-600 dark:text-gray-400">Afficher par page:</span>
-                <div className="flex gap-2">
-                  <select
-                    className="px-8 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    value={itemsPerPage}
-                    onChange={(e) => handlePerPageChange(parseInt(e.target.value))}
-                  >
-                    <option value={10}>10</option>
-                    <option value={25}>25</option>
-                    <option value={50}>50</option>
-                    <option value={100}>100</option>
-                    <option value={250}>250</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            {pagination && lastPage > 1 && (
-              <div className="flex items-center justify-center gap-2">
-                <button
-                  onClick={() => goToPage(pagination.prev_page_url)}
-                  disabled={!pagination.prev_page_url || isFiltering}
-                  className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <ChevronLeft className="w-4 h-4" />
-                </button>
-                <span className="text-sm text-gray-600 dark:text-gray-400 min-w-fit">
-                  Page {currentPage} sur {lastPage}
-                </span>
-                {pagination.links && pagination.links.slice(1, -1).map((link, i) => {
-                  if (link.label === '...') {
-                    return <span key={i} className="px-2 text-gray-400">...</span>;
-                  }
-                  return (
-                    <button
-                      key={i}
-                      onClick={() => goToPage(link.url)}
-                      disabled={!link.url || isFiltering}
-                      className={`px-3 py-1 border rounded-lg text-sm ${
-                        link.active
-                          ? 'bg-blue-600 text-white border-blue-600'
-                          : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
-                      } disabled:opacity-50`}
-                    >
-                      {link.label}
-                    </button>
-                  );
-                })}
-                <button
-                  onClick={() => goToPage(pagination.next_page_url)}
-                  disabled={!pagination.next_page_url || isFiltering}
-                  className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
             )}
+            <button onClick={downloadTemplate} className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700">
+              <Download className="w-4 h-4" /> Template
+            </button>
+            <button onClick={() => setShowImportModal(true)} className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700">
+              <Upload className="w-4 h-4" /> Import Excel
+            </button>
+            <button onClick={() => { capitalisationForm.reset(); setShowAddModal(true); }} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+              <Plus className="w-4 h-4" /> Ajouter
+            </button>
           </div>
         </div>
 
-        {/* Add Capitalisation Modal */}
-        {showAddModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-              <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between sticky top-0 bg-white dark:bg-gray-800">
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Ajouter une Capitalisation</h2>
-                <button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
-                  <X className="w-6 h-6" />
-                </button>
-              </div>
-              <div className="p-6">
-                {/* General Error Display */}
-                {Object.keys(formErrors).length > 0 && (
-                  <div className="mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                    <h3 className="text-red-800 dark:text-red-300 font-medium mb-2">Erreurs de validation:</h3>
-                    <ul className="text-sm text-red-700 dark:text-red-300 space-y-1">
-                      {Object.entries(formErrors).map(([field, errors]) => (
-                        <li key={field}>
-                          <strong>{field}:</strong> {Array.isArray(errors) ? errors.join(', ') : errors}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-                
-                <div className="grid grid-cols-1 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Inscription Pédagogique *</label>
-                    <select
-                      name="id_inscription_pedagogique"
-                      value={formData.id_inscription_pedagogique}
-                      onChange={handleInputChange}
-                      required
-                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${formErrors.id_inscription_pedagogique ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'}`}
-                    >
-                      <option value="">--Sélectionner une inscription pédagogique--</option>
-                      {inscriptionsPedagogiques.map(inscription => {
-                        const etudiant = inscription.inscription_administrative?.etudiant;
-                        const module = inscription.offre_formation?.module;
-                        return (
-                          <option key={inscription.id_inscription_pedagogique} value={inscription.id_inscription_pedagogique}>
-                            {etudiant?.nom} {etudiant?.prenom} ({etudiant?.cne}) - {module?.nom_module}
-                          </option>
-                        );
-                      })}
-                    </select>
-                    {formErrors.id_inscription_pedagogique && (
-                      <p className="mt-1 text-sm text-red-600 dark:text-red-400">{formErrors.id_inscription_pedagogique}</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Module *</label>
-                    <select
-                      name="id_module"
-                      value={formData.id_module}
-                      onChange={handleInputChange}
-                      required
-                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${formErrors.id_module ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'}`}
-                    >
-                      <option value="">--Sélectionner un module--</option>
-                      {modules.map(module => (
-                        <option key={module.id_module} value={module.id_module}>
-                          {module.nom_module}
-                        </option>
-                      ))}
-                    </select>
-                    {formErrors.id_module && (
-                      <p className="mt-1 text-sm text-red-600 dark:text-red-400">{formErrors.id_module}</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Date de Capitalisation *</label>
-                    <input
-                      type="date"
-                      name="date_capitalisation"
-                      value={formData.date_capitalisation}
-                      onChange={handleInputChange}
-                      required
-                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${formErrors.date_capitalisation ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'}`}
-                    />
-                    {formErrors.date_capitalisation && (
-                      <p className="mt-1 text-sm text-red-600 dark:text-red-400">{formErrors.date_capitalisation}</p>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Date d'Expiration</label>
-                    <input
-                      type="date"
-                      name="date_expiration"
-                      value={formData.date_expiration}
-                      onChange={handleInputChange}
-                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-white ${formErrors.date_expiration ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'}`}
-                    />
-                    {formErrors.date_expiration && (
-                      <p className="mt-1 text-sm text-red-600 dark:text-red-400">{formErrors.date_expiration}</p>
-                    )}
-                  </div>
-                </div>
-
-                <div className="mt-6 flex justify-end gap-3">
-                  <button
-                    onClick={() => setShowAddModal(false)}
-                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
-                  >
-                    Annuler
-                  </button>
-                  <button
-                    onClick={handleSubmit}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                  >
-                    Ajouter
-                  </button>
-                </div>
-              </div>
-            </div>
+        {/* Search & Filters */}
+        <div className="flex flex-col lg:flex-row gap-4">
+          <div className="flex-1 relative">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+            <input type="text" placeholder="Rechercher par CNE, nom, prénom, module..." value={searchTerm} onChange={handleSearchChange}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white" />
+            {isFiltering && <RefreshCw className="absolute right-3 top-1/2 transform -translate-y-1/2 text-blue-500 w-4 h-4 animate-spin" />}
           </div>
-        )}
+          <div className="flex gap-3">
+            <select value={filterStatut} onChange={(e) => handleFilterChange('statut', e.target.value)}
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white">
+              <option value="">Tous les statuts</option>
+              <option value="valide">Valide</option>
+              <option value="expire_bientot">Expire bientôt</option>
+              <option value="expiree">Expirée</option>
+            </select>
+            <button onClick={() => setShowFilters(!showFilters)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg ${showFilters ? 'bg-blue-600 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200'}`}>
+              <Filter className="w-4 h-4" /> Plus de filtres
+              {(filterOffre || filterNiveau || filterSection) && <span className="bg-blue-500 text-white text-xs px-1.5 py-0.5 rounded-full">{[filterOffre, filterNiveau, filterSection].filter(Boolean).length}</span>}
+            </button>
+          </div>
+        </div>
 
-        {/* Import Excel Modal */}
-        {showImportModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-              <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between sticky top-0 bg-white dark:bg-gray-800">
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Import Excel - Capitalisations</h2>
-                <button onClick={() => setShowImportModal(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
-                  <X className="w-6 h-6" />
-                </button>
-              </div>
-              <div className="p-6">
-                <div className="mb-6">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Sélectionner un fichier Excel
-                  </label>
-                  <input
-                    type="file"
-                    accept=".xlsx,.xls"
-                    onChange={handleFileSelect}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                  />
-                  <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                    Colonnes requises: id_inscription_pedagogique, id_module, date_capitalisation<br/>
-                    Colonne optionnelle: date_expiration
-                  </p>
-                </div>
-
-                {/* Validation Summary */}
-                {importPreview.length > 0 && (
-                  <div className="mb-6 grid grid-cols-3 gap-4">
-                    <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
-                      <div className="text-blue-800 dark:text-blue-300 font-medium">Total</div>
-                      <div className="text-2xl font-bold text-blue-900 dark:text-blue-100">{importPreview.length}</div>
-                    </div>
-                    <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border border-green-200 dark:border-green-800">
-                      <div className="text-green-800 dark:text-green-300 font-medium">Valides</div>
-                      <div className="text-2xl font-bold text-green-900 dark:text-green-100">{importPreview.length - importErrors.length}</div>
-                    </div>
-                    <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg border border-red-200 dark:border-red-800">
-                      <div className="text-red-800 dark:text-red-300 font-medium">Erreurs</div>
-                      <div className="text-2xl font-bold text-red-900 dark:text-red-100">{importErrors.length}</div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Detailed Error Display */}
-                {importErrors.length > 0 && (
-                  <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-red-800 dark:text-red-300 font-medium">
-                        Erreurs de validation - {importErrors.length} capitalisations
-                      </h3>
-                      <button
-                        onClick={downloadErrorReport}
-                        className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 flex items-center gap-1"
-                      >
-                        <FileSpreadsheet className="w-3 h-3" />
-                        Télécharger Rapport
-                      </button>
-                    </div>
-                    <div className="max-h-64 overflow-y-auto">
-                      <table className="w-full text-sm">
-                        <thead className="bg-red-100 dark:bg-red-900/50 sticky top-0">
-                          <tr>
-                            <th className="px-3 py-2 text-left text-red-800 dark:text-red-300">Ligne</th>
-                            <th className="px-3 py-2 text-left text-red-800 dark:text-red-300">ID Inscription</th>
-                            <th className="px-3 py-2 text-left text-red-800 dark:text-red-300">ID Module</th>
-                            <th className="px-3 py-2 text-left text-red-800 dark:text-red-300">Erreurs</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-red-200 dark:divide-red-800">
-                          {importErrors.map((error, i) => (
-                            <tr key={i} className="text-red-700 dark:text-red-300">
-                              <td className="px-3 py-2 font-medium">{error.row}</td>
-                              <td className="px-3 py-2">{error.data?.id_inscription_pedagogique || '-'}</td>
-                              <td className="px-3 py-2">{error.data?.id_module || '-'}</td>
-                              <td className="px-3 py-2">
-                                <div className="space-y-1">
-                                  {error.errors.map((err, j) => (
-                                    <div key={j} className="text-xs bg-red-100 dark:bg-red-900/30 px-2 py-1 rounded">
-                                      {err}
-                                    </div>
-                                  ))}
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <div className="mt-3 text-xs text-red-600 dark:text-red-400">
-                      Corrigez les erreurs dans votre fichier Excel et réimportez-le. Seules les capitalisations valides seront importées.
-                    </div>
-                  </div>
-                )}
-
-                {/* Preview Section - Only show valid capitalisations */}
-                {importPreview.length > 0 && importErrors.length < importPreview.length && (
-                  <div>
-                    <h3 className="font-medium text-gray-900 dark:text-white mb-3">
-                      Aperçu des capitalisations valides ({importPreview.length - importErrors.length} capitalisations)
-                    </h3>
-                    <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
-                      <div className="max-h-96 overflow-y-auto">
-                        <table className="w-full text-sm">
-                          <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0">
-                            <tr>
-                              <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-300">Statut</th>
-                              <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-300">ID Inscription</th>
-                              <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-300">ID Module</th>
-                              <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-300">Date Capitalisation</th>
-                              <th className="px-4 py-2 text-left text-gray-700 dark:text-gray-300">Date Expiration</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                            {importPreview.slice(0, 15).map((capitalisation, i) => {
-                              const hasError = importErrors.some(error => error.data && 
-                                error.data.id_inscription_pedagogique === capitalisation.id_inscription_pedagogique &&
-                                error.data.id_module === capitalisation.id_module
-                              );
-                              
-                              if (hasError) return null; // Don't show capitalisations with errors in preview
-                              
-                              return (
-                                <tr key={i} className="text-gray-900 dark:text-white">
-                                  <td className="px-4 py-2">
-                                    <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
-                                      ✓ Valide
-                                    </span>
-                                  </td>
-                                  <td className="px-4 py-2 font-medium">{capitalisation.id_inscription_pedagogique}</td>
-                                  <td className="px-4 py-2">{capitalisation.id_module}</td>
-                                  <td className="px-4 py-2">{capitalisation.date_capitalisation}</td>
-                                  <td className="px-4 py-2">{capitalisation.date_expiration || '-'}</td>
-                                </tr>
-                              );
-                            }).filter(Boolean)}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                    {(importPreview.length - importErrors.length) > 15 && (
-                      <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                        ... et {(importPreview.length - importErrors.length) - 15} autres capitalisations valides
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                <div className="mt-6 flex justify-end gap-3">
-                  <button
-                    onClick={() => setShowImportModal(false)}
-                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300"
-                  >
-                    Annuler
-                  </button>
-                  {importErrors.length > 0 && importPreview.length > importErrors.length ? (
-                    <button
-                      onClick={handleBulkImport}
-                      className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700"
-                    >
-                      Importer seulement les {importPreview.length - importErrors.length} capitalisations valides
-                    </button>
-                  ) : importErrors.length === 0 && importPreview.length > 0 ? (
-                    <button
-                      onClick={handleBulkImport}
-                      className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700"
-                    >
-                      Importer {importPreview.length} capitalisations
-                    </button>
-                  ) : (
-                    <button
-                      disabled
-                      className="px-4 py-2 bg-gray-400 text-white rounded-lg cursor-not-allowed"
-                    >
-                      {importPreview.length === 0 ? 'Aucune capitalisation à importer' : 'Corrigez les erreurs pour importer'}
-                    </button>
-                  )}
-                </div>
-              </div>
+        {showFilters && (
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Offre Formation</label>
+              <select value={filterOffre} onChange={(e) => handleFilterChange('offre', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg">
+                <option value="">Toutes les offres</option>
+                {offres.map(o => <option key={o.id_offre} value={o.id_offre}>{o.module?.nom_module} ({o.module?.code_module})</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Niveau</label>
+              <select value={filterNiveau} onChange={(e) => handleFilterChange('niveau', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg">
+                <option value="">Tous les niveaux</option>
+                {niveaux.map(n => <option key={n.id_niveau} value={n.id_niveau}>{n.nom_niveau}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Section</label>
+              <select value={filterSection} onChange={(e) => handleFilterChange('section', e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg">
+                <option value="">Toutes les sections</option>
+                {sections.map(s => <option key={s.id_section} value={s.id_section}>{s.filiere?.nom_filiere} ({s.nom_section})</option>)}
+              </select>
+            </div>
+            <div className="flex items-end">
+              <button onClick={clearFilters} className="w-full px-4 py-2 text-sm text-gray-600 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg flex items-center justify-center gap-2">
+                <X className="w-4 h-4" /> Réinitialiser
+              </button>
             </div>
           </div>
         )}
       </div>
+
+
+      {/* Stats */}
+      <div className="grid grid-cols-4 gap-4 mb-6">
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
+          <div className="text-sm text-gray-600 dark:text-gray-400">Total</div>
+          <div className="text-2xl font-bold text-gray-900 dark:text-white">{totalCount || total}</div>
+        </div>
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
+          <div className="text-sm text-gray-600 dark:text-gray-400">Résultats filtrés</div>
+          <div className="text-2xl font-bold text-blue-600">{total}</div>
+        </div>
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
+          <div className="text-sm text-gray-600 dark:text-gray-400">Sélectionnées</div>
+          <div className="text-2xl font-bold text-purple-600">{selectedCapitalisations.length}</div>
+        </div>
+        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
+          <div className="text-sm text-gray-600 dark:text-gray-400">Page</div>
+          <div className="text-2xl font-bold text-gray-900 dark:text-white">{currentPage}/{lastPage || 1}</div>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead className="bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+              <tr>
+                <th className="px-6 py-3 text-left">
+                  <input type="checkbox" checked={selectedCapitalisations.length === capitalisationsData.length && capitalisationsData.length > 0}
+                    onChange={toggleSelectAll} className="rounded border-gray-300 dark:border-gray-600" />
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Étudiant</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Module</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Section</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Niveau</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Note</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Date Capitalisation</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Expiration</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Statut</th>
+                <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+              {capitalisationsData.length > 0 ? capitalisationsData.map((cap) => {
+                const etudiant = cap.inscription_administrative?.etudiant;
+                const niveau = cap.inscription_administrative?.niveau;
+                const section = cap.inscription_administrative?.section;
+                const module = cap.offre_formation?.module;
+                return (
+                  <tr key={cap.id_capitalisation} className="hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                    <td className="px-6 py-4">
+                      <input type="checkbox" checked={selectedCapitalisations.includes(cap.id_capitalisation)}
+                        onChange={() => toggleSelectCapitalisation(cap.id_capitalisation)} className="rounded border-gray-300 dark:border-gray-600" />
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-sm font-medium text-gray-900 dark:text-white">{etudiant?.nom} {etudiant?.prenom}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">CNE: {etudiant?.cne}</div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="text-sm text-gray-900 dark:text-white">{module?.nom_module}</div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">{module?.code_module}</div>
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">{section?.nom_section}</td>
+                    <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">{niveau?.nom_niveau}</td>
+                    <td className="px-6 py-4">
+                      {cap.note ? (
+                        <span className={`px-2 py-1 text-sm font-medium rounded ${parseFloat(cap.note) >= 10 ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'}`}>
+                          {cap.note}/20
+                        </span>
+                      ) : <span className="text-gray-400">-</span>}
+                    </td>
+                    <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">{cap.date_capitalisation ? new Date(cap.date_capitalisation).toLocaleDateString('fr-FR') : '-'}</td>
+                    <td className="px-6 py-4 text-sm text-gray-900 dark:text-white">{cap.date_expiration ? new Date(cap.date_expiration).toLocaleDateString('fr-FR') : '-'}</td>
+                    <td className="px-6 py-4">{getStatusBadge(cap)}</td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex justify-end gap-2">
+                        <button onClick={() => handleEditClick(cap)} className="p-1 text-blue-600 hover:bg-blue-100 dark:hover:bg-blue-900/30 rounded">
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button onClick={() => handleDelete(cap.id_capitalisation)} className="p-1 text-red-600 hover:bg-red-100 dark:hover:bg-red-900/30 rounded">
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              }) : (
+                <tr>
+                  <td colSpan="10" className="px-6 py-8 text-center text-gray-500 dark:text-gray-400">
+                    <Award className="w-12 h-12 mx-auto mb-3 text-gray-300 dark:text-gray-600" />
+                    <p>Aucune capitalisation trouvée</p>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pagination */}
+        <div className="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+          <div className="flex items-center justify-between">
+            <div className="text-sm text-gray-600 dark:text-gray-400">Affichage {from} à {to} sur {total}</div>
+            <div className="flex items-center gap-3">
+              <select value={itemsPerPage} onChange={(e) => handlePerPageChange(parseInt(e.target.value))}
+                className="px-3 py-1 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg text-sm">
+                <option value={10}>10</option>
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+              </select>
+              {pagination && lastPage > 1 && (
+                <div className="flex items-center gap-2">
+                  <button onClick={() => goToPage(pagination.prev_page_url)} disabled={!pagination.prev_page_url}
+                    className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg disabled:opacity-50">
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
+                  <span className="text-sm text-gray-600 dark:text-gray-400">Page {currentPage} sur {lastPage}</span>
+                  <button onClick={() => goToPage(pagination.next_page_url)} disabled={!pagination.next_page_url}
+                    className="p-2 border border-gray-300 dark:border-gray-600 rounded-lg disabled:opacity-50">
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+
+      {/* Add Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Ajouter une Capitalisation</h2>
+              <button onClick={() => setShowAddModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-6 h-6" /></button>
+            </div>
+            <form onSubmit={handleSubmit} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Inscription Administrative *</label>
+                <select value={capitalisationForm.data.id_inscription_admin} 
+                  onChange={(e) => capitalisationForm.setData('id_inscription_admin', e.target.value)}
+                  className={`w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 ${capitalisationForm.errors.id_inscription_admin ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'}`}>
+                  <option value="">Sélectionner un étudiant</option>
+                  {inscriptionsAdmin.map(ia => (
+                    <option key={ia.id_inscription_admin} value={ia.id_inscription_admin}>
+                      {ia.etudiant?.cne} - {ia.etudiant?.nom} {ia.etudiant?.prenom}
+                    </option>
+                  ))}
+                </select>
+                {capitalisationForm.errors.id_inscription_admin && <p className="text-red-500 text-sm mt-1">{capitalisationForm.errors.id_inscription_admin}</p>}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Offre de Formation *</label>
+                <select value={capitalisationForm.data.id_offre}
+                  onChange={(e) => capitalisationForm.setData('id_offre', e.target.value)}
+                  className={`w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 ${capitalisationForm.errors.id_offre ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'}`}>
+                  <option value="">Sélectionner une offre</option>
+                  {offres.map(o => (
+                    <option key={o.id_offre} value={o.id_offre}>{o.module?.nom_module} ({o.module?.code_module})</option>
+                  ))}
+                </select>
+                {capitalisationForm.errors.id_offre && <p className="text-red-500 text-sm mt-1">{capitalisationForm.errors.id_offre}</p>}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Note (0-20)</label>
+                <input type="number" value={capitalisationForm.data.note}
+                  onChange={(e) => capitalisationForm.setData('note', e.target.value)}
+                  min="0" max="20" step="0.25"
+                  className={`w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 ${capitalisationForm.errors.note ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'}`} />
+                {capitalisationForm.errors.note && <p className="text-red-500 text-sm mt-1">{capitalisationForm.errors.note}</p>}
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Date Capitalisation *</label>
+                  <input type="date" value={capitalisationForm.data.date_capitalisation}
+                    onChange={(e) => capitalisationForm.setData('date_capitalisation', e.target.value)}
+                    className={`w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 ${capitalisationForm.errors.date_capitalisation ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'}`} />
+                  {capitalisationForm.errors.date_capitalisation && <p className="text-red-500 text-sm mt-1">{capitalisationForm.errors.date_capitalisation}</p>}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Date Expiration</label>
+                  <input type="date" value={capitalisationForm.data.date_expiration}
+                    onChange={(e) => capitalisationForm.setData('date_expiration', e.target.value)}
+                    className={`w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 ${capitalisationForm.errors.date_expiration ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'}`} />
+                  {capitalisationForm.errors.date_expiration && <p className="text-red-500 text-sm mt-1">{capitalisationForm.errors.date_expiration}</p>}
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 pt-4">
+                <button type="button" onClick={() => setShowAddModal(false)} className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg">Annuler</button>
+                <button type="submit" disabled={capitalisationForm.processing} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                  {capitalisationForm.processing ? 'Création...' : 'Créer'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      {showEditModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Modifier la Capitalisation</h2>
+              <button onClick={() => setShowEditModal(false)} className="text-gray-400 hover:text-gray-600"><X className="w-6 h-6" /></button>
+            </div>
+            <form onSubmit={handleUpdate} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Inscription Administrative *</label>
+                <select value={editForm.data.id_inscription_admin}
+                  onChange={(e) => editForm.setData('id_inscription_admin', e.target.value)}
+                  className={`w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 ${editForm.errors.id_inscription_admin ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'}`}>
+                  <option value="">Sélectionner un étudiant</option>
+                  {inscriptionsAdmin.map(ia => (
+                    <option key={ia.id_inscription_admin} value={ia.id_inscription_admin}>
+                      {ia.etudiant?.cne} - {ia.etudiant?.nom} {ia.etudiant?.prenom}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Offre de Formation *</label>
+                <select value={editForm.data.id_offre}
+                  onChange={(e) => editForm.setData('id_offre', e.target.value)}
+                  className={`w-full px-3 py-2 border rounded-lg bg-white dark:bg-gray-700 ${editForm.errors.id_offre ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'}`}>
+                  <option value="">Sélectionner une offre</option>
+                  {offres.map(o => (
+                    <option key={o.id_offre} value={o.id_offre}>{o.module?.nom_module} ({o.module?.code_module})</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Note (0-20)</label>
+                <input type="number" value={editForm.data.note}
+                  onChange={(e) => editForm.setData('note', e.target.value)}
+                  min="0" max="20" step="0.25"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Date Capitalisation *</label>
+                  <input type="date" value={editForm.data.date_capitalisation}
+                    onChange={(e) => editForm.setData('date_capitalisation', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Date Expiration</label>
+                  <input type="date" value={editForm.data.date_expiration}
+                    onChange={(e) => editForm.setData('date_expiration', e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700" />
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 pt-4">
+                <button type="button" onClick={() => setShowEditModal(false)} className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg">Annuler</button>
+                <button type="submit" disabled={editForm.processing} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                  {editForm.processing ? 'Enregistrement...' : 'Enregistrer'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+
+      {/* Import Modal */}
+      {showImportModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-gray-900 dark:text-white">Import Excel - Capitalisations</h2>
+              <button onClick={() => { setShowImportModal(false); setImportFile(null); setImportPreview([]); setImportErrors([]); setSelectedImportOffre(''); }}
+                className="text-gray-400 hover:text-gray-600"><X className="w-6 h-6" /></button>
+            </div>
+            <div className="p-6">
+              {/* Import Settings */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Offre de Formation *</label>
+                  <select value={selectedImportOffre} onChange={(e) => setSelectedImportOffre(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg">
+                    <option value="">Sélectionner une offre</option>
+                    {offres.map(o => (
+                      <option key={o.id_offre} value={o.id_offre}>{o.module?.nom_module} ({o.module?.code_module})</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Note par défaut</label>
+                  <input type="number" value={importNote} onChange={(e) => setImportNote(e.target.value)}
+                    min="0" max="20" step="0.25" placeholder="Optionnel"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Date Capitalisation par défaut</label>
+                  <input type="date" value={importDateCapitalisation} onChange={(e) => setImportDateCapitalisation(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg" />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Date Expiration par défaut</label>
+                  <input type="date" value={importDateExpiration} onChange={(e) => setImportDateExpiration(e.target.value)}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg" />
+                </div>
+              </div>
+
+              {/* File Upload */}
+              <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-8 text-center mb-6">
+                <input type="file" accept=".xlsx,.xls" onChange={handleFileSelect} className="hidden" id="file-upload" />
+                <label htmlFor="file-upload" className="cursor-pointer">
+                  <Upload className="w-12 h-12 mx-auto mb-4 text-gray-400" />
+                  <p className="text-gray-600 dark:text-gray-400">{importFile ? importFile.name : 'Cliquez pour sélectionner un fichier Excel'}</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-500 mt-2">Format attendu: CNE, note (optionnel), date_capitalisation (optionnel), date_expiration (optionnel)</p>
+                </label>
+              </div>
+
+              {/* Preview & Errors */}
+              {importPreview.length > 0 && (
+                <div className="mb-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      {importPreview.length} ligne(s) trouvée(s), {importErrors.length} erreur(s)
+                    </p>
+                    <span className={`px-2 py-1 text-xs rounded-full ${importErrors.length === 0 ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+                      {importPreview.filter(p => p.inscription && !importErrors.some(e => e.data?.cne === p.cne)).length} valide(s)
+                    </span>
+                  </div>
+                  
+                  {importErrors.length > 0 && (
+                    <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg mb-4 max-h-40 overflow-y-auto">
+                      <h4 className="font-medium text-red-800 dark:text-red-300 mb-2">Erreurs détectées:</h4>
+                      {importErrors.slice(0, 10).map((err, i) => (
+                        <p key={i} className="text-sm text-red-600 dark:text-red-400">Ligne {err.row}: {err.errors.join(', ')}</p>
+                      ))}
+                      {importErrors.length > 10 && <p className="text-sm text-red-500 mt-2">... et {importErrors.length - 10} autres erreurs</p>}
+                    </div>
+                  )}
+
+                  {/* Preview Table */}
+                  <div className="max-h-60 overflow-y-auto border border-gray-200 dark:border-gray-700 rounded-lg">
+                    <table className="w-full text-sm">
+                      <thead className="bg-gray-50 dark:bg-gray-700 sticky top-0">
+                        <tr>
+                          <th className="px-4 py-2 text-left">CNE</th>
+                          <th className="px-4 py-2 text-left">Étudiant</th>
+                          <th className="px-4 py-2 text-left">Note</th>
+                          <th className="px-4 py-2 text-left">Statut</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                        {importPreview.slice(0, 20).map((row, i) => {
+                          const hasError = importErrors.some(e => e.data?.cne === row.cne);
+                          return (
+                            <tr key={i} className={hasError ? 'bg-red-50 dark:bg-red-900/10' : ''}>
+                              <td className="px-4 py-2">{row.cne}</td>
+                              <td className="px-4 py-2">{row.inscription ? `${row.inscription.etudiant?.nom} ${row.inscription.etudiant?.prenom}` : '-'}</td>
+                              <td className="px-4 py-2">{row.note || importNote || '-'}</td>
+                              <td className="px-4 py-2">
+                                {hasError ? (
+                                  <span className="text-red-600 dark:text-red-400">Erreur</span>
+                                ) : row.inscription ? (
+                                  <span className="text-green-600 dark:text-green-400">Valide</span>
+                                ) : (
+                                  <span className="text-yellow-600 dark:text-yellow-400">Non trouvé</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+            <div className="p-6 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3">
+              <button onClick={() => { setShowImportModal(false); setImportFile(null); setImportPreview([]); setImportErrors([]); setSelectedImportOffre(''); }}
+                className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg">Annuler</button>
+              <button onClick={handleBulkImport} 
+                disabled={importPreview.length === 0 || !selectedImportOffre}
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50">
+                Importer ({importPreview.filter(p => p.inscription && !importErrors.some(e => e.data?.cne === p.cne)).length})
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

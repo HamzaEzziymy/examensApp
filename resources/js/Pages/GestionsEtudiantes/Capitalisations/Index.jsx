@@ -6,8 +6,8 @@ import Display from './Display';
 
 function Index({ 
   capitalisations, 
-  inscriptionsPedagogiques, 
-  modules,
+  inscriptionsAdmin, 
+  offres,
   niveaux,
   sections,
   filters,
@@ -27,8 +27,8 @@ function Index({
       <div className="p-4 rounded-lg">
         <Display
           capitalisations={capitalisations}
-          inscriptionsPedagogiques={inscriptionsPedagogiques}
-          modules={modules}
+          inscriptionsAdmin={inscriptionsAdmin}
+          offres={offres}
           niveaux={niveaux}
           sections={sections}
           filters={filters}

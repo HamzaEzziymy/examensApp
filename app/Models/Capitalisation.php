@@ -13,19 +13,22 @@ class Capitalisation extends Model
     protected $table = 'capitalisations';
     protected $primaryKey = 'id_capitalisation';
     protected $guarded = [];
-     protected $fillable = [
-        'id_inscription_pedagogique','id_module',
-        'date_capitalisation','date_expiration',
+    protected $fillable = [
+        'id_inscription_admin',
+        'id_offre',
+        'note',
+        'date_capitalisation',
+        'date_expiration',
     ];
 
-    public function inscriptionPedagogique(): BelongsTo
+    public function inscriptionAdministrative(): BelongsTo
     {
-        return $this->belongsTo(InscriptionPedagogique::class, 'id_inscription_pedagogique', 'id_inscription_pedagogique');
+        return $this->belongsTo(InscriptionAdministrative::class, 'id_inscription_admin', 'id_inscription_admin');
     }
 
-    public function module(): BelongsTo
+    public function offreFormation(): BelongsTo
     {
-        return $this->belongsTo(Module::class, 'id_module', 'id_module');
+        return $this->belongsTo(OffreFormation::class, 'id_offre', 'id_offre');
     }
 }
 

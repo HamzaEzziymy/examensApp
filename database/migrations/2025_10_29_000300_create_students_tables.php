@@ -51,12 +51,13 @@ return new class extends Migration {
 
         Schema::create('capitalisations', function (Blueprint $table) {
             $table->id('id_capitalisation');
-            $table->unsignedBigInteger('id_inscription_pedagogique')->nullable();
-            $table->unsignedBigInteger('id_module')->nullable();
+            $table->unsignedBigInteger('id_inscription_admin')->nullable();
+            $table->unsignedBigInteger('id_offre')->nullable();
+            $table->decimal('note', 5, 2)->nullable();
             $table->date('date_capitalisation');
             $table->date('date_expiration')->nullable();
-            $table->foreign('id_inscription_pedagogique')->references('id_inscription_pedagogique')->on('inscriptions_pedagogiques')->onDelete('set null');
-            $table->foreign('id_module')->references('id_module')->on('modules')->onDelete('set null');
+            $table->foreign('id_inscription_admin')->references('id_inscription_admin')->on('inscriptions_administratives')->onDelete('set null');
+            $table->foreign('id_offre')->references('id_offre')->on('offre_formation')->onDelete('set null');
             $table->timestamps();
         });
 

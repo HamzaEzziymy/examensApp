@@ -4,8 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use App\Models\Capitalisation;
-use App\Models\InscriptionPedagogique;
-use App\Models\Module;
+use App\Models\InscriptionAdministrative;
+use App\Models\OffreFormation;
 use App\Models\UserFiliereAnnee;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -26,7 +26,7 @@ class CapitalisationController extends Controller
         
         // Get filter parameters from request
         $search = $request->input('search', '');
-        $filterModule = $request->input('module', '');
+        $filterOffre = $request->input('offre', '');
         $filterNiveau = $request->input('niveau', '');
         $filterSection = $request->input('section', '');
         $filterStatut = $request->input('statut', '');
@@ -34,23 +34,23 @@ class CapitalisationController extends Controller
         
         // Build query for capitalisations with backend filtering
         $capitalisationsQuery = Capitalisation::with([
-            'inscriptionPedagogique.inscriptionAdministrative.etudiant',
-            'inscriptionPedagogique.inscriptionAdministrative.section.filiere',
-            'inscriptionPedagogique.inscriptionAdministrative.niveau',
-            'inscriptionPedagogique.inscriptionAdministrative.anneeUniversitaire',
-            'module'
+            'inscriptionAdministrative.etudiant',
+            'inscriptionAdministrative.section.filiere',
+            'inscriptionAdministrative.niveau',
+            'inscriptionAdministrative.anneeUniversitaire',
+            'offreFormation.module'
         ]);
         
         // Apply user's filiere filter if a specific filiere is selected
         if ($selectedFiliere && $selectedFiliere !== 'all') {
-            $capitalisationsQuery->whereHas('inscriptionPedagogique.inscriptionAdministrative.section.filiere', function ($query) use ($selectedFiliere) {
+            $capitalisationsQuery->whereHas('inscriptionAdministrative.section.filiere', function ($query) use ($selectedFiliere) {
                 $query->where('id_filiere', $selectedFiliere);
             });
         }
         
         // Apply user's year filter if a specific year is selected
         if ($selectedAnnee && $selectedAnnee !== 'all') {
-            $capitalisationsQuery->whereHas('inscriptionPedagogique.inscriptionAdministrative', function ($query) use ($selectedAnnee) {
+            $capitalisationsQuery->whereHas('inscriptionAdministrative', function ($query) use ($selectedAnnee) {
                 $query->where('id_annee', $selectedAnnee);
             });
         }
@@ -58,46 +58,46 @@ class CapitalisationController extends Controller
         // Apply search filter (CNE, nom, prenom, email, module name, section, filiere, niveau, annee)
         if (!empty($search)) {
             $capitalisationsQuery->where(function ($query) use ($search) {
-                $query->whereHas('inscriptionPedagogique.inscriptionAdministrative.etudiant', function ($q) use ($search) {
+                $query->whereHas('inscriptionAdministrative.etudiant', function ($q) use ($search) {
                     $q->where('cne', 'like', "%{$search}%")
                       ->orWhere('nom', 'like', "%{$search}%")
                       ->orWhere('prenom', 'like', "%{$search}%")
                       ->orWhere('mail_academique', 'like', "%{$search}%");
                 })
-                ->orWhereHas('module', function ($q) use ($search) {
+                ->orWhereHas('offreFormation.module', function ($q) use ($search) {
                     $q->where('nom_module', 'like', "%{$search}%")
                       ->orWhere('code_module', 'like', "%{$search}%");
                 })
-                ->orWhereHas('inscriptionPedagogique.inscriptionAdministrative.section', function ($q) use ($search) {
+                ->orWhereHas('inscriptionAdministrative.section', function ($q) use ($search) {
                     $q->where('nom_section', 'like', "%{$search}%");
                 })
-                ->orWhereHas('inscriptionPedagogique.inscriptionAdministrative.section.filiere', function ($q) use ($search) {
+                ->orWhereHas('inscriptionAdministrative.section.filiere', function ($q) use ($search) {
                     $q->where('nom_filiere', 'like', "%{$search}%");
                 })
-                ->orWhereHas('inscriptionPedagogique.inscriptionAdministrative.niveau', function ($q) use ($search) {
+                ->orWhereHas('inscriptionAdministrative.niveau', function ($q) use ($search) {
                     $q->where('nom_niveau', 'like', "%{$search}%");
                 })
-                ->orWhereHas('inscriptionPedagogique.inscriptionAdministrative.anneeUniversitaire', function ($q) use ($search) {
+                ->orWhereHas('inscriptionAdministrative.anneeUniversitaire', function ($q) use ($search) {
                     $q->where('annee_univ', 'like', "%{$search}%");
                 });
             });
         }
         
-        // Apply module filter
-        if (!empty($filterModule)) {
-            $capitalisationsQuery->where('id_module', $filterModule);
+        // Apply offre filter
+        if (!empty($filterOffre)) {
+            $capitalisationsQuery->where('id_offre', $filterOffre);
         }
         
         // Apply niveau filter
         if (!empty($filterNiveau)) {
-            $capitalisationsQuery->whereHas('inscriptionPedagogique.inscriptionAdministrative', function ($q) use ($filterNiveau) {
+            $capitalisationsQuery->whereHas('inscriptionAdministrative', function ($q) use ($filterNiveau) {
                 $q->where('id_niveau', $filterNiveau);
             });
         }
         
         // Apply section filter
         if (!empty($filterSection)) {
-            $capitalisationsQuery->whereHas('inscriptionPedagogique.inscriptionAdministrative', function ($q) use ($filterSection) {
+            $capitalisationsQuery->whereHas('inscriptionAdministrative', function ($q) use ($filterSection) {
                 $q->where('id_section', $filterSection);
             });
         }
@@ -127,31 +127,34 @@ class CapitalisationController extends Controller
         // Paginate results
         $capitalisations = $capitalisationsQuery->paginate($perPage)->withQueryString();
 
-        // Get pedagogical inscriptions for the dropdown (for add/edit forms) - LIMIT to avoid loading too much data
-        $inscriptionsPedagogiquesQuery = InscriptionPedagogique::with([
-            'inscriptionAdministrative.etudiant:id_etudiant,cne,nom,prenom',
-            'inscriptionAdministrative.section:id_section,nom_section,id_filiere',
-            'inscriptionAdministrative.section.filiere:id_filiere,nom_filiere',
-            'inscriptionAdministrative.niveau:id_niveau,nom_niveau',
-            'offreFormation.module:id_module,nom_module,code_module'
-        ])->select('id_inscription_pedagogique', 'id_inscription_admin', 'id_offre');
+        // Get inscriptions administratives for the dropdown (for add/edit forms)
+        $inscriptionsAdminQuery = InscriptionAdministrative::with([
+            'etudiant:id_etudiant,cne,nom,prenom',
+            'section:id_section,nom_section,id_filiere',
+            'section.filiere:id_filiere,nom_filiere',
+            'niveau:id_niveau,nom_niveau'
+        ]);
         
         if ($selectedFiliere && $selectedFiliere !== 'all') {
-            $inscriptionsPedagogiquesQuery->whereHas('inscriptionAdministrative.section.filiere', function ($query) use ($selectedFiliere) {
+            $inscriptionsAdminQuery->whereHas('section.filiere', function ($query) use ($selectedFiliere) {
                 $query->where('id_filiere', $selectedFiliere);
             });
         }
         
-        $inscriptionsPedagogiques = $inscriptionsPedagogiquesQuery->limit(500)->get();
+        if ($selectedAnnee && $selectedAnnee !== 'all') {
+            $inscriptionsAdminQuery->where('id_annee', $selectedAnnee);
+        }
+        
+        $inscriptionsAdmin = $inscriptionsAdminQuery->limit(500)->get();
 
-        // Get modules for the dropdown
-        $modulesQuery = Module::orderBy('nom_module');
+        // Get offres formation for the dropdown
+        $offresQuery = OffreFormation::with(['module:id_module,nom_module,code_module']);
         if ($selectedFiliere && $selectedFiliere !== 'all') {
-            $modulesQuery->whereHas('offresFormation.section.filiere', function ($query) use ($selectedFiliere) {
+            $offresQuery->whereHas('section.filiere', function ($query) use ($selectedFiliere) {
                 $query->where('id_filiere', $selectedFiliere);
             });
         }
-        $modules = $modulesQuery->get();
+        $offres = $offresQuery->get();
         
         // Get niveaux for filter dropdown
         $niveaux = \App\Models\Niveau::orderBy('ordre')->get();
@@ -167,13 +170,13 @@ class CapitalisationController extends Controller
         
         return Inertia::render('GestionsEtudiantes/Capitalisations/Index', [
             'capitalisations' => $capitalisations,
-            'inscriptionsPedagogiques' => $inscriptionsPedagogiques,
-            'modules' => $modules,
+            'inscriptionsAdmin' => $inscriptionsAdmin,
+            'offres' => $offres,
             'niveaux' => $niveaux,
             'sections' => $sections,
             'filters' => [
                 'search' => $search,
-                'module' => $filterModule,
+                'offre' => $filterOffre,
                 'niveau' => $filterNiveau,
                 'section' => $filterSection,
                 'statut' => $filterStatut,
@@ -195,20 +198,21 @@ class CapitalisationController extends Controller
 
         // Single capitalisation creation
         $validated = $request->validate([
-            'id_inscription_pedagogique' => 'required|exists:inscriptions_pedagogiques,id_inscription_pedagogique',
-            'id_module' => 'required|exists:modules,id_module',
+            'id_inscription_admin' => 'required|exists:inscriptions_administratives,id_inscription_admin',
+            'id_offre' => 'required|exists:offre_formation,id_offre',
+            'note' => 'nullable|numeric|min:0|max:20',
             'date_capitalisation' => 'required|date',
             'date_expiration' => 'nullable|date|after:date_capitalisation',
         ]);
 
         // Check for duplicate capitalisation
-        $exists = Capitalisation::where('id_inscription_pedagogique', $validated['id_inscription_pedagogique'])
-            ->where('id_module', $validated['id_module'])
+        $exists = Capitalisation::where('id_inscription_admin', $validated['id_inscription_admin'])
+            ->where('id_offre', $validated['id_offre'])
             ->exists();
 
         if ($exists) {
             return back()->withErrors([
-                'id_inscription_pedagogique' => 'Une capitalisation existe déjà pour cet étudiant et ce module.'
+                'id_inscription_admin' => 'Une capitalisation existe déjà pour cet étudiant et cette offre de formation.'
             ]);
         }
 
@@ -232,8 +236,9 @@ class CapitalisationController extends Controller
         try {
             foreach ($capitalisationsData as $index => $data) {
                 $validator = \Illuminate\Support\Facades\Validator::make($data, [
-                    'id_inscription_pedagogique' => 'required|exists:inscriptions_pedagogiques,id_inscription_pedagogique',
-                    'id_module' => 'required|exists:modules,id_module',
+                    'id_inscription_admin' => 'required|exists:inscriptions_administratives,id_inscription_admin',
+                    'id_offre' => 'required|exists:offre_formation,id_offre',
+                    'note' => 'nullable|numeric|min:0|max:20',
                     'date_capitalisation' => 'required|date',
                     'date_expiration' => 'nullable|date|after:date_capitalisation',
                 ]);
@@ -247,15 +252,15 @@ class CapitalisationController extends Controller
                     ];
                 } else {
                     // Check for duplicates
-                    $exists = Capitalisation::where('id_inscription_pedagogique', $data['id_inscription_pedagogique'])
-                        ->where('id_module', $data['id_module'])
+                    $exists = Capitalisation::where('id_inscription_admin', $data['id_inscription_admin'])
+                        ->where('id_offre', $data['id_offre'])
                         ->exists();
 
                     if ($exists) {
                         $skipped++;
                         $errors[] = [
                             'row' => $index + 2,
-                            'errors' => ['Capitalisation déjà existante pour cet étudiant et ce module'],
+                            'errors' => ['Capitalisation déjà existante pour cet étudiant et cette offre'],
                             'data' => $data
                         ];
                     } else {
@@ -275,7 +280,6 @@ class CapitalisationController extends Controller
             }
             DB::commit();
 
-            // Return appropriate response based on results
             if (empty($errors)) {
                 return redirect()->route('inscriptions.capitalisations.index')
                     ->with('success', "Import réussi: {$created} capitalisations créées avec succès");
@@ -298,11 +302,11 @@ class CapitalisationController extends Controller
     public function show(string $id)
     {
         $capitalisation = Capitalisation::with([
-            'inscriptionPedagogique.inscriptionAdministrative.etudiant',
-            'inscriptionPedagogique.inscriptionAdministrative.section.filiere',
-            'inscriptionPedagogique.inscriptionAdministrative.niveau',
-            'inscriptionPedagogique.inscriptionAdministrative.anneeUniversitaire',
-            'module'
+            'inscriptionAdministrative.etudiant',
+            'inscriptionAdministrative.section.filiere',
+            'inscriptionAdministrative.niveau',
+            'inscriptionAdministrative.anneeUniversitaire',
+            'offreFormation.module'
         ])->findOrFail($id);
 
         return Inertia::render('GestionsEtudiantes/Capitalisations/Show', [
@@ -318,21 +322,22 @@ class CapitalisationController extends Controller
         $capitalisation = Capitalisation::findOrFail($id);
 
         $validated = $request->validate([
-            'id_inscription_pedagogique' => ['required', 'exists:inscriptions_pedagogiques,id_inscription_pedagogique'],
-            'id_module' => ['required', 'exists:modules,id_module'],
+            'id_inscription_admin' => 'required|exists:inscriptions_administratives,id_inscription_admin',
+            'id_offre' => 'required|exists:offre_formation,id_offre',
+            'note' => 'nullable|numeric|min:0|max:20',
             'date_capitalisation' => 'required|date',
             'date_expiration' => 'nullable|date|after:date_capitalisation',
         ]);
 
         // Check for duplicates (excluding current record)
-        $exists = Capitalisation::where('id_inscription_pedagogique', $validated['id_inscription_pedagogique'])
-            ->where('id_module', $validated['id_module'])
+        $exists = Capitalisation::where('id_inscription_admin', $validated['id_inscription_admin'])
+            ->where('id_offre', $validated['id_offre'])
             ->where('id_capitalisation', '!=', $id)
             ->exists();
 
         if ($exists) {
             return back()->withErrors([
-                'id_inscription_pedagogique' => 'Une capitalisation existe déjà pour cet étudiant et ce module.'
+                'id_inscription_admin' => 'Une capitalisation existe déjà pour cet étudiant et cette offre de formation.'
             ]);
         }
 
