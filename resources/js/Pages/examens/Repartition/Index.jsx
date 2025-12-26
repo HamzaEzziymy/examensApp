@@ -127,11 +127,24 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
     const filteredRepartitions = useMemo(() => {
         const query = normalizeText(searchTerm.trim());
 
+        const sorted = [...repartitions].sort((a, b) => {
+            const aName = normalizeText(
+                `${a.inscription_pedagogique?.etudiant?.nom ?? ''} ${a.inscription_pedagogique?.etudiant?.prenom ?? ''}`,
+            );
+            const bName = normalizeText(
+                `${b.inscription_pedagogique?.etudiant?.nom ?? ''} ${b.inscription_pedagogique?.etudiant?.prenom ?? ''}`,
+            );
+            if (aName === bName) {
+                return (a.code_grille || 0) - (b.code_grille || 0);
+            }
+            return aName.localeCompare(bName);
+        });
+
         if (!query) {
-            return repartitions;
+            return sorted;
         }
 
-        return repartitions.filter((item) => {
+        return sorted.filter((item) => {
             const searchableValues = [
                 item.inscription_pedagogique?.etudiant?.nom,
                 item.inscription_pedagogique?.etudiant?.prenom,
@@ -256,6 +269,16 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         window.open(url, '_blank');
     };
 
+    const handleSallesPlacesExport = () => {
+        if (!selectedExamenId) {
+            Swal.fire({ icon: 'info', title: 'Choisissez un examen' });
+            return;
+        }
+
+        const url = route('surveillance.repartition-etudiants.export-salles-places', selectedExamenId);
+        window.open(url, '_blank');
+    };
+
     return (
         <AuthenticatedLayout
             header={<h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100">Repartition des etudiants</h2>}
@@ -331,6 +354,14 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                     disabled={!selectedExamenId}
                                 >
                                     Presence collective (PDF)
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleSallesPlacesExport}
+                                    className="mt-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60 md:ml-2 md:mt-0"
+                                    disabled={!selectedExamenId}
+                                >
+                                    Plan salles / places (PDF)
                                 </button>
                                 <div className="mt-3 space-y-1 text-xs text-gray-600 dark:text-gray-300">
                                     <div className="font-semibold text-gray-700 dark:text-gray-100">Colonnes</div>
@@ -625,8 +656,5 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         </AuthenticatedLayout>
     );
 }
-
-
-
 
 

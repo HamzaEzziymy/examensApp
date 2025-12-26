@@ -5,8 +5,8 @@
     <title>Repartition - {{ $examen->module->code_module ?? 'Examen' }}</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: Arial, sans-serif; padding: 12px 14px 26px; }
-        .container { width: 100%; max-width: none; margin: 0; display: flex; flex-direction: column; align-items: stretch; }
+        body { font-family: "Roboto", Arial, sans-serif; padding: 0; }
+        .container { width: 100%; max-width: none; margin: 0; display: flex; flex-direction: column; align-items: stretch; padding: 8px 12px 12px; }
         .header { text-align: right; font-size: 10px; margin-bottom: 2px; color: #666; }
         .date { font-size: 11px; font-weight: bold; }
         h1 { text-align: center; font-size: 24px; font-weight: bold; margin-bottom: 4px; letter-spacing: 1px; }

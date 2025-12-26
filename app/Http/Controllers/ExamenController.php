@@ -30,13 +30,31 @@ class ExamenController extends Controller
 
     private function indexData(): array
     {
-        $examens = Examen::with([
-                'sessionExamen:id_session_examen,nom_session,type_session',
+        $userFiliereAnnee = auth()->user()?->userFiliereAnnees()->first();
+        $selectedFiliere = $userFiliereAnnee?->id_filiere;
+        $selectedAnnee = $userFiliereAnnee?->id_annee;
+
+        $examensQuery = Examen::with([
+                'sessionExamen:id_session_examen,nom_session,type_session,id_filiere,id_annee',
                 'module:id_module,nom_module,code_module',
                 'salle:id_salle,code_salle,nom_salle,capacite_examens',
                 'salles:id_salle,code_salle,nom_salle,capacite_examens',
             ])
-            ->withCount('repartitions')
+            ->withCount('repartitions');
+
+        if ($selectedFiliere && $selectedFiliere !== 'all') {
+            $examensQuery->whereHas('sessionExamen', function ($query) use ($selectedFiliere) {
+                $query->where('id_filiere', $selectedFiliere);
+            });
+        }
+
+        if ($selectedAnnee && $selectedAnnee !== 'all') {
+            $examensQuery->whereHas('sessionExamen', function ($query) use ($selectedAnnee) {
+                $query->where('id_annee', $selectedAnnee);
+            });
+        }
+
+        $examens = $examensQuery
             ->orderByDesc('date_examen')
             ->get([
                 'id_examen',
@@ -50,13 +68,33 @@ class ExamenController extends Controller
                 'description',
             ]);
 
-        $sessions = SessionExamen::select('id_session_examen', 'nom_session', 'type_session', 'date_session_examen')
-            ->orderByDesc('date_session_examen')
-            ->get();
+        $sessionsQuery = SessionExamen::select('id_session_examen', 'nom_session', 'type_session', 'date_session_examen', 'id_filiere', 'id_annee')
+            ->orderByDesc('date_session_examen');
 
-        $modules = Module::select('id_module', 'nom_module', 'code_module')
-            ->orderBy('nom_module')
-            ->get();
+        if ($selectedFiliere && $selectedFiliere !== 'all') {
+            $sessionsQuery->where('id_filiere', $selectedFiliere);
+        }
+        if ($selectedAnnee && $selectedAnnee !== 'all') {
+            $sessionsQuery->where('id_annee', $selectedAnnee);
+        }
+
+        $sessions = $sessionsQuery->get();
+
+        $modulesQuery = Module::select('id_module', 'nom_module', 'code_module')
+            ->orderBy('nom_module');
+
+        if ($selectedFiliere && $selectedFiliere !== 'all') {
+            $modulesQuery->whereHas('offresFormation.section.filiere', function ($query) use ($selectedFiliere) {
+                $query->where('id_filiere', $selectedFiliere);
+            });
+        }
+        if ($selectedAnnee && $selectedAnnee !== 'all') {
+            $modulesQuery->whereHas('offresFormation', function ($query) use ($selectedAnnee) {
+                $query->where('id_annee', $selectedAnnee);
+            });
+        }
+
+        $modules = $modulesQuery->get();
 
         $salles = Salle::select('id_salle', 'code_salle', 'nom_salle', 'capacite_examens')
             ->orderBy('code_salle')
