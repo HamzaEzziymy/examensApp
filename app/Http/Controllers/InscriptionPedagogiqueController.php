@@ -105,15 +105,27 @@ class InscriptionPedagogiqueController extends Controller
         // Paginate results
         $inscriptions_pedagogiques = $inscriptionsQuery->paginate($perPage)->withQueryString();
 
-        // Filter supporting data based on selections
-        $offres_formation = OffreFormation::with([
+        // Filter offres formation by user's selected filiere
+        $offresQuery = OffreFormation::with([
             'module', 
             'semestre.niveau',
             'section.filiere'
-        ])->get();
+        ]);
+        if ($selectedFiliere && $selectedFiliere !== 'all') {
+            $offresQuery->whereHas('section.filiere', function ($query) use ($selectedFiliere) {
+                $query->where('id_filiere', $selectedFiliere);
+            });
+        }
+        $offres_formation = $offresQuery->get();
         
-        // Get modules for filter dropdown
-        $modules = Module::orderBy('nom_module')->get();
+        // Get modules for filter dropdown (also filtered by filiere)
+        $modulesQuery = Module::orderBy('nom_module');
+        if ($selectedFiliere && $selectedFiliere !== 'all') {
+            $modulesQuery->whereHas('offresFormation.section.filiere', function ($query) use ($selectedFiliere) {
+                $query->where('id_filiere', $selectedFiliere);
+            });
+        }
+        $modules = $modulesQuery->get();
         
         // Get niveaux for filter dropdown
         $niveaux = \App\Models\Niveau::orderBy('ordre')->get();
@@ -188,7 +200,7 @@ class InscriptionPedagogiqueController extends Controller
         $validator = Validator::make($request->all(), [
             'id_inscription_admin' => 'required|integer|exists:inscriptions_administratives,id_inscription_admin',
             'id_offre' => 'required|integer|exists:offre_formation,id_offre',
-            'type_inscription' => 'required|in:Normal,Credit,Anticipe',
+            'type_inscription' => 'required|in:Normal,Credit,Anticipe,Capitalisation',
             'credits_acquis' => 'nullable|integer|min:0|max:30',
         ], [
             'id_inscription_admin.required' => 'L\'inscription administrative est requise.',
@@ -196,7 +208,7 @@ class InscriptionPedagogiqueController extends Controller
             'id_offre.required' => 'L\'offre de formation est requise.',
             'id_offre.exists' => 'L\'offre de formation sélectionnée n\'existe pas.',
             'type_inscription.required' => 'Le type d\'inscription est requis.',
-            'type_inscription.in' => 'Le type d\'inscription doit être Normal, Credit ou Anticipe.',
+            'type_inscription.in' => 'Le type d\'inscription doit être Normal, Credit, Anticipe ou Capitalisation.',
             'credits_acquis.integer' => 'Les crédits acquis doivent être un nombre entier.',
             'credits_acquis.min' => 'Les crédits acquis ne peuvent pas être négatifs.',
             'credits_acquis.max' => 'Les crédits acquis ne peuvent pas dépasser 30.',
@@ -254,7 +266,7 @@ class InscriptionPedagogiqueController extends Controller
         $validator = Validator::make($request->all(), [
             'id_inscription_admin' => 'required|integer|exists:inscriptions_administratives,id_inscription_admin',
             'id_offre' => 'required|integer|exists:offre_formation,id_offre',
-            'type_inscription' => 'required|in:Normal,Credit,Anticipe',
+            'type_inscription' => 'required|in:Normal,Credit,Anticipe,Capitalisation',
             'credits_acquis' => 'nullable|integer|min:0|max:30',
         ], [
             'id_inscription_admin.required' => 'L\'inscription administrative est requise.',
@@ -262,7 +274,7 @@ class InscriptionPedagogiqueController extends Controller
             'id_offre.required' => 'L\'offre de formation est requise.',
             'id_offre.exists' => 'L\'offre de formation sélectionnée n\'existe pas.',
             'type_inscription.required' => 'Le type d\'inscription est requis.',
-            'type_inscription.in' => 'Le type d\'inscription doit être Normal, Credit ou Anticipe.',
+            'type_inscription.in' => 'Le type d\'inscription doit être Normal, Credit, Anticipe ou Capitalisation.',
             'credits_acquis.integer' => 'Les crédits acquis doivent être un nombre entier.',
             'credits_acquis.min' => 'Les crédits acquis ne peuvent pas être négatifs.',
             'credits_acquis.max' => 'Les crédits acquis ne peuvent pas dépasser 30.',
@@ -416,7 +428,7 @@ class InscriptionPedagogiqueController extends Controller
                 $validator = Validator::make($inscriptionData, [
                     'id_inscription_admin' => 'required|integer|exists:inscriptions_administratives,id_inscription_admin',
                     'id_offre' => 'required|integer|exists:offre_formation,id_offre',
-                    'type_inscription' => 'required|in:Normal,Credit,Anticipe',
+                    'type_inscription' => 'required|in:Normal,Credit,Anticipe,Capitalisation',
                     'credits_acquis' => 'nullable|integer|min:0|max:30',
                 ]);
 

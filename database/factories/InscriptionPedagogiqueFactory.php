@@ -19,7 +19,7 @@ class InscriptionPedagogiqueFactory extends Factory
         return [
             'id_inscription_admin' => $admin->id_inscription_admin,
             'id_offre'             => $offre->id_offre,
-            'type_inscription'     => $this->faker->randomElement(['Normal', 'Credit', 'Anticipe']),
+            'type_inscription'     => $this->faker->randomElement(['Normal', 'Credit', 'Anticipe', 'Capitalisation']),
             'credits_acquis'       => $this->faker->numberBetween(0, 30),
         ];
     }

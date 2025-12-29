@@ -381,40 +381,91 @@ const InscriptionPedagogiqueDataTable = ({
         const errors = [];
         const preview = data.map((row, index) => {
           const rowErrors = [];
+          const rowNumber = index + 2;
           
-          // Check for required columns
-          if (!row.id_inscription_admin && !row.cne) {
-            rowErrors.push('ID Inscription Admin ou CNE requis');
+          // Check for required CNE
+          if (!row.cne) {
+            rowErrors.push('CNE requis');
           }
           
-          if (rowErrors.length > 0) {
-            errors.push({ row: index + 2, errors: rowErrors });
+          // Check for required id_offre
+          if (!row.id_offre) {
+            rowErrors.push('ID Offre requis');
           }
 
-          // Find student by CNE if provided
+          // Find student by CNE
           let student = null;
+          let adminInscription = null;
           if (row.cne) {
-            student = etudiants.find(e => e.cne === row.cne);
-            if (!student) rowErrors.push('Étudiant non trouvé avec ce CNE');
+            student = etudiants.find(e => e.cne === String(row.cne).trim());
+            if (!student) {
+              rowErrors.push(`Étudiant avec CNE "${row.cne}" non trouvé`);
+            } else {
+              // Find admin inscription for this student
+              adminInscription = inscriptions_administratives.find(i => i.id_etudiant === student.id_etudiant);
+              if (!adminInscription) {
+                rowErrors.push(`Inscription administrative non trouvée pour CNE "${row.cne}"`);
+              }
+            }
           }
 
-          // Find admin inscription
-          let adminInscription = null;
-          if (row.id_inscription_admin) {
-            adminInscription = inscriptions_administratives.find(i => i.id_inscription_admin == row.id_inscription_admin);
-            if (!adminInscription) rowErrors.push('Inscription administrative non trouvée');
+          // Validate id_offre exists
+          let offre = null;
+          if (row.id_offre) {
+            offre = offres_formation.find(o => o.id_offre == row.id_offre);
+            if (!offre) {
+              rowErrors.push(`Offre de formation avec ID "${row.id_offre}" non trouvée`);
+            }
+          }
+
+          // Validate type_inscription if provided
+          const validTypes = ['Normal', 'Credit', 'Anticipe', 'Capitalisation'];
+          if (row.type_inscription && !validTypes.includes(row.type_inscription)) {
+            rowErrors.push(`Type d'inscription invalide: "${row.type_inscription}"`);
+          }
+
+          // Validate credits_acquis if provided
+          if (row.credits_acquis !== undefined && row.credits_acquis !== '') {
+            const credits = parseInt(row.credits_acquis);
+            if (isNaN(credits) || credits < 0 || credits > 30) {
+              rowErrors.push('Crédits acquis invalides (0-30)');
+            }
+          }
+
+          if (rowErrors.length > 0) {
+            errors.push({ row: rowNumber, errors: rowErrors });
           }
 
           return {
-            id_inscription_admin: row.id_inscription_admin || (adminInscription?.id_inscription_admin),
-            cne: row.cne || (student?.cne),
+            cne: row.cne ? String(row.cne).trim() : '',
+            id_offre: row.id_offre,
+            type_inscription: row.type_inscription || 'Normal',
+            credits_acquis: row.credits_acquis || 0,
             adminInscription: adminInscription,
-            student: student
+            student: student,
+            offre: offre,
+            hasError: rowErrors.length > 0
           };
         });
 
         setImportPreview(preview);
         setImportErrors(errors);
+
+        if (errors.length > 0) {
+          Swal.fire({
+            icon: 'warning',
+            title: 'Erreurs détectées',
+            text: `${errors.length} erreur(s) sur ${data.length} lignes. Corrigez les erreurs avant d'importer.`
+          });
+        } else {
+          Swal.fire({
+            icon: 'success',
+            title: 'Fichier valide',
+            text: `${data.length} inscription(s) prête(s) à importer.`,
+            showConfirmButton: false,
+            timer: 1500
+          });
+        }
       } catch (error) {
         Swal.fire({
           icon: 'error',
@@ -429,52 +480,35 @@ const InscriptionPedagogiqueDataTable = ({
 
   // Submit bulk import
   const handleBulkImport = () => {
-    if (!selectedImportOffre) {
-      Swal.fire({
-        icon: 'warning',
-        title: 'Champs requis',
-        text: 'Veuillez sélectionner une offre de formation'
-      });
-      return;
-    }
-
     if (importErrors.length > 0) {
       Swal.fire({
         icon: 'error',
         title: 'Erreurs détectées',
-        text: 'Veuillez corriger les erreurs avant d\'importer'
+        text: 'Veuillez corriger les erreurs dans le fichier Excel avant d\'importer'
       });
       return;
     }
 
+    // Filter valid inscriptions (those with adminInscription and offre)
     const validInscriptions = importPreview.filter(item => 
-      item.adminInscription || (item.student && inscriptions_administratives.find(i => i.id_etudiant === item.student.id_etudiant))
+      item.adminInscription && item.offre && !item.hasError
     );
 
     if (validInscriptions.length === 0) {
       Swal.fire({
         icon: 'warning',
         title: 'Aucune donnée valide',
-        text: 'Aucune inscription administrative valide trouvée'
+        text: 'Aucune inscription valide trouvée dans le fichier'
       });
       return;
     }
 
-    const inscriptionsToImport = validInscriptions.map(item => {
-      // Get admin inscription ID
-      let id_inscription_admin = item.id_inscription_admin;
-      if (!id_inscription_admin && item.student) {
-        const adminInscription = inscriptions_administratives.find(i => i.id_etudiant === item.student.id_etudiant);
-        id_inscription_admin = adminInscription?.id_inscription_admin;
-      }
-
-      return {
-        id_inscription_admin: parseInt(id_inscription_admin),
-        id_offre: parseInt(selectedImportOffre),
-        type_inscription: importType,
-        credits_acquis: parseInt(importCredits) || 0
-      };
-    });
+    const inscriptionsToImport = validInscriptions.map(item => ({
+      id_inscription_admin: parseInt(item.adminInscription.id_inscription_admin),
+      id_offre: parseInt(item.id_offre),
+      type_inscription: item.type_inscription || importType || 'Normal',
+      credits_acquis: parseInt(item.credits_acquis) || parseInt(importCredits) || 0
+    }));
     
     // Validate data before sending
     const invalidData = inscriptionsToImport.find(item => 
@@ -490,61 +524,73 @@ const InscriptionPedagogiqueDataTable = ({
       });
       return;
     }
-    
-    router.post('/inscriptions/pedagogiques/bulk-store', {
-      inscriptions: inscriptionsToImport
-    }, {
-      onSuccess: () => {
-        setShowImportModal(false);
-        setImportFile(null);
-        setImportPreview([]);
-        setImportErrors([]);
-        setSelectedImportOffre('');
-        setImportType('Normal');
-        setImportCredits(0);
-        Swal.fire({
-          icon: 'success',
-          title: 'Succès',
-          text: `${inscriptionsToImport.length} inscriptions importées avec succès`,
-          showConfirmButton: false,
-          timer: 1500
-        });
-      },
-      onError: (errors) => {
-        console.log('Import errors:', errors);
-        let errorMessage = 'Erreur lors de l\'importation';
-        
-        if (errors.error) {
-          errorMessage = errors.error;
-        } else if (errors.message) {
-          errorMessage = errors.message;
-        } else if (typeof errors === 'string') {
-          errorMessage = errors;
-        } else if (Object.keys(errors).length > 0) {
-          errorMessage = Object.values(errors).flat().join(', ');
-        }
-        
-        Swal.fire({
-          icon: 'error',
-          title: 'Erreur',
-          text: errorMessage
+
+    Swal.fire({
+      title: 'Confirmer l\'import',
+      text: `Vous allez importer ${inscriptionsToImport.length} inscription(s) pédagogique(s).`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Importer',
+      cancelButtonText: 'Annuler'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        router.post('/inscriptions/pedagogiques/bulk-store', {
+          inscriptions: inscriptionsToImport
+        }, {
+          onSuccess: () => {
+            setShowImportModal(false);
+            setImportFile(null);
+            setImportPreview([]);
+            setImportErrors([]);
+            setSelectedImportOffre('');
+            setImportType('Normal');
+            setImportCredits(0);
+            Swal.fire({
+              icon: 'success',
+              title: 'Succès',
+              text: `${inscriptionsToImport.length} inscriptions importées avec succès`,
+              showConfirmButton: false,
+              timer: 1500
+            });
+          },
+          onError: (errors) => {
+            console.log('Import errors:', errors);
+            let errorMessage = 'Erreur lors de l\'importation';
+            
+            if (errors.error) {
+              errorMessage = errors.error;
+            } else if (errors.message) {
+              errorMessage = errors.message;
+            } else if (typeof errors === 'string') {
+              errorMessage = errors;
+            } else if (Object.keys(errors).length > 0) {
+              errorMessage = Object.values(errors).flat().join(', ');
+            }
+            
+            Swal.fire({
+              icon: 'error',
+              title: 'Erreur',
+              text: errorMessage
+            });
+          }
         });
       }
     });
   };
 
-  // Download Excel template
+  // Download Excel template with all available offres
   const downloadTemplate = () => {
+    // Create template with example data
     const template = [
       {
-        'id_inscription_admin': '1',
         'cne': 'G123456789',
+        'id_offre': offres_formation[0]?.id_offre || '1',
         'type_inscription': 'Normal',
         'credits_acquis': '6'
       },
       {
-        'id_inscription_admin': '',
         'cne': 'G987654321',
+        'id_offre': offres_formation[1]?.id_offre || '2',
         'type_inscription': 'Credit',
         'credits_acquis': '3'
       }
@@ -557,14 +603,28 @@ const InscriptionPedagogiqueDataTable = ({
     // Add instructions
     const instruction = [
       ['Instructions:'],
-      ['1. Utilisez soit "id_inscription_admin" soit "cne" pour identifier l\'étudiant'],
-      ['2. "type_inscription" peut être: Normal, Credit, ou Anticipe'],
-      ['3. "credits_acquis" est optionnel (défaut: 0)'],
+      ['1. "cne" est requis pour identifier l\'étudiant'],
+      ['2. "id_offre" est requis - utilisez un ID de la feuille "Offres_Formation"'],
+      ['3. "type_inscription" peut être: Normal, Credit, Anticipe ou Capitalisation'],
+      ['4. "credits_acquis" est optionnel (défaut: 0)'],
       [''],
-      ['Note: L\'offre de formation et le module seront sélectionnés dans l\'interface d\'import']
+      ['Note: Consultez la feuille "Offres_Formation" pour les IDs disponibles']
     ];
     const ws2 = XLSX.utils.aoa_to_sheet(instruction);
     XLSX.utils.book_append_sheet(wb, ws2, 'Instructions');
+    
+    // Add offres formation sheet with all available offres
+    const offresData = offres_formation.map(offre => ({
+      'id_offre': offre.id_offre,
+      'module': offre.module?.nom_module || 'N/A',
+      'code_module': offre.module?.code_module || 'N/A',
+      'niveau': offre.semestre?.niveau?.nom_niveau || 'N/A',
+      'semestre': offre.semestre?.nom_semestre || 'N/A',
+      'filiere': offre.section?.filiere?.nom_filiere || 'N/A',
+      'section': offre.section?.nom_section || 'N/A'
+    }));
+    const ws3 = XLSX.utils.json_to_sheet(offresData);
+    XLSX.utils.book_append_sheet(wb, ws3, 'Offres_Formation');
     
     XLSX.writeFile(wb, 'template_inscriptions_pedagogiques.xlsx');
   };
@@ -590,9 +650,10 @@ const InscriptionPedagogiqueDataTable = ({
     const normal = inscriptionsData.filter(i => i.type_inscription === 'Normal').length;
     const credit = inscriptionsData.filter(i => i.type_inscription === 'Credit').length;
     const anticipe = inscriptionsData.filter(i => i.type_inscription === 'Anticipe').length;
+    const capitalisation = inscriptionsData.filter(i => i.type_inscription === 'Capitalisation').length;
     const totalCredits = inscriptionsData.reduce((sum, i) => sum + (parseInt(i.credits_acquis) || 0), 0);
     
-    return { total: totalStats, normal, credit, anticipe, totalCredits };
+    return { total: totalStats, normal, credit, anticipe, capitalisation, totalCredits };
   }, [inscriptionsData, totalCount, total]);
 
   return (
@@ -661,6 +722,7 @@ const InscriptionPedagogiqueDataTable = ({
                   <option value="Normal">Normal</option>
                   <option value="Credit">Crédit</option>
                   <option value="Anticipe">Anticipé</option>
+                  <option value="Capitalisation">Capitalisation</option>
                 </select>
               </div>
               <button
@@ -742,7 +804,7 @@ const InscriptionPedagogiqueDataTable = ({
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
           <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 transition-colors">
             <div className="flex items-center justify-between">
               <div>
@@ -779,6 +841,15 @@ const InscriptionPedagogiqueDataTable = ({
               <div className="w-10 h-10 text-yellow-500 dark:text-yellow-400 opacity-50 text-center">A</div>
             </div>
           </div>
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-md p-6 transition-colors">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-sm font-medium text-gray-600 dark:text-gray-400">Type Capitalisation</div>
+                <div className="text-2xl font-bold text-orange-600 dark:text-orange-400">{stats.capitalisation}</div>
+              </div>
+              <div className="w-10 h-10 text-orange-500 dark:text-orange-400 opacity-50 text-center">K</div>
+            </div>
+          </div>
         </div>
 
         {/* Table */}
@@ -809,7 +880,8 @@ const InscriptionPedagogiqueDataTable = ({
                     const typeColors = {
                       'Normal': 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300',
                       'Credit': 'bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300',
-                      'Anticipe': 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'
+                      'Anticipe': 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300',
+                      'Capitalisation': 'bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300'
                     };
 
                     return (
@@ -1070,6 +1142,7 @@ const InscriptionPedagogiqueDataTable = ({
                         <option value="Normal">Normal</option>
                         <option value="Credit">Crédit</option>
                         <option value="Anticipe">Anticipé</option>
+                        <option value="Capitalisation">Capitalisation</option>
                       </select>
                     </div>
 
@@ -1179,6 +1252,7 @@ const InscriptionPedagogiqueDataTable = ({
                         <option value="Normal">Normal</option>
                         <option value="Credit">Crédit</option>
                         <option value="Anticipe">Anticipé</option>
+                        <option value="Capitalisation">Capitalisation</option>
                       </select>
                     </div>
 
@@ -1225,10 +1299,10 @@ const InscriptionPedagogiqueDataTable = ({
         {/* Import Modal */}
         {showImportModal && (
           <div className="fixed inset-0 bg-black bg-opacity-50 dark:bg-opacity-70 flex items-center justify-center z-50 p-4">
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-5xl max-h-[90vh] overflow-y-auto">
               <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between sticky top-0 bg-white dark:bg-gray-800">
                 <h2 className="text-xl font-bold text-gray-900 dark:text-white">Import Excel - Inscriptions Pédagogiques</h2>
-                <button onClick={() => setShowImportModal(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                <button onClick={() => { setShowImportModal(false); setImportFile(null); setImportPreview([]); setImportErrors([]); }} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
                   <X className="w-6 h-6" />
                 </button>
               </div>
@@ -1244,33 +1318,16 @@ const InscriptionPedagogiqueDataTable = ({
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg"
                   />
                   <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                    Colonnes requises: id_inscription_admin OU cne<br />
-                    Colonnes optionnelles: type_inscription, credits_acquis
+                    Colonnes requises: <strong>cne</strong>, <strong>id_offre</strong><br />
+                    Colonnes optionnelles: type_inscription, credits_acquis<br />
+                    <span className="text-blue-600 dark:text-blue-400">Téléchargez le template pour voir la liste des offres disponibles</span>
                   </p>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Offre de Formation *
-                    </label>
-                    <select
-                      value={selectedImportOffre}
-                      onChange={(e) => setSelectedImportOffre(e.target.value)}
-                      required
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
-                    >
-                      <option value="">-- Sélectionner une offre --</option>
-                      {offres_formation.map(offre => (
-                        <option key={offre.id_offre} value={offre.id_offre}>
-                          {offre.module?.nom_module} - {offre.semestre?.niveau?.nom_niveau}({offre.semestre?.nom_semestre}) - {offre.section?.filiere?.nom_filiere} ({offre.section?.nom_section})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Type d'inscription
+                      Type d'inscription par défaut
                     </label>
                     <select
                       value={importType}
@@ -1280,71 +1337,92 @@ const InscriptionPedagogiqueDataTable = ({
                       <option value="Normal">Normal</option>
                       <option value="Credit">Crédit</option>
                       <option value="Anticipe">Anticipé</option>
+                      <option value="Capitalisation">Capitalisation</option>
                     </select>
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Utilisé si non spécifié dans le fichier</p>
                   </div>
 
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Crédits Acquis
+                      Crédits Acquis par défaut
                     </label>
                     <input
                       type="number"
                       value={importCredits}
                       onChange={(e) => setImportCredits(parseInt(e.target.value) || 0)}
                       min="0"
+                      max="30"
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
                     />
+                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Utilisé si non spécifié dans le fichier</p>
                   </div>
                 </div>
 
                 {importErrors.length > 0 && (
-                  <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
-                    <h3 className="text-red-800 dark:text-red-400 font-medium mb-2">Erreurs détectées:</h3>
-                    {importErrors.map((error, i) => (
+                  <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg max-h-40 overflow-y-auto">
+                    <h3 className="text-red-800 dark:text-red-400 font-medium mb-2">Erreurs détectées ({importErrors.length}):</h3>
+                    {importErrors.slice(0, 10).map((error, i) => (
                       <div key={i} className="text-sm text-red-700 dark:text-red-300">
                         Ligne {error.row}: {error.errors.join(', ')}
                       </div>
                     ))}
+                    {importErrors.length > 10 && (
+                      <p className="text-sm text-red-500 mt-2">... et {importErrors.length - 10} autres erreurs</p>
+                    )}
                   </div>
                 )}
 
                 {importPreview.length > 0 && (
                   <div className="mb-6">
-                    <h3 className="font-medium text-gray-900 dark:text-white mb-3">
-                      Aperçu ({importPreview.length} inscriptions)
-                    </h3>
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="font-medium text-gray-900 dark:text-white">
+                        Aperçu ({importPreview.length} lignes)
+                      </h3>
+                      <span className={`px-2 py-1 text-xs rounded-full ${importErrors.length === 0 ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'}`}>
+                        {importPreview.filter(p => !p.hasError).length} valide(s)
+                      </span>
+                    </div>
                     <div className="border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden">
-                      <div className="max-h-96 overflow-y-auto">
+                      <div className="max-h-72 overflow-y-auto">
                         <table className="w-full text-sm">
                           <thead className="bg-gray-50 dark:bg-gray-700/50 sticky top-0">
                             <tr>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">ID Inscription Admin</th>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">CNE</th>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Étudiant</th>
-                              <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Statut</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">CNE</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Étudiant</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">ID Offre</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Module</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Type</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Statut</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                             {importPreview.slice(0, 20).map((item, i) => (
-                              <tr key={i}>
-                                <td className="px-4 py-2 text-gray-900 dark:text-gray-100">{item.id_inscription_admin || '-'}</td>
-                                <td className="px-4 py-2 text-gray-900 dark:text-gray-100">{item.cne || '-'}</td>
-                                <td className="px-4 py-2 text-gray-900 dark:text-gray-100">
-                                  {item.adminInscription ? 
-                                    `${item.adminInscription.etudiant?.nom} ${item.adminInscription.etudiant?.prenom}` :
+                              <tr key={i} className={item.hasError ? 'bg-red-50 dark:bg-red-900/10' : ''}>
+                                <td className="px-3 py-2 text-gray-900 dark:text-gray-100">{item.cne || '-'}</td>
+                                <td className="px-3 py-2 text-gray-900 dark:text-gray-100">
+                                  {item.adminInscription?.etudiant ? 
+                                    `${item.adminInscription.etudiant.nom} ${item.adminInscription.etudiant.prenom}` :
                                     item.student ?
                                     `${item.student.nom} ${item.student.prenom}` :
-                                    'Non trouvé'
+                                    <span className="text-red-500">Non trouvé</span>
                                   }
                                 </td>
-                                <td className="px-4 py-2">
-                                  {item.adminInscription || item.student ? (
-                                    <span className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100">
+                                <td className="px-3 py-2 text-gray-900 dark:text-gray-100">{item.id_offre || '-'}</td>
+                                <td className="px-3 py-2 text-gray-900 dark:text-gray-100">
+                                  {item.offre ? 
+                                    <span className="text-xs">{item.offre.module?.nom_module}</span> :
+                                    <span className="text-red-500 text-xs">Offre non trouvée</span>
+                                  }
+                                </td>
+                                <td className="px-3 py-2 text-gray-900 dark:text-gray-100">{item.type_inscription}</td>
+                                <td className="px-3 py-2">
+                                  {!item.hasError && item.adminInscription && item.offre ? (
+                                    <span className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
                                       Valide
                                     </span>
                                   ) : (
-                                    <span className="px-2 py-1 text-xs rounded-full bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-100">
-                                      Invalide
+                                    <span className="px-2 py-1 text-xs rounded-full bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">
+                                      Erreur
                                     </span>
                                   )}
                                 </td>
@@ -1355,7 +1433,7 @@ const InscriptionPedagogiqueDataTable = ({
                       </div>
                       {importPreview.length > 20 && (
                         <p className="p-3 text-sm text-gray-600 dark:text-gray-400 border-t border-gray-200 dark:border-gray-700">
-                          ... et {importPreview.length - 20} autres inscriptions
+                          ... et {importPreview.length - 20} autres lignes
                         </p>
                       )}
                     </div>
@@ -1364,14 +1442,14 @@ const InscriptionPedagogiqueDataTable = ({
 
                 <div className="flex justify-end gap-3">
                   <button
-                    onClick={() => setShowImportModal(false)}
+                    onClick={() => { setShowImportModal(false); setImportFile(null); setImportPreview([]); setImportErrors([]); }}
                     className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
                   >
                     Annuler
                   </button>
                   <button
                     onClick={handleBulkImport}
-                    disabled={!selectedImportOffre || importPreview.length === 0}
+                    disabled={importPreview.length === 0 || importErrors.length > 0 || importPreview.filter(p => !p.hasError).length === 0}
                     className="px-4 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     Importer {importPreview.filter(item => item.adminInscription || item.student).length} Inscriptions
