@@ -15,15 +15,34 @@ const statusColors = {
     Annulee: '#e11d48',
 };
 
+const pad = (num) => `${num}`.padStart(2, '0');
+
+const formatLocalDate = (date) =>
+    date ? `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` : '';
+
+const formatLocalDateTime = (date) =>
+    date ? `${formatLocalDate(date)}T${pad(date.getHours())}:${pad(date.getMinutes())}` : '';
+
 const toInputDate = (value) => (value ? value.substring(0, 10) : '');
 
-const toInputDateTime = (value) => {
-    if (!value) return '';
-    const date = new Date(value);
-    const pad = (num) => `${num}`.padStart(2, '0');
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(
-        date.getMinutes(),
-    )}`;
+const toInputDateTime = (value) => (value ? formatLocalDateTime(new Date(value)) : '');
+
+const formatTimeRange = (start, end) => {
+    if (!start) return '';
+    const startLabel = `${pad(start.getHours())}:${pad(start.getMinutes())}`;
+    if (!end) return startLabel;
+    const endLabel = `${pad(end.getHours())}:${pad(end.getMinutes())}`;
+    if (startLabel === endLabel) return startLabel;
+    return `${startLabel} - ${endLabel}`;
+};
+
+const getPrimarySalleLabel = (examen) => {
+    if (!examen) return '';
+    if (examen.salle?.code_salle || examen.salle?.nom_salle) {
+        return examen.salle.code_salle ?? examen.salle.nom_salle ?? '';
+    }
+    const firstSalle = Array.isArray(examen.salles) ? examen.salles[0] : null;
+    return firstSalle?.code_salle ?? firstSalle?.nom_salle ?? '';
 };
 
 const buildPayload = (source, overrides = {}) => ({
@@ -53,26 +72,34 @@ export default function ExamensCalendar({ examens, sessions, modules, salles, st
         statut: statuts[0],
         description: '',
     });
+    const calendarEvents = useMemo(() => {
+        const semesterByModule = new Map(
+            (modules ?? []).map((module) => [
+                String(module.id_module),
+                module.semestres?.[0]?.nom_semestre ?? '',
+            ]),
+        );
 
-    const calendarEvents = useMemo(
-        () =>
-            examens.map((examen) => {
-                const color = statusColors[examen.statut] ?? '#4b5563';
-                return {
-                    id: examen.id_examen,
-                    title: `${examen.module?.code_module ?? 'Module'} - ${examen.session_examen?.nom_session ?? ''}`.trim(),
-                    start: examen.date_debut ?? examen.date_examen,
-                    end: examen.date_fin ?? examen.date_debut,
-                    backgroundColor: color,
-                    borderColor: color,
-                    textColor: '#fff',
-                    extendedProps: {
-                        examen,
-                    },
-                };
-            }),
-        [examens],
-    );
+        return examens.map((examen) => {
+            const color = statusColors[examen.statut] ?? '#4b5563';
+            const moduleName = examen.module?.nom_module ?? 'Module';
+            const semesterName = semesterByModule.get(String(examen.id_module)) || '';
+            const title = [moduleName, semesterName].filter(Boolean).join(' - ');
+
+            return {
+                id: examen.id_examen,
+                title,
+                start: examen.date_debut ?? examen.date_examen,
+                end: examen.date_fin ?? examen.date_debut,
+                backgroundColor: color,
+                borderColor: color,
+                textColor: '#fff',
+                extendedProps: {
+                    examen,
+                },
+            };
+        });
+    }, [examens, modules]);
 
     const openEditor = (examen) => {
         setData({
@@ -149,12 +176,27 @@ export default function ExamensCalendar({ examens, sessions, modules, salles, st
         }
 
         const start = info.event.start;
-        const end = info.event.end ?? start;
+        const end = info.event.end;
+        let adjustedEnd = end;
+
+        if (!adjustedEnd && start && examen?.date_debut && examen?.date_fin) {
+            const originalStart = new Date(examen.date_debut);
+            const originalEnd = new Date(examen.date_fin);
+            const durationMs = originalEnd.getTime() - originalStart.getTime();
+
+            if (Number.isFinite(durationMs) && durationMs > 0) {
+                adjustedEnd = new Date(start.getTime() + durationMs);
+            }
+        }
+
+        if (!adjustedEnd) {
+            adjustedEnd = start;
+        }
 
         const payload = buildPayload(examen, {
-            date_examen: start ? toInputDate(start.toISOString()) : buildPayload(examen).date_examen,
-            date_debut: start?.toISOString(),
-            date_fin: end?.toISOString(),
+            date_examen: start ? formatLocalDate(start) : undefined,
+            date_debut: start ? formatLocalDateTime(start) : undefined,
+            date_fin: adjustedEnd ? formatLocalDateTime(adjustedEnd) : undefined,
         });
 
         router.put(route('examens.examens.update', examen.id_examen), payload, {
@@ -175,6 +217,30 @@ export default function ExamensCalendar({ examens, sessions, modules, salles, st
         });
     };
 
+    const renderEventContent = (info) => {
+        const examen = info.event.extendedProps.examen;
+        const timeRange = formatTimeRange(info.event.start, info.event.end);
+        const salleLabel = getPrimarySalleLabel(examen);
+        const statusLabel = examen?.statut ?? '';
+        const metaText = [timeRange, salleLabel, statusLabel].filter(Boolean).join(' | ');
+
+        return (
+            <div className="min-w-0 px-1 py-0.5">
+                <div className="truncate text-xs font-semibold leading-tight">{info.event.title || 'Examen'}</div>
+                {metaText && <div className="mt-0.5 text-[11px] leading-tight opacity-90">{metaText}</div>}
+            </div>
+        );
+    };
+
+    const handleEventDidMount = (info) => {
+        const examen = info.event.extendedProps.examen;
+        const timeRange = formatTimeRange(info.event.start, info.event.end);
+        const salleLabel = getPrimarySalleLabel(examen);
+        const statusLabel = examen?.statut ?? '';
+        const metaText = [timeRange, salleLabel, statusLabel].filter(Boolean).join(' | ');
+        info.el.title = [info.event.title, metaText].filter(Boolean).join(' - ');
+    };
+
     return (
         <div id="examens-calendar" className="rounded-xl bg-white p-6 shadow dark:bg-gray-800">
             <div className="mb-4 flex items-center justify-between">
@@ -184,6 +250,18 @@ export default function ExamensCalendar({ examens, sessions, modules, salles, st
                         Faites glisser les examens pour ajuster leurs creneaux ou cliquez pour consulter.
                     </p>
                 </div>
+            </div>
+            <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-300">
+                <span className="font-semibold text-gray-700 dark:text-gray-200">Statuts</span>
+                {Object.entries(statusColors).map(([status, color]) => (
+                    <span
+                        key={status}
+                        className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white/80 px-2 py-0.5 dark:border-gray-700 dark:bg-gray-800/60"
+                    >
+                        <span className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
+                        <span className="text-gray-700 dark:text-gray-200">{status}</span>
+                    </span>
+                ))}
             </div>
 
             <FullCalendar
@@ -200,11 +278,16 @@ export default function ExamensCalendar({ examens, sessions, modules, salles, st
                 editable
                 selectable
                 droppable={false}
+                eventDisplay="block"
+                eventClassNames={() => ['rounded-md', 'shadow-sm', 'ring-1', 'ring-white/30']}
+                eventContent={renderEventContent}
                 eventClick={(info) => openEditor(info.event.extendedProps.examen)}
                 eventDrop={persistChange}
                 eventResize={persistChange}
+                eventDidMount={handleEventDidMount}
                 eventTimeFormat={{ hour: '2-digit', minute: '2-digit', hour12: false }}
                 dayMaxEventRows
+                nowIndicator
             />
 
             {editorOpen && (

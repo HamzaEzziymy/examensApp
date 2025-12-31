@@ -1,4 +1,5 @@
-﻿import { useForm } from '@inertiajs/react';
+import { useEffect, useMemo, useState } from 'react';
+import { useForm } from '@inertiajs/react';
 import Swal from 'sweetalert2';
 import InputError from '@/Components/InputError';
 
@@ -7,6 +8,8 @@ export default function PlanifierForm({
     modules,
     salles,
     statuts,
+    semestres = [],
+    niveaux = [],
     onSuccess,
     onCancel,
     asCard = true,
@@ -23,6 +26,41 @@ export default function PlanifierForm({
         statut: statuts[0],
         description: '',
     });
+    const [selectedNiveau, setSelectedNiveau] = useState('');
+    const [selectedSemestre, setSelectedSemestre] = useState('');
+
+    const filteredSemestres = useMemo(
+        () => semestres.filter((sem) => !selectedNiveau || String(sem.id_niveau) === String(selectedNiveau)),
+        [semestres, selectedNiveau],
+    );
+
+    const filteredModules = useMemo(() => {
+        return modules.filter((module) => {
+            const sems = module.semestres || [];
+            const matchesNiveau =
+                !selectedNiveau || sems.some((sem) => String(sem.id_niveau) === String(selectedNiveau));
+            const matchesSemestre =
+                !selectedSemestre || sems.some((sem) => String(sem.id_semestre) === String(selectedSemestre));
+            return matchesNiveau && matchesSemestre;
+        });
+    }, [modules, selectedNiveau, selectedSemestre]);
+
+    useEffect(() => {
+        const moduleExists = filteredModules.some((mod) => String(mod.id_module) === String(data.id_module));
+        if (!moduleExists) {
+            setData('id_module', '');
+        }
+    }, [filteredModules, data.id_module, setData]);
+
+    const handleSemestreChange = (value) => {
+        setSelectedSemestre(value);
+        if (value && !selectedNiveau) {
+            const sem = semestres.find((s) => String(s.id_semestre) === value);
+            if (sem?.id_niveau) {
+                setSelectedNiveau(String(sem.id_niveau));
+            }
+        }
+    };
 
     const submit = (event) => {
         event.preventDefault();
@@ -62,6 +100,42 @@ export default function PlanifierForm({
                     </select>
                     <InputError message={errors.id_session_examen} className="mt-1" />
                 </div>
+                <div className="grid grid-cols-2 gap-3">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Niveau</label>
+                        <select
+                            value={selectedNiveau}
+                            onChange={(e) => {
+                                setSelectedNiveau(e.target.value);
+                                setSelectedSemestre('');
+                            }}
+                            className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
+                        >
+                            <option value="">Tous</option>
+                            {niveaux.map((niveau) => (
+                                <option key={niveau.id_niveau} value={niveau.id_niveau}>
+                                    {niveau.nom_niveau}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Semestre</label>
+                        <select
+                            value={selectedSemestre}
+                            onChange={(e) => handleSemestreChange(e.target.value)}
+                            className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
+                        >
+                            <option value="">Tous</option>
+                            {filteredSemestres.map((semestre) => (
+                                <option key={semestre.id_semestre} value={semestre.id_semestre}>
+                                    {semestre.nom_niveau ? `${semestre.nom_niveau} - ` : ''}
+                                    {semestre.nom_semestre}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
                 <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Module</label>
                     <select
@@ -70,7 +144,7 @@ export default function PlanifierForm({
                         className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
                     >
                         <option value="">Selectionner</option>
-                        {modules.map((module) => (
+                        {filteredModules.map((module) => (
                             <option key={module.id_module} value={module.id_module}>
                                 {module.code_module} - {module.nom_module}
                             </option>

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useForm } from '@inertiajs/react';
 import Swal from 'sweetalert2';
 import InputError from '@/Components/InputError';
@@ -44,9 +44,11 @@ const normalizeText = (value) => {
         .replace(/[\u0300-\u036f]/g, '');
 };
 
-export default function ExamensTable({ examens, sessions, modules, salles, statuts }) {
+export default function ExamensTable({ examens, sessions, modules, salles, statuts, semestres = [], niveaux = [] }) {
     const [modalOpen, setModalOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
+    const [selectedNiveau, setSelectedNiveau] = useState('');
+    const [selectedSemestre, setSelectedSemestre] = useState('');
 
     const { data, setData, put, delete: destroy, errors, processing, reset } = useForm({
         id_examen: null,
@@ -61,7 +63,35 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
         description: '',
     });
 
+    const filteredSemestres = useMemo(
+        () => semestres.filter((sem) => !selectedNiveau || String(sem.id_niveau) === String(selectedNiveau)),
+        [semestres, selectedNiveau],
+    );
+
+    const filteredModules = useMemo(() => {
+        return modules.filter((module) => {
+            const sems = module.semestres || [];
+            const matchesNiveau =
+                !selectedNiveau || sems.some((sem) => String(sem.id_niveau) === String(selectedNiveau));
+            const matchesSemestre =
+                !selectedSemestre || sems.some((sem) => String(sem.id_semestre) === String(selectedSemestre));
+            return matchesNiveau && matchesSemestre;
+        });
+    }, [modules, selectedNiveau, selectedSemestre]);
+
+    useEffect(() => {
+        const exists = filteredModules.some((mod) => String(mod.id_module) === String(data.id_module));
+        if (!exists) {
+            setData('id_module', '');
+        }
+    }, [filteredModules, data.id_module, setData]);
+
     const openModal = (examen) => {
+        const moduleData = modules.find((m) => String(m.id_module) === String(examen.id_module));
+        const firstSem = moduleData?.semestres?.[0];
+        setSelectedNiveau(firstSem?.id_niveau ? String(firstSem.id_niveau) : '');
+        setSelectedSemestre(firstSem?.id_semestre ? String(firstSem.id_semestre) : '');
+
         setData({
             id_examen: examen.id_examen,
             id_session_examen: examen.id_session_examen ?? '',
@@ -79,6 +109,8 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
 
     const closeModal = () => {
         setModalOpen(false);
+        setSelectedNiveau('');
+        setSelectedSemestre('');
         reset();
     };
 
@@ -317,7 +349,7 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
                                         className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
                                     >
                                         <option value="">Sélectionner</option>
-                                        {modules.map((module) => (
+                                        {filteredModules.map((module) => (
                                             <option key={module.id_module} value={module.id_module}>
                                                 {module.nom_module}
                                             </option>

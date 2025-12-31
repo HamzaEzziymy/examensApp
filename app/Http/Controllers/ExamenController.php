@@ -71,9 +71,6 @@ class ExamenController extends Controller
         $sessionsQuery = SessionExamen::select('id_session_examen', 'nom_session', 'type_session', 'date_session_examen', 'id_filiere', 'id_annee')
             ->orderByDesc('date_session_examen');
 
-        if ($selectedFiliere && $selectedFiliere !== 'all') {
-            $sessionsQuery->where('id_filiere', $selectedFiliere);
-        }
         if ($selectedAnnee && $selectedAnnee !== 'all') {
             $sessionsQuery->where('id_annee', $selectedAnnee);
         }
@@ -81,20 +78,65 @@ class ExamenController extends Controller
         $sessions = $sessionsQuery->get();
 
         $modulesQuery = Module::select('id_module', 'nom_module', 'code_module')
-            ->orderBy('nom_module');
-
-        if ($selectedFiliere && $selectedFiliere !== 'all') {
-            $modulesQuery->whereHas('offresFormation.section.filiere', function ($query) use ($selectedFiliere) {
-                $query->where('id_filiere', $selectedFiliere);
+            ->with([
+                'offresFormation' => function ($query) use ($selectedFiliere, $selectedAnnee) {
+                    if ($selectedFiliere && $selectedFiliere !== 'all') {
+                        $query->whereHas('section', fn ($q) => $q->where('id_filiere', $selectedFiliere));
+                    }
+                    if ($selectedAnnee && $selectedAnnee !== 'all') {
+                        $query->where('id_annee', $selectedAnnee);
+                    }
+                },
+                'offresFormation.semestre:id_semestre,nom_semestre,id_niveau',
+                'offresFormation.semestre.niveau:id_niveau,nom_niveau',
+            ])
+            ->orderBy('nom_module')
+            ->whereHas('offresFormation', function ($query) use ($selectedFiliere, $selectedAnnee) {
+                if ($selectedFiliere && $selectedFiliere !== 'all') {
+                    $query->whereHas('section', fn ($q) => $q->where('id_filiere', $selectedFiliere));
+                }
+                if ($selectedAnnee && $selectedAnnee !== 'all') {
+                    $query->where('id_annee', $selectedAnnee);
+                }
             });
-        }
-        if ($selectedAnnee && $selectedAnnee !== 'all') {
-            $modulesQuery->whereHas('offresFormation', function ($query) use ($selectedAnnee) {
-                $query->where('id_annee', $selectedAnnee);
-            });
-        }
 
-        $modules = $modulesQuery->get();
+        $modules = $modulesQuery->get()->map(function ($module) {
+            $semestres = $module->offresFormation
+                ->map(fn ($offre) => $offre->semestre)
+                ->filter()
+                ->unique('id_semestre')
+                ->values()
+                ->map(function ($semestre) {
+                    return [
+                        'id_semestre' => $semestre->id_semestre,
+                        'nom_semestre' => $semestre->nom_semestre,
+                        'id_niveau' => $semestre->id_niveau,
+                        'nom_niveau' => $semestre->niveau?->nom_niveau,
+                    ];
+                })
+                ->values();
+
+            return [
+                'id_module' => $module->id_module,
+                'nom_module' => $module->nom_module,
+                'code_module' => $module->code_module,
+                'semestres' => $semestres,
+            ];
+        });
+
+        $semestres = $modules
+            ->flatMap(fn ($module) => $module['semestres'])
+            ->unique('id_semestre')
+            ->values();
+
+        $niveaux = $semestres
+            ->map(fn ($semestre) => [
+                'id_niveau' => $semestre['id_niveau'] ?? null,
+                'nom_niveau' => $semestre['nom_niveau'] ?? null,
+            ])
+            ->filter(fn ($niveau) => $niveau['id_niveau'])
+            ->unique('id_niveau')
+            ->values();
 
         $salles = Salle::select('id_salle', 'code_salle', 'nom_salle', 'capacite_examens')
             ->orderBy('code_salle')
@@ -106,6 +148,8 @@ class ExamenController extends Controller
             'modules' => $modules,
             'salles' => $salles,
             'statuts' => Examen::STATUTS,
+            'semestres' => $semestres,
+            'niveaux' => $niveaux,
         ];
     }
 
@@ -185,13 +229,14 @@ class ExamenController extends Controller
             ->unique()
             ->values();
 
-        $validated['id_salle'] = $validated['id_salle'] ?? $salles->first();
+        // Prefer the first selected salle as the primary one to avoid keeping stale values
+        $primarySalleId = $salles->first() ?: ($validated['id_salle'] ?? null);
+        $validated['id_salle'] = $primarySalleId ? (int) $primarySalleId : null;
 
         // Ensure at least one salle is provided
-        $allSalleIds = $salles;
-        if ($validated['id_salle']) {
-            $allSalleIds = $allSalleIds->push((int) $validated['id_salle'])->unique()->values();
-        }
+        $allSalleIds = $salles->isNotEmpty()
+            ? $salles
+            : collect([$validated['id_salle']])->filter()->values();
         if ($allSalleIds->isEmpty()) {
             return back()->with('error', 'Veuillez selectionner au moins une salle.');
         }
@@ -219,6 +264,11 @@ class ExamenController extends Controller
 
         $examen->update($validated);
         $examen->salles()->sync($allSalleIds);
+
+        RepartitionEtudiant::where('id_examen', $examen->id_examen)->delete();
+        Anonymat::where('id_examen', $examen->id_examen)->delete();
+
+        $this->generateInitialRepartition($examen, $registrations);
 
         return redirect()
             ->route('examens.examens.index')

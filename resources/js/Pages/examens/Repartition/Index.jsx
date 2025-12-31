@@ -38,9 +38,41 @@ const defaultFormState = (examenId) => ({
     observation: '',
 });
 
+const resolveExamMeta = (examen) => {
+    if (examen.semestre_id || examen.niveau_id) {
+        return {
+            semestreId: examen.semestre_id,
+            semestreNom: examen.semestre_nom,
+            niveauId: examen.niveau_id,
+            niveauNom: examen.niveau_nom,
+        };
+    }
+
+    const offres = examen.module?.offres_formation || [];
+    const session = examen.session_examen;
+    const matchedOffre =
+        offres.find((offre) => {
+            const matchFiliere = session?.id_filiere ? offre.section?.id_filiere == session.id_filiere : true;
+            const matchAnnee = session?.id_annee ? offre.id_annee == session.id_annee : true;
+            return matchFiliere && matchAnnee;
+        }) || offres[0];
+
+    const semestre = matchedOffre?.semestre;
+    const niveau = semestre?.niveau;
+
+    return {
+        semestreId: semestre?.id_semestre,
+        semestreNom: semestre?.nom_semestre,
+        niveauId: niveau?.id_niveau,
+        niveauNom: niveau?.nom_niveau,
+    };
+};
+
 export default function RepartitionIndex({ examens, repartitions, inscriptions, selectedExamenId, salles }) {
     const [editingId, setEditingId] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const [selectedNiveau, setSelectedNiveau] = useState('');
+    const [selectedSemestre, setSelectedSemestre] = useState('');
     const [columns, setColumns] = useState({
         cne: true,
         etudiant: true,
@@ -68,8 +100,8 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         setSearchTerm('');
     }, [selectedExamenId]);
 
-    const handleExamChange = (event) => {
-        const value = event.target.value;
+    const handleExamChange = (eventOrValue) => {
+        const value = typeof eventOrValue === 'string' ? eventOrValue : eventOrValue.target.value;
         router.get(
             route('surveillance.repartition-etudiants.index'),
             value ? { examen: value } : {},
@@ -166,6 +198,69 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
 
     const searchActive = searchTerm.trim().length > 0;
 
+    const examensWithMeta = useMemo(
+        () =>
+            examens.map((examen) => ({
+                examen,
+                ...resolveExamMeta(examen),
+            })),
+        [examens],
+    );
+
+    const availableNiveaux = useMemo(() => {
+        const map = new Map();
+        examensWithMeta.forEach(({ niveauId, niveauNom }) => {
+            if (!niveauId) return;
+            if (!map.has(niveauId)) {
+                map.set(niveauId, {
+                    id: niveauId,
+                    nom: niveauNom || `Niveau ${niveauId}`,
+                });
+            }
+        });
+        return Array.from(map.values()).sort((a, b) => a.nom.localeCompare(b.nom));
+    }, [examensWithMeta]);
+
+    const availableSemestres = useMemo(() => {
+        const map = new Map();
+        examensWithMeta.forEach(({ semestreId, semestreNom, niveauId }) => {
+            if (!semestreId) return;
+            if (selectedNiveau && String(niveauId) !== String(selectedNiveau)) return;
+            if (!map.has(semestreId)) {
+                map.set(semestreId, {
+                    id: semestreId,
+                    nom: semestreNom || `Semestre ${semestreId}`,
+                    niveauId,
+                });
+            }
+        });
+        return Array.from(map.values()).sort((a, b) => a.nom.localeCompare(b.nom));
+    }, [examensWithMeta, selectedNiveau]);
+
+    const filteredExamens = useMemo(() => {
+        return examensWithMeta
+            .filter(({ niveauId, semestreId }) => {
+                if (selectedNiveau && String(niveauId) !== String(selectedNiveau)) {
+                    return false;
+                }
+                if (selectedSemestre && String(semestreId) !== String(selectedSemestre)) {
+                    return false;
+                }
+                return true;
+            })
+            .map(({ examen }) => examen);
+    }, [examensWithMeta, selectedNiveau, selectedSemestre]);
+
+    useEffect(() => {
+        if (filteredExamens.length === 0) return;
+
+        const selectedId = selectedExamenId ? String(selectedExamenId) : '';
+        const exists = filteredExamens.some((examen) => String(examen.id_examen) === selectedId);
+        if (!exists) {
+            handleExamChange(String(filteredExamens[0].id_examen));
+        }
+    }, [filteredExamens, selectedExamenId]);
+
     const resetForm = () => {
         setEditingId(null);
         setData(() => defaultFormState(selectedExamenId));
@@ -259,14 +354,62 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         window.open(url, '_blank');
     };
 
-    const handleCollectiveExport = () => {
+    const handleCollectiveExport = async () => {
         if (!selectedExamenId) {
             Swal.fire({ icon: 'info', title: 'Choisissez un examen' });
             return;
         }
 
-        const url = route('surveillance.repartition-etudiants.export-collective', selectedExamenId);
-        window.open(url, '_blank');
+        const salleIndices = Array.from(
+            new Set(
+                repartitions.map((item) => {
+                    const str = String(item.code_grille ?? '').padStart(7, '0');
+                    const digit = Number(str.charAt(3));
+                    return Number.isNaN(digit) || digit < 1 ? 1 : digit;
+                }),
+            ),
+        ).sort((a, b) => a - b);
+
+        if (salleIndices.length === 0) {
+            Swal.fire({ icon: 'info', title: 'Aucune repartition pour cet examen' });
+            return;
+        }
+
+        const baseUrl = route('surveillance.repartition-etudiants.export-collective', selectedExamenId);
+        for (const index of salleIndices) {
+            const url = `${baseUrl}?salle_index=${index}`;
+            try {
+                const response = await fetch(url, { credentials: 'same-origin' });
+                if (!response.ok) {
+                    throw new Error(`Erreur serveur (${response.status})`);
+                }
+
+                const blob = await response.blob();
+                const disposition = response.headers.get('Content-Disposition') || '';
+                const match = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/i.exec(disposition);
+                const filename = match
+                    ? match[1].replace(/['"]/g, '')
+                    : `presence-collective-salle-${index}.pdf`;
+
+                const blobUrl = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = blobUrl;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                window.URL.revokeObjectURL(blobUrl);
+
+                await new Promise((resolve) => setTimeout(resolve, 200));
+            } catch (error) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Echec du telechargement',
+                    text: error?.message || 'Impossible de telecharger les PDFs.',
+                });
+                break;
+            }
+        }
     };
 
     const handleSallesPlacesExport = () => {
@@ -289,6 +432,41 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
 
             <div className="mb-6 grid gap-4 rounded-xl border border-gray-200 bg-white/90 p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900 md:grid-cols-3">
                 <div className="md:col-span-2 space-y-3">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Niveau</label>
+                            <select
+                                value={selectedNiveau}
+                                onChange={(event) => {
+                                    setSelectedNiveau(event.target.value);
+                                    setSelectedSemestre('');
+                                }}
+                                className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:bg-slate-800 dark:text-white"
+                            >
+                                <option value="">Tous</option>
+                                {availableNiveaux.map((niveau) => (
+                                    <option key={niveau.id} value={niveau.id}>
+                                        {niveau.nom}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Semestre</label>
+                            <select
+                                value={selectedSemestre}
+                                onChange={(event) => setSelectedSemestre(event.target.value)}
+                                className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:bg-slate-800 dark:text-white"
+                            >
+                                <option value="">Tous</option>
+                                {availableSemestres.map((semestre) => (
+                                    <option key={semestre.id} value={semestre.id}>
+                                        {semestre.nom}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Selectionnez un examen</label>
                         <select
@@ -297,7 +475,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                             className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:bg-slate-800 dark:text-white"
                         >
                             <option value="">-- Choisir un examen --</option>
-                            {examens.map((examen) => (
+                            {filteredExamens.map((examen) => (
                                 <option key={examen.id_examen} value={examen.id_examen}>
                                     {examen.module?.nom_module ?? 'Module'} - {examen.session_examen?.nom_session ?? 'Session'} - {new Date(examen.date_examen).toLocaleDateString()}
                                 </option>
@@ -656,5 +834,3 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         </AuthenticatedLayout>
     );
 }
-
-
