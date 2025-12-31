@@ -578,6 +578,68 @@ const InscriptionPedagogiqueDataTable = ({
     });
   };
 
+  // Export import preview data to Excel
+  const exportImportPreview = (type) => {
+    let dataToExport = [];
+    let filename = '';
+
+    if (type === 'all') {
+      dataToExport = importPreview;
+      filename = 'inscriptions_pedagogiques_import_apercu.xlsx';
+    } else if (type === 'valid') {
+      dataToExport = importPreview.filter(p => !p.hasError);
+      filename = 'inscriptions_pedagogiques_valides.xlsx';
+    } else if (type === 'invalid') {
+      dataToExport = importPreview.filter(p => p.hasError);
+      filename = 'inscriptions_pedagogiques_invalides.xlsx';
+    }
+
+    if (dataToExport.length === 0) {
+      Swal.fire({
+        icon: 'warning',
+        title: 'Aucune donnée',
+        text: 'Aucune donnée à exporter'
+      });
+      return;
+    }
+
+    const exportData = dataToExport.map((item, index) => {
+      const originalIndex = importPreview.indexOf(item);
+      const errorInfo = importErrors.find(e => e.row === originalIndex + 2);
+      return {
+        'Ligne': originalIndex + 2,
+        'CNE': item.cne || '',
+        'Nom': item.adminInscription?.etudiant?.nom || item.student?.nom || '',
+        'Prénom': item.adminInscription?.etudiant?.prenom || item.student?.prenom || '',
+        'ID Offre': item.id_offre || '',
+        'Module': item.offre?.module?.nom_module || '',
+        'Code Module': item.offre?.module?.code_module || '',
+        'Niveau': item.offre?.semestre?.niveau?.nom_niveau || '',
+        'Semestre': item.offre?.semestre?.nom_semestre || '',
+        'Section': item.offre?.section?.nom_section || '',
+        'Filière': item.offre?.section?.filiere?.nom_filiere || '',
+        'Type Inscription': item.type_inscription || '',
+        'Crédits Acquis': item.credits_acquis || 0,
+        'Statut': item.hasError ? 'Invalide' : 'Valide',
+        'Erreurs': errorInfo ? errorInfo.errors.join('; ') : ''
+      };
+    });
+
+    const ws = XLSX.utils.json_to_sheet(exportData);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Inscriptions');
+    
+    XLSX.writeFile(wb, filename);
+
+    Swal.fire({
+      icon: 'success',
+      title: 'Export réussi',
+      text: `${dataToExport.length} ligne(s) exportée(s)`,
+      showConfirmButton: false,
+      timer: 1500
+    });
+  };
+
   // Download Excel template with all available offres
   const downloadTemplate = () => {
     // Create template with example data
@@ -1378,26 +1440,63 @@ const InscriptionPedagogiqueDataTable = ({
                       <h3 className="font-medium text-gray-900 dark:text-white">
                         Aperçu ({importPreview.length} lignes)
                       </h3>
-                      <span className={`px-2 py-1 text-xs rounded-full ${importErrors.length === 0 ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'}`}>
-                        {importPreview.filter(p => !p.hasError).length} valide(s)
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2 py-1 text-xs rounded-full ${importErrors.length === 0 ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'}`}>
+                          {importPreview.filter(p => !p.hasError).length} valide(s)
+                        </span>
+                        <span className="px-2 py-1 text-xs rounded-full bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">
+                          {importPreview.filter(p => p.hasError).length} invalide(s)
+                        </span>
+                      </div>
                     </div>
+                    
+                    {/* Export buttons */}
+                    <div className="flex gap-2 mb-3">
+                      <button
+                        onClick={() => exportImportPreview('all')}
+                        className="flex items-center gap-1 px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
+                      >
+                        <Download className="w-4 h-4" />
+                        Exporter tout ({importPreview.length})
+                      </button>
+                      <button
+                        onClick={() => exportImportPreview('valid')}
+                        disabled={importPreview.filter(p => !p.hasError).length === 0}
+                        className="flex items-center gap-1 px-3 py-1.5 text-sm bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-lg hover:bg-green-200 dark:hover:bg-green-900/50 disabled:opacity-50"
+                      >
+                        <Download className="w-4 h-4" />
+                        Exporter valides ({importPreview.filter(p => !p.hasError).length})
+                      </button>
+                      <button
+                        onClick={() => exportImportPreview('invalid')}
+                        disabled={importPreview.filter(p => p.hasError).length === 0}
+                        className="flex items-center gap-1 px-3 py-1.5 text-sm bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-lg hover:bg-red-200 dark:hover:bg-red-900/50 disabled:opacity-50"
+                      >
+                        <Download className="w-4 h-4" />
+                        Exporter invalides ({importPreview.filter(p => p.hasError).length})
+                      </button>
+                    </div>
+
                     <div className="border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden">
-                      <div className="max-h-72 overflow-y-auto">
+                      <div className="max-h-96 overflow-y-auto">
                         <table className="w-full text-sm">
                           <thead className="bg-gray-50 dark:bg-gray-700/50 sticky top-0">
                             <tr>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">#</th>
                               <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">CNE</th>
                               <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Étudiant</th>
                               <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">ID Offre</th>
                               <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Module</th>
                               <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Type</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Crédits</th>
                               <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Statut</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Erreur</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                            {importPreview.slice(0, 20).map((item, i) => (
+                            {importPreview.map((item, i) => (
                               <tr key={i} className={item.hasError ? 'bg-red-50 dark:bg-red-900/10' : ''}>
+                                <td className="px-3 py-2 text-gray-500 dark:text-gray-400 text-xs">{i + 2}</td>
                                 <td className="px-3 py-2 text-gray-900 dark:text-gray-100">{item.cne || '-'}</td>
                                 <td className="px-3 py-2 text-gray-900 dark:text-gray-100">
                                   {item.adminInscription?.etudiant ? 
@@ -1411,10 +1510,11 @@ const InscriptionPedagogiqueDataTable = ({
                                 <td className="px-3 py-2 text-gray-900 dark:text-gray-100">
                                   {item.offre ? 
                                     <span className="text-xs">{item.offre.module?.nom_module}</span> :
-                                    <span className="text-red-500 text-xs">Offre non trouvée</span>
+                                    <span className="text-red-500 text-xs">Non trouvée</span>
                                   }
                                 </td>
                                 <td className="px-3 py-2 text-gray-900 dark:text-gray-100">{item.type_inscription}</td>
+                                <td className="px-3 py-2 text-gray-900 dark:text-gray-100">{item.credits_acquis}</td>
                                 <td className="px-3 py-2">
                                   {!item.hasError && item.adminInscription && item.offre ? (
                                     <span className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
@@ -1426,16 +1526,14 @@ const InscriptionPedagogiqueDataTable = ({
                                     </span>
                                   )}
                                 </td>
+                                <td className="px-3 py-2 text-xs text-red-600 dark:text-red-400 max-w-xs truncate">
+                                  {item.hasError ? importErrors.find(e => e.row === i + 2)?.errors.join(', ') : '-'}
+                                </td>
                               </tr>
                             ))}
                           </tbody>
                         </table>
                       </div>
-                      {importPreview.length > 20 && (
-                        <p className="p-3 text-sm text-gray-600 dark:text-gray-400 border-t border-gray-200 dark:border-gray-700">
-                          ... et {importPreview.length - 20} autres lignes
-                        </p>
-                      )}
                     </div>
                   </div>
                 )}
