@@ -40,6 +40,9 @@
         $sessionName = $sessionName ?? ($examen->sessionExamen->nom_session ?? '-');
         $semesterName = $examen->module->offresFormation->first()->semestre->nom_semestre ?? null;
         $periodLabel = optional($examen->date_examen)->format('F Y');
+        $primaryOffre = $examen->module->offresFormation->first();
+        $filiereName = $primaryOffre?->section?->filiere?->nom_filiere;
+        $sectionName = $primaryOffre?->section?->nom_section;
     @endphp
 
     @foreach($groups as $groupIndex => $group)
@@ -50,10 +53,17 @@
                 <div class="date">Fes le : {{ $generatedAt->format('d/m/Y') }}</div>
             </div>
 
-            <h1>REPARTITION COLLECTIVE</h1>
-            <h2>{{ $niveauFiliere ?: ($examen->module->nom_module ?? 'Module') }}</h2>
+            <h1>Liste de Presence</h1>
+            <h2>
+                {{ $niveauFiliere ?: ($examen->module->nom_module ?? 'Module') }}
+                @if($sectionName)
+                    - Section {{ $sectionName }}
+                @endif
+            </h2>
 
             <table class="info-table">
+
+                
                 <tr>
                     <td class="label">Semestres</td>
                     <td class="value">{{ $modules->pluck('semestre')->filter()->unique()->implode(' | ') }}</td>

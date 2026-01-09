@@ -4,7 +4,8 @@ import Modal from '@/Components/Modal';
 import { Head, router, useForm } from '@inertiajs/react';
 import { useEffect, useMemo, useState } from 'react';
 import CorrectionHeader from '../Header';
-import { ClipboardCheck, Edit3, FileSignature, Gauge, Trash2, Upload, Users } from 'lucide-react';
+import { ClipboardCheck, Download, Edit3, FileSignature, Gauge, Trash2, Upload, Users } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 const gradeTone = (value) => {
     if (value === null || value === undefined) {
@@ -25,6 +26,66 @@ const defaultNoteState = () => ({
     commentaire: '',
 });
 
+const sanitizeFileName = (value) =>
+    (value || '')
+        .toString()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^A-Za-z0-9._-]+/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_|_$/g, '');
+
+const ensureXlsxExtension = (value) => {
+    const trimmed = value?.trim() ?? '';
+    if (!trimmed) return 'modele_notes.xlsx';
+    return trimmed.toLowerCase().endsWith('.xlsx') ? trimmed : `${trimmed}.xlsx`;
+};
+
+const formatModuleLabel = (examen) => {
+    const parts = [examen?.module?.code_module, examen?.module?.nom_module].filter(Boolean);
+    return parts.length ? parts.join(' - ') : '--';
+};
+
+const formatStudentLabel = (student) => {
+    if (!student) return '';
+    return `${student.nom ?? ''} ${student.prenom ?? ''}`.trim();
+};
+
+const defaultTemplateName = (examen) => {
+    const parts = [
+        sanitizeFileName(examen?.session_examen?.nom_session),
+        sanitizeFileName(examen?.module?.code_module),
+        sanitizeFileName(examen?.module?.nom_module),
+    ].filter(Boolean);
+
+    const base = parts.length ? parts.join('_') : 'modele_notes';
+    return ensureXlsxExtension(base);
+};
+
+const buildTemplateSheetData = (anonymats, examen) => {
+    const header = ['code_anonymat', 'note', 'commentaire', 'etudiant', 'cne'];
+    const meta = [
+        ['', 'Module', formatModuleLabel(examen)],
+        ['', 'Session', examen?.session_examen?.nom_session ?? '--'],
+        ['', 'Total anonymats', anonymats?.length ?? 0],
+        ['', 'Instruction', 'Remplir note/commentaire ; ne pas modifier code_anonymat.'],
+        [''],
+    ];
+
+    const rows = (anonymats ?? []).map((anon) => {
+        const student = anon.inscription_pedagogique?.etudiant;
+        return [
+            anon.code_anonymat ?? '',
+            '',
+            '',
+            formatStudentLabel(student),
+            student?.cne ?? '',
+        ];
+    });
+
+    return [header, ...meta, ...rows];
+};
+
 export default function NotesIndex({
     examens = [],
     selectedExamenId,
@@ -36,6 +97,7 @@ export default function NotesIndex({
     const [searchTerm, setSearchTerm] = useState('');
     const [editingId, setEditingId] = useState(null);
     const [showImport, setShowImport] = useState(false);
+    const [templateName, setTemplateName] = useState('');
     const noteForm = useForm(defaultNoteState());
     const importForm = useForm({
         id_correcteur: '',
@@ -89,6 +151,10 @@ export default function NotesIndex({
         resetForm();
     }, [selectedExamenId]);
 
+    useEffect(() => {
+        setTemplateName(defaultTemplateName(selectedExamen));
+    }, [selectedExamenId, selectedExamen]);
+
     const startEdit = (note) => {
         setEditingId(note.id_note);
         noteForm.setData({
@@ -131,6 +197,37 @@ export default function NotesIndex({
             preserveScroll: true,
             onSuccess: resetForm,
         });
+    };
+
+    const generateTemplate = () => {
+        if (!selectedExamen) {
+            window.alert('Choisissez un examen pour generer le fichier.');
+            return;
+        }
+
+        if (!availableAnonymats.length) {
+            window.alert('Aucun anonymat disponible pour cet examen.');
+            return;
+        }
+
+        const workbook = XLSX.utils.book_new();
+        const sheetData = buildTemplateSheetData(availableAnonymats, selectedExamen);
+        const worksheet = XLSX.utils.aoa_to_sheet(sheetData);
+
+        worksheet['!cols'] = [
+            { wch: 18 },
+            { wch: 10 },
+            { wch: 28 },
+            { wch: 32 },
+            { wch: 16 },
+        ];
+
+        const desiredName = ensureXlsxExtension(
+            sanitizeFileName(templateName) || defaultTemplateName(selectedExamen)
+        );
+
+        XLSX.utils.book_append_sheet(workbook, worksheet, 'Notes');
+        XLSX.writeFile(workbook, desiredName);
     };
 
     return (
@@ -293,13 +390,21 @@ export default function NotesIndex({
                             </button>
                         </div>
                         <p className="text-xs text-gray-600 dark:text-gray-300">
-                            Chargez un fichier (csv; separateur point-virgule) avec les colonnes:
+                            Chargez un fichier CSV ou Excel (.csv, .xlsx) contenant les colonnes
                             <code className="mx-1 rounded bg-gray-100 px-1 dark:bg-gray-700">code_anonymat</code>,
                             <code className="mx-1 rounded bg-gray-100 px-1 dark:bg-gray-700">note</code>,
                             <code className="mx-1 rounded bg-gray-100 px-1 dark:bg-gray-700">commentaire</code>.
-                            Les anonymats inconnus ou notes hors plage 0-20 sont ignores.
+                            Utilisez le bouton « Excel correcteur » pour recuperer un modele pre-rempli.
                         </p>
                     </div>
+
+                    <TemplateCard
+                        templateName={templateName}
+                        onTemplateNameChange={setTemplateName}
+                        onGenerate={generateTemplate}
+                        examen={selectedExamen}
+                        anonymatCount={availableAnonymats.length}
+                    />
 
                     <div className="rounded-xl bg-white p-4 shadow dark:bg-gray-800">
                         <div className="mb-3 text-sm font-semibold text-gray-800 dark:text-gray-100">Correcteurs</div>
@@ -528,6 +633,54 @@ export default function NotesIndex({
     );
 }
 
+function TemplateCard({ templateName, onTemplateNameChange, onGenerate, examen, anonymatCount }) {
+    const disabled = !examen || anonymatCount === 0;
+
+    return (
+        <div className="rounded-xl bg-white p-4 shadow dark:bg-gray-800">
+            <div className="mb-3 flex items-center justify-between">
+                <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">Excel correcteur</div>
+                <button
+                    type="button"
+                    onClick={onGenerate}
+                    disabled={disabled}
+                    className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                    <Download size={14} />
+                    Generer
+                </button>
+            </div>
+            <p className="text-xs text-gray-600 dark:text-gray-300">
+                Genere un fichier .xlsx pre-rempli pour les correcteurs (code anonymat, note, commentaire).
+                Selectionnez un examen puis cliquez sur Generer.
+            </p>
+            <div className="mt-3 space-y-2">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-200">Nom du fichier</label>
+                <input
+                    type="text"
+                    value={templateName}
+                    onChange={(e) => onTemplateNameChange(e.target.value)}
+                    className="w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
+                    placeholder={defaultTemplateName(examen)}
+                />
+                <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                    Extension .xlsx ajoutee automatiquement. Les metadonnees en haut du fichier sont ignorees a l&apos;import.
+                </p>
+            </div>
+            <div className="mt-3 rounded-lg bg-gray-50 p-3 text-xs text-gray-700 dark:bg-gray-900/40 dark:text-gray-200">
+                <div className="flex items-center justify-between">
+                    <span>Module</span>
+                    <span className="font-semibold text-gray-800 dark:text-gray-100">{formatModuleLabel(examen)}</span>
+                </div>
+                <div className="mt-1 flex items-center justify-between">
+                    <span>Anonymats</span>
+                    <span className="font-semibold text-gray-800 dark:text-gray-100">{anonymatCount ?? 0}</span>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 function SummaryCard({ title, value, icon, tone }) {
     return (
         <div className="rounded-xl bg-white p-4 shadow dark:bg-gray-800">
@@ -541,6 +694,45 @@ function SummaryCard({ title, value, icon, tone }) {
 }
 
 function ImportModal({ open, onClose, form, correcteurs }) {
+    const [fileHint, setFileHint] = useState('');
+
+    const handleFileChange = (event) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        const extension = (file.name.split('.').pop() || '').toLowerCase();
+        if (['xlsx', 'xls'].includes(extension)) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const workbook = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+                    const firstSheet = workbook.SheetNames?.[0];
+                    if (!firstSheet) {
+                        setFileHint('Feuille Excel vide.');
+                        form.setData('file', null);
+                        return;
+                    }
+
+                    const csv = XLSX.utils.sheet_to_csv(workbook.Sheets[firstSheet], { FS: ';' });
+                    const safeName = `${file.name.replace(/\.[^.]+$/, '')}.csv`;
+                    const csvFile = new File([csv], safeName, { type: 'text/csv' });
+
+                    form.setData('file', csvFile);
+                    setFileHint('Fichier Excel converti automatiquement en CSV.');
+                } catch (error) {
+                    console.error('Conversion Excel -> CSV echouee', error);
+                    setFileHint('Conversion impossible. Merci de fournir un fichier CSV.');
+                    form.setData('file', null);
+                }
+            };
+            reader.readAsArrayBuffer(file);
+            return;
+        }
+
+        setFileHint('');
+        form.setData('file', file);
+    };
+
     return (
         <Modal show={open} onClose={onClose} maxWidth="md">
             <div className="p-6">
@@ -553,7 +745,10 @@ function ImportModal({ open, onClose, form, correcteurs }) {
                     </div>
                     <button
                         type="button"
-                        onClick={onClose}
+                        onClick={() => {
+                            setFileHint('');
+                            onClose();
+                        }}
                         className="rounded-lg px-3 py-1 text-sm text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
                     >
                         Fermer
@@ -568,6 +763,7 @@ function ImportModal({ open, onClose, form, correcteurs }) {
                             preserveScroll: true,
                             onSuccess: () => {
                                 form.reset();
+                                setFileHint('');
                                 onClose();
                             },
                         });
@@ -593,17 +789,23 @@ function ImportModal({ open, onClose, form, correcteurs }) {
                         <label className="text-sm font-medium text-gray-700 dark:text-gray-200">Fichier CSV/Excel</label>
                         <input
                             type="file"
-                            accept=".csv,.txt"
-                            onChange={(e) => form.setData('file', e.target.files[0])}
+                            accept=".csv,.txt,.xlsx,.xls"
+                            onChange={handleFileChange}
                             className="mt-1 w-full text-sm text-gray-700 file:mr-3 file:rounded-md file:border-0 file:bg-indigo-600 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white hover:file:bg-indigo-500 dark:text-gray-200"
                         />
                         <InputError message={form.errors.file} className="mt-1" />
+                        {fileHint && (
+                            <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
+                                {fileHint}
+                            </p>
+                        )}
                     </div>
                     <div className="flex justify-end gap-3">
                         <button
                             type="button"
                             onClick={() => {
                                 form.reset();
+                                setFileHint('');
                                 onClose();
                             }}
                             className="rounded-lg px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"

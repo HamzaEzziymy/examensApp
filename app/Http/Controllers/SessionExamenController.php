@@ -13,10 +13,20 @@ class SessionExamenController extends Controller
 {
     public function index()
     {
+        $userFiliereAnnee = auth()->user()?->userFiliereAnnees()->first();
+        $selectedFiliere = $userFiliereAnnee?->id_filiere;
+        $selectedAnnee = $userFiliereAnnee?->id_annee;
+
         $sessions = SessionExamen::with([
                 'filiere:id_filiere,nom_filiere',
                 'anneeUniversitaire:id_annee,annee_univ',
             ])
+            ->when($selectedFiliere && $selectedFiliere !== 'all', function ($query) use ($selectedFiliere) {
+                $query->where('id_filiere', $selectedFiliere);
+            })
+            ->when($selectedAnnee && $selectedAnnee !== 'all', function ($query) use ($selectedAnnee) {
+                $query->where('id_annee', $selectedAnnee);
+            })
             ->orderByDesc('date_session_examen')
             ->get();
 

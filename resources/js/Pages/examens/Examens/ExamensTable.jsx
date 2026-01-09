@@ -49,13 +49,17 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
     const [searchTerm, setSearchTerm] = useState('');
     const [selectedNiveau, setSelectedNiveau] = useState('');
     const [selectedSemestre, setSelectedSemestre] = useState('');
+    const [allocations, setAllocations] = useState({});
 
-    const { data, setData, put, delete: destroy, errors, processing, reset } = useForm({
+    const { data, setData, put, delete: destroy, errors, processing, reset, transform } = useForm({
         id_examen: null,
         id_session_examen: '',
         id_module: '',
         id_salle: '',
         salles: [],
+        effectif_prevu: '',
+        bareme_salle: '',
+        repartition_salles: [],
         date_examen: '',
         date_debut: '',
         date_fin: '',
@@ -79,12 +83,44 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
         });
     }, [modules, selectedNiveau, selectedSemestre]);
 
+    const selectedSalles = useMemo(
+        () => salles.filter((salle) => data.salles.includes(String(salle.id_salle))),
+        [salles, data.salles],
+    );
+
     useEffect(() => {
         const exists = filteredModules.some((mod) => String(mod.id_module) === String(data.id_module));
         if (!exists) {
             setData('id_module', '');
         }
     }, [filteredModules, data.id_module, setData]);
+
+    useEffect(() => {
+        setAllocations((current) => {
+            const next = {};
+            data.salles.forEach((id) => {
+                if (current[id] !== undefined) {
+                    next[id] = current[id];
+                }
+            });
+            return next;
+        });
+    }, [data.salles]);
+
+    useEffect(() => {
+        transform((currentData) => ({
+            ...currentData,
+            repartition_salles: (currentData.salles || [])
+                .map((id) => {
+                    const value = allocations[id];
+                    return {
+                        id_salle: Number(id),
+                        nombre: value ? Number(value) : null,
+                    };
+                })
+                .filter((row) => row.nombre),
+        }));
+    }, [allocations, data.salles, transform]);
 
     const openModal = (examen) => {
         const moduleData = modules.find((m) => String(m.id_module) === String(examen.id_module));
@@ -98,12 +134,15 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
             id_module: examen.id_module ?? '',
             id_salle: examen.id_salle ?? '',
             salles: (examen.salles || []).map((s) => String(s.id_salle)),
+            effectif_prevu: examen.effectif_prevu ?? '',
+            bareme_salle: examen.bareme_salle ?? '',
             date_examen: toInputDate(examen.date_examen),
             date_debut: toInputDateTime(examen.date_debut),
             date_fin: toInputDateTime(examen.date_fin),
             statut: examen.statut,
             description: examen.description ?? '',
         });
+        setAllocations({});
         setModalOpen(true);
     };
 
@@ -111,6 +150,7 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
         setModalOpen(false);
         setSelectedNiveau('');
         setSelectedSemestre('');
+        setAllocations({});
         reset();
     };
 
@@ -401,6 +441,113 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
                                     </select>
                                     <InputError message={errors.statut} className="mt-1" />
                                 </div>
+                            </div>
+
+                            <div className="grid gap-4 sm:grid-cols-2">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-100">Effectif attendu</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        value={data.effectif_prevu}
+                                        onChange={(e) => setData('effectif_prevu', e.target.value)}
+                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
+                                    />
+                                    <InputError message={errors.effectif_prevu} className="mt-1" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-100">Bareme par salle</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        value={data.bareme_salle}
+                                        onChange={(e) => setData('bareme_salle', e.target.value)}
+                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
+                                    />
+                                    <InputError message={errors.bareme_salle} className="mt-1" />
+                                </div>
+                            </div>
+
+                            <div className="rounded-lg border border-dashed border-gray-300 p-4 dark:border-gray-700">
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                                    <div>
+                                        <p className="text-sm font-medium text-gray-800 dark:text-gray-100">Repartition par salle (optionnel)</p>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                                            Laissez vide pour l&apos;equilibrage automatique. Renseignez un nombre pour imposer l&apos;effectif par salle.
+                                        </p>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                if (!selectedSalles.length) return;
+                                                const totalStudents =
+                                                    Number(data.effectif_prevu) ||
+                                                    selectedSalles.reduce(
+                                                        (sum, salle) => sum + (salle.capacite_examens ?? salle.capacite ?? 0),
+                                                        0,
+                                                    );
+                                                let remaining = totalStudents;
+                                                const next = {};
+
+                                                selectedSalles.forEach((salle, index) => {
+                                                    const roomsLeft = selectedSalles.length - index;
+                                                    const capacity = salle.capacite_examens ?? salle.capacite ?? remaining;
+                                                    const target = Math.ceil(remaining / Math.max(1, roomsLeft));
+                                                    const take = Math.min(capacity > 0 ? capacity : remaining, target, remaining);
+                                                    next[String(salle.id_salle)] = remaining > 0 ? take : '';
+                                                    remaining -= take;
+                                                });
+
+                                                setAllocations(next);
+                                            }}
+                                            disabled={!selectedSalles.length}
+                                            className="rounded-lg border border-indigo-200 px-3 py-1.5 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-indigo-500/40 dark:text-indigo-100 dark:hover:bg-indigo-900/40"
+                                        >
+                                            Equilibrer
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setAllocations({})}
+                                            className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+                                        >
+                                            Vider
+                                        </button>
+                                    </div>
+                                </div>
+
+                                {selectedSalles.length > 0 ? (
+                                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                                        {selectedSalles.map((salle) => (
+                                            <div key={salle.id_salle} className="rounded-lg border border-gray-200 p-3 dark:border-gray-700">
+                                                <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">
+                                                    {salle.nom_salle} ({salle.code_salle})
+                                                </div>
+                                                <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                                    Capacite : {salle.capacite_examens ?? salle.capacite ?? 'N/C'}
+                                                </div>
+                                                <input
+                                                    type="number"
+                                                    min="1"
+                                                    value={allocations[String(salle.id_salle)] ?? ''}
+                                                    onChange={(e) =>
+                                                        setAllocations((prev) => ({
+                                                            ...prev,
+                                                            [String(salle.id_salle)]: e.target.value,
+                                                        }))
+                                                    }
+                                                    className="mt-2 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
+                                                    placeholder="Ex: 80"
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <p className="mt-3 text-xs text-gray-500 dark:text-gray-400">
+                                        Choisissez des salles pour definir la repartition.
+                                    </p>
+                                )}
+                                <InputError message={errors.repartition_salles} className="mt-2" />
                             </div>
 
                             <div className="grid gap-4 sm:grid-cols-2">

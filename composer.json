@@ -13,6 +13,7 @@
         "laravel/telescope": "^5.15",
         "laravel/tinker": "^2.10.1",
         "mikehaertl/php-pdftk": "^0.14.2",
+        "phpoffice/phpspreadsheet": "^5.3",
         "spatie/laravel-pdf": "^1.8",
         "tightenco/ziggy": "^2.0"
     },
