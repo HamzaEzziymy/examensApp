@@ -25,12 +25,16 @@ class Examen extends Model
         'date_debut',
         'date_fin',
         'statut',
+        'effectif_prevu',
+        'bareme_salle',
         'description',
     ];
     protected $casts = [
         'date_examen' => 'date',
         'date_debut'  => 'datetime',
         'date_fin'    => 'datetime',
+        'effectif_prevu' => 'integer',
+        'bareme_salle'   => 'integer',
     ];
 
     public function sessionExamen(): BelongsTo

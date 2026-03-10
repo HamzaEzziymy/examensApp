@@ -22,8 +22,9 @@
         th { background: #FFD966; text-align: center; }
         tbody tr:nth-child(odd) { background: #e5e5e5; }
         .text-center { text-align: center; }
-        .student-name { font-size: 11px; line-height: 1.2; display: inline-block; font-family: Arial, Helvetica, sans-serif;font-weight: bold;}
-        .student-cne { font-size: 9px; color: #444; line-height: 1.1; margin-left: 6px; display: inline-block;font-weight: bold; }
+        .student-cell { display: flex; align-items: baseline; gap: 6px; }
+        .student-name { font-size: 11px; line-height: 1.2; font-family: Arial, Helvetica, sans-serif; font-weight: bold; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .student-cne { font-size: 9px; color: #444; line-height: 1.1; font-weight: bold; flex: 0 0 auto; }
         .cap { background: #d9d9d9; font-weight: bold; }
     </style>
 </head>
@@ -39,6 +40,9 @@
         $sessionName = $sessionName ?? ($examen->sessionExamen->nom_session ?? '-');
         $semesterName = $examen->module->offresFormation->first()->semestre->nom_semestre ?? null;
         $periodLabel = optional($examen->date_examen)->format('F Y');
+        $primaryOffre = $examen->module->offresFormation->first();
+        $filiereName = $primaryOffre?->section?->filiere?->nom_filiere;
+        $sectionName = $primaryOffre?->section?->nom_section;
     @endphp
 
     @foreach($groups as $groupIndex => $group)
@@ -49,10 +53,17 @@
                 <div class="date">Fes le : {{ $generatedAt->format('d/m/Y') }}</div>
             </div>
 
-            <h1>REPARTITION COLLECTIVE</h1>
-            <h2>{{ $niveauFiliere ?: ($examen->module->nom_module ?? 'Module') }}</h2>
+            <h1>Liste de Presence</h1>
+            <h2>
+                {{ $niveauFiliere ?: ($examen->module->nom_module ?? 'Module') }}
+                @if($sectionName)
+                    - Section {{ $sectionName }}
+                @endif
+            </h2>
 
             <table class="info-table">
+
+                
                 <tr>
                     <td class="label">Semestres</td>
                     <td class="value">{{ $modules->pluck('semestre')->filter()->unique()->implode(' | ') }}</td>
@@ -94,17 +105,45 @@
                         <tr>
                             <td class="text-center ">{{ $student['global_index'] ?? ($index + 1) }}</td>
                             <td>
-                                <span class="student-name">{{ trim(($student['nom'] ?? '') . ' ' . ($student['prenom'] ?? '')) }}</span>
-                                @if(!empty($student['cne']))
-                                    <span class="student-cne">({{ $student['cne'] }})</span>
-                                @endif
+                                @php
+                                    $studentNom = trim($student['nom'] ?? '');
+                                    $studentPrenom = trim($student['prenom'] ?? '');
+                                    $fullName = trim($studentNom . ' ' . $studentPrenom);
+                                    $displayPrenom = $studentPrenom;
+                                    $maxNameLength = 28;
+
+                                    if ($studentPrenom !== '' && strlen($fullName) > $maxNameLength) {
+                                        $prenomParts = preg_split('/\s+/', $studentPrenom, -1, PREG_SPLIT_NO_EMPTY);
+                                        if (count($prenomParts) >= 3) {
+                                            $first = array_shift($prenomParts);
+                                            $last = array_pop($prenomParts);
+                                            $middle = implode(' ', array_map(fn ($part) => substr($part, 0, 1).'.', $prenomParts));
+                                            $displayPrenom = trim($first.' '.($middle ? $middle.' ' : '').$last);
+                                        } elseif (count($prenomParts) === 2) {
+                                            $displayPrenom = $prenomParts[0].' '.substr($prenomParts[1], 0, 1).'.';
+                                        }
+                                    }
+
+                                    $displayName = trim($studentNom . ' ' . $displayPrenom);
+                                @endphp
+                                <div class="student-cell">
+                                    <span class="student-name">{{ $displayName }}</span>
+                                    @if(!empty($student['cne']))
+                                        <span class="student-cne">({{ $student['cne'] }})</span>
+                                    @endif
+                                </div>
                             </td>
                             @foreach($modules as $module)
                                 @php
-                                    $shouldPass = $student['modules'][$module['id_examen']] ?? false;
+                                    $status = $student['modules'][$module['id_examen']] ?? 'none';
+                                    $cellClass = $status === 'pass' ? '' : 'cap';
                                 @endphp
-                                <td class="text-center {{ $shouldPass ? '' : 'cap' }}">
-                                    {{ $shouldPass ? '' : 'CAP' }}
+                                <td class="text-center {{ $cellClass }}">
+                                    @if($status === 'cap')
+                                        CAP
+                                    @elseif($status === 'none')
+                                       X
+                                    @endif
                                 </td>
                             @endforeach
                         </tr>

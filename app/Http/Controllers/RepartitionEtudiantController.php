@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AnneeUniversitaire as AnneeUniversitaireModel;
 use App\Models\Examen;
 use App\Models\InscriptionPedagogique;
 use App\Models\RepartitionEtudiant;
 use App\Models\Salle;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 use Spatie\LaravelPdf\Facades\Pdf;
@@ -23,9 +25,14 @@ class RepartitionEtudiantController extends Controller
 
         $examensQuery = Examen::with([
                 'module:id_module,nom_module,code_module',
+                'module.elements:id_element,id_module,code_element,nom_element',
                 'sessionExamen:id_session_examen,nom_session,type_session,id_filiere,id_annee',
                 'salle:id_salle,code_salle,nom_salle,capacite_examens',
                 'salles:id_salle,code_salle,nom_salle,capacite_examens',
+                'module.offresFormation:id_offre,id_module,id_semestre,id_section,id_annee',
+                'module.offresFormation.semestre:id_semestre,nom_semestre,id_niveau',
+                'module.offresFormation.semestre.niveau:id_niveau,nom_niveau',
+                'module.offresFormation.section:id_section,id_filiere',
             ])
             ->withCount('repartitions');
 
@@ -52,9 +59,39 @@ class RepartitionEtudiantController extends Controller
                 'date_debut',
                 'date_fin',
                 'statut',
+                'bareme_salle',
             ]);
 
+        $examens->each(function ($examen) {
+            $session = $examen->sessionExamen;
+            $offres = collect($examen->module?->offresFormation ?? []);
+            $offre = $offres->first(function ($item) use ($session) {
+                $matchFiliere = $session?->id_filiere
+                    ? $item->section?->id_filiere == $session->id_filiere
+                    : true;
+                $matchAnnee = $session?->id_annee
+                    ? $item->id_annee == $session->id_annee
+                    : true;
+
+                return $matchFiliere && $matchAnnee;
+            }) ?? $offres->first();
+
+            $semestre = $offre?->semestre;
+            $niveau = $semestre?->niveau;
+
+            $examen->setAttribute('semestre_id', $semestre?->id_semestre);
+            $examen->setAttribute('semestre_nom', $semestre?->nom_semestre);
+            $examen->setAttribute('niveau_id', $niveau?->id_niveau);
+            $examen->setAttribute('niveau_nom', $niveau?->nom_niveau);
+        });
+
         $selectedExamen = $examens->firstWhere('id_examen', $selectedExamenId) ?? $examens->first();
+        if ($selectedExamen) {
+            $selectedExamen->loadMissing([
+                'sessionExamen.filiere:id_filiere,nom_filiere',
+                'module.elements:id_element,id_module,code_element,nom_element',
+            ]);
+        }
 
         $repartitions = RepartitionEtudiant::with([
                 'inscriptionPedagogique:id_inscription_pedagogique,id_inscription_admin,id_offre',
@@ -78,20 +115,7 @@ class RepartitionEtudiantController extends Controller
             ]);
 
         $inscriptions = $selectedExamen
-            ? InscriptionPedagogique::with([
-                    'inscriptionAdministrative:id_inscription_admin,id_etudiant',
-                    'inscriptionAdministrative.etudiant:id_etudiant,nom,prenom,cne',
-                    'offreFormation.module:id_module,nom_module,code_module',
-                ])
-                ->whereHas('offreFormation', function ($query) use ($selectedExamen) {
-                    $query->where('id_module', $selectedExamen->id_module);
-                })
-                ->orderBy('id_inscription_pedagogique')
-                ->get([
-                    'id_inscription_pedagogique',
-                    'id_inscription_admin',
-                    'id_offre',
-                ])
+            ? $this->eligibleInscriptionsForExam($selectedExamen)
             : collect();
 
         $salles = $selectedExamen
@@ -201,7 +225,7 @@ class RepartitionEtudiantController extends Controller
     public function export(Request $request, Examen $examen)
     {
         $repartitions = RepartitionEtudiant::with([
-                'inscriptionPedagogique:id_inscription_pedagogique,id_inscription_admin,id_offre',
+                'inscriptionPedagogique:id_inscription_pedagogique,id_inscription_admin,id_offre,type_inscription',
                 'inscriptionPedagogique.inscriptionAdministrative:id_inscription_admin,id_etudiant',
                 'inscriptionPedagogique.inscriptionAdministrative.etudiant:id_etudiant,nom,prenom,cne',
             ])
@@ -236,24 +260,33 @@ class RepartitionEtudiantController extends Controller
         $presenceFilled = $request->boolean('presence_filled', true);
 
         $salles = $examen->salles->values();
-        $salleGroups = $repartitions
-            ->groupBy(function ($rep) {
-                $str = str_pad((string) ($rep->code_grille ?? ''), 7, '0', STR_PAD_LEFT);
-                $digit = (int) ($str[3] ?? 1);
-                return $digit >= 1 ? $digit : 1;
-            })
-            ->map(function ($rows, $salleIndex) use ($salles) {
-                $salle = $salles[$salleIndex - 1] ?? null;
-                return [
-                    'salle'       => $salle,
-                    'rows'        => $rows,
-                    'present'     => $rows->where('present', true)->count(),
-                    'total'       => $rows->count(),
-                    'absent'      => $rows->count() - $rows->where('present', true)->count(),
-                    'salle_index' => (int) $salleIndex,
-                ];
-            })
-            ->values();
+        if ($salles->isEmpty() && $examen->salle) {
+            $salles = collect([$examen->salle]);
+        }
+
+        $orderedSalleGroups = $this->buildSalleGroupsWithCollectiveOrder($examen, $repartitions, $salles);
+        if ($orderedSalleGroups && $orderedSalleGroups->isNotEmpty()) {
+            $salleGroups = $orderedSalleGroups;
+        } else {
+            $salleGroups = $repartitions
+                ->groupBy(function ($rep) {
+                    $str = str_pad((string) ($rep->code_grille ?? ''), 7, '0', STR_PAD_LEFT);
+                    $digit = (int) ($str[3] ?? 1);
+                    return $digit >= 1 ? $digit : 1;
+                })
+                ->map(function ($rows, $salleIndex) use ($salles) {
+                    $salle = $salles[$salleIndex - 1] ?? null;
+                    return [
+                        'salle'       => $salle,
+                        'rows'        => $rows,
+                        'present'     => $rows->where('present', true)->count(),
+                        'total'       => $rows->count(),
+                        'absent'      => $rows->count() - $rows->where('present', true)->count(),
+                        'salle_index' => (int) $salleIndex,
+                    ];
+                })
+                ->values();
+        }
 
         $payload = [
             'examen'         => $examen,
@@ -268,27 +301,22 @@ class RepartitionEtudiantController extends Controller
             'salleGroups'    => $salleGroups,
         ];
 
+        $footerSalleLabel = $salles->pluck('nom_salle')->filter()->unique()->implode(' | ');
+        if (empty($footerSalleLabel) && $examen->salle) {
+            $footerSalleLabel = $examen->salle->nom_salle;
+        }
+
         $filename = sprintf('repartition-%s-%s.pdf', $examen->module->code_module ?? 'examen', $examen->id_examen);
 
         return Pdf::view('pdfs.repartition', $payload)
             ->format('a4')
             ->margins(12, 10, 14, 10)
-            ->footerView('pdfs.partials.footer')
+            ->footerView('pdfs.partials.footer', ['footerSalleLabel' => $footerSalleLabel])
             ->download($filename);
     }
 
     public function exportCollective(Request $request, Examen $examen)
     {
-        $examens = Examen::with(['module:id_module,nom_module,code_module'])
-            ->where('id_session_examen', $examen->id_session_examen)
-            ->orderBy('date_examen')
-            ->orderBy('id_examen')
-            ->get(['id_examen', 'id_session_examen', 'id_module', 'date_examen']);
-
-        if ($examens->isEmpty()) {
-            return back()->with('error', 'Aucun examen trouve pour cette session.');
-        }
-
         $examen->load([
             'module:id_module,nom_module,code_module',
             'sessionExamen:id_session_examen,nom_session',
@@ -298,15 +326,56 @@ class RepartitionEtudiantController extends Controller
             'module.offresFormation.semestre.niveau',
         ]);
 
+        $referenceOffre = $examen->module->offresFormation
+            ->first(fn ($offre) => $offre->semestre !== null)
+            ?? $examen->module->offresFormation->first();
+
+        $targetSemestreId = $referenceOffre?->id_semestre;
+        $targetNiveauId = $referenceOffre?->semestre?->id_niveau;
+
+        $examensQuery = Examen::with([
+                'module:id_module,nom_module,code_module',
+                'module.offresFormation:id_offre,id_module,id_semestre,id_section',
+                'module.offresFormation.semestre:id_semestre,nom_semestre,id_niveau',
+            ])
+            ->where('id_session_examen', $examen->id_session_examen);
+
+        if ($targetSemestreId || $targetNiveauId) {
+            $examensQuery->whereHas('module.offresFormation', function ($query) use ($targetSemestreId, $targetNiveauId) {
+                if ($targetSemestreId) {
+                    $query->where('id_semestre', $targetSemestreId);
+                }
+                if ($targetNiveauId) {
+                    $query->whereHas('semestre', function ($semestreQuery) use ($targetNiveauId) {
+                        $semestreQuery->where('id_niveau', $targetNiveauId);
+                    });
+                }
+            });
+        }
+
+        $examens = $examensQuery
+            ->orderBy('date_examen')
+            ->orderBy('id_examen')
+            ->get(['id_examen', 'id_session_examen', 'id_module', 'date_examen']);
+
+        if ($examens->isEmpty()) {
+            return back()->with('error', 'Aucun examen trouve pour cette session.');
+        }
+
         $modules = $examens
             ->sortBy(fn ($exam) => $exam->date_examen)
-            ->map(function ($exam) {
+            ->map(function ($exam) use ($targetSemestreId) {
+                $offre = $targetSemestreId
+                    ? $exam->module->offresFormation->firstWhere('id_semestre', $targetSemestreId)
+                    : $exam->module->offresFormation->first();
+
                 return [
                     'id_examen' => $exam->id_examen,
+                    'id_module' => $exam->id_module,
                     'code'      => $exam->module->code_module ?? 'Module',
                     'name'      => $exam->module->nom_module ?? 'Module',
                     'date'      => optional($exam->date_examen)->format('d/m'),
-                    'semestre'  => $exam->module->offresFormation->first()?->semestre?->nom_semestre,
+                    'semestre'  => $offre?->semestre?->nom_semestre,
                 ];
             })
             ->values();
@@ -314,7 +383,7 @@ class RepartitionEtudiantController extends Controller
         $firstExamDate = $examens->pluck('date_examen')->filter()->min();
 
         $allRepartitions = RepartitionEtudiant::with([
-                'inscriptionPedagogique:id_inscription_pedagogique,id_inscription_admin,id_offre',
+                'inscriptionPedagogique:id_inscription_pedagogique,id_inscription_admin,id_offre,type_inscription',
                 'inscriptionPedagogique.inscriptionAdministrative:id_inscription_admin,id_etudiant',
                 'inscriptionPedagogique.inscriptionAdministrative.etudiant:id_etudiant,nom,prenom,cne',
             ])
@@ -330,8 +399,59 @@ class RepartitionEtudiantController extends Controller
             return back()->with('error', 'Aucune repartition pour ces examens.');
         }
 
+        $studentIds = $allRepartitions
+            ->map(fn ($rep) => $rep->inscriptionPedagogique?->inscriptionAdministrative?->id_etudiant)
+            ->filter()
+            ->unique()
+            ->values();
+
+        $moduleIds = $modules
+            ->pluck('id_module')
+            ->filter()
+            ->unique()
+            ->values();
+
+        $capByStudentModule = [];
+        if ($studentIds->isNotEmpty() && $moduleIds->isNotEmpty()) {
+            $capIps = InscriptionPedagogique::with([
+                    'inscriptionAdministrative:id_inscription_admin,id_etudiant',
+                    'offreFormation:id_offre,id_module,id_semestre',
+                ])
+                ->whereHas('inscriptionAdministrative', function ($query) use ($studentIds) {
+                    $query->whereIn('id_etudiant', $studentIds);
+                })
+                ->whereHas('offreFormation', function ($query) use ($moduleIds, $targetSemestreId, $targetNiveauId) {
+                    $query->whereIn('id_module', $moduleIds);
+                    if ($targetSemestreId) {
+                        $query->where('id_semestre', $targetSemestreId);
+                    }
+                    if ($targetNiveauId) {
+                        $query->whereHas('semestre', function ($semestreQuery) use ($targetNiveauId) {
+                            $semestreQuery->where('id_niveau', $targetNiveauId);
+                        });
+                    }
+                })
+                ->get([
+                    'id_inscription_pedagogique',
+                    'id_inscription_admin',
+                    'id_offre',
+                    'type_inscription',
+                ])
+                ->filter(function ($ip) {
+                    return strtolower($ip->type_inscription ?? '') === 'capitalisation';
+                });
+
+            foreach ($capIps as $ip) {
+                $studentKey = $ip->inscriptionAdministrative?->id_etudiant ?? $ip->id_inscription_pedagogique;
+                $moduleId = $ip->offreFormation?->id_module;
+                if ($studentKey && $moduleId) {
+                    $capByStudentModule[$studentKey][$moduleId] = true;
+                }
+            }
+        }
+
         $selectedRepartitions = RepartitionEtudiant::with([
-                'inscriptionPedagogique:id_inscription_pedagogique,id_inscription_admin,id_offre',
+                'inscriptionPedagogique:id_inscription_pedagogique,id_inscription_admin,id_offre,type_inscription',
                 'inscriptionPedagogique.inscriptionAdministrative:id_inscription_admin,id_etudiant',
                 'inscriptionPedagogique.inscriptionAdministrative.etudiant:id_etudiant,nom,prenom,cne',
             ])
@@ -351,52 +471,77 @@ class RepartitionEtudiantController extends Controller
             return back()->with('error', 'Aucune repartition pour cet examen.');
         }
 
+        $creditStatusByStudent = $allRepartitions->reduce(function ($carry, $rep) {
+            $key = $rep->inscriptionPedagogique?->inscriptionAdministrative?->id_etudiant
+                ?? $rep->id_inscription_pedagogique;
+            $type = strtolower($rep->inscriptionPedagogique?->type_inscription ?? '');
+
+            if (!array_key_exists($key, $carry)) {
+                $carry[$key] = false;
+            }
+
+            if ($type === 'credit') {
+                $carry[$key] = true;
+            }
+
+            return $carry;
+        }, []);
+
         $studentsById = $allRepartitions
             ->groupBy(function ($rep) {
                 return $rep->inscriptionPedagogique?->inscriptionAdministrative?->id_etudiant ?? $rep->id_inscription_pedagogique;
             })
-            ->map(function ($rows) use ($modules) {
+            ->map(function ($rows, $studentKey) use ($modules, $capByStudentModule) {
                 $ip = $rows->first()->inscriptionPedagogique;
-                $flags = [];
+                $rowsByExam = $rows->groupBy('id_examen');
+                $statuses = [];
+
                 foreach ($modules as $module) {
-                    $flags[$module['id_examen']] = $rows->contains('id_examen', $module['id_examen']);
+                    $examRows = $rowsByExam->get($module['id_examen'], collect());
+                    $hasCap = $capByStudentModule[$studentKey][$module['id_module']] ?? false;
+                    if ($examRows->isNotEmpty()) {
+                        $hasCap = $hasCap || $examRows->contains(function ($rep) {
+                            $type = strtolower($rep->inscriptionPedagogique?->type_inscription ?? '');
+                            return $type === 'capitalisation';
+                        });
+                    }
+
+                    if ($hasCap) {
+                        $statuses[$module['id_examen']] = 'cap';
+                    } elseif ($examRows->isNotEmpty()) {
+                        $statuses[$module['id_examen']] = 'pass';
+                    } else {
+                        $statuses[$module['id_examen']] = 'none';
+                    }
                 }
 
                 return [
                     'cne'     => $ip?->inscriptionAdministrative?->etudiant?->cne,
                     'nom'     => $ip?->inscriptionAdministrative?->etudiant?->nom,
                     'prenom'  => $ip?->inscriptionAdministrative?->etudiant?->prenom,
-                    'modules' => $flags,
+                    'modules' => $statuses,
                 ];
             });
 
-        $studentsWithSeats = $selectedRepartitions
-            ->map(function ($rep) use ($studentsById, $modules) {
-                $key = $rep->inscriptionPedagogique?->inscriptionAdministrative?->id_etudiant ?? $rep->id_inscription_pedagogique;
-                $student = $studentsById[$key] ?? [
-                    'cne'     => $rep->inscriptionPedagogique?->inscriptionAdministrative?->etudiant?->cne,
-                    'nom'     => $rep->inscriptionPedagogique?->inscriptionAdministrative?->etudiant?->nom,
-                    'prenom'  => $rep->inscriptionPedagogique?->inscriptionAdministrative?->etudiant?->prenom,
-                    'modules' => collect($modules)->mapWithKeys(fn ($m) => [$m['id_examen'] => false])->all(),
-                ];
-
+        $studentsWithSeats = $studentsById
+            ->map(function ($student, $key) use ($creditStatusByStudent) {
                 return [
-                    'cne'          => $student['cne'],
-                    'nom'          => $student['nom'],
-                    'prenom'       => $student['prenom'],
-                    'modules'      => $student['modules'],
-                    'code_grille'  => $rep->code_grille,
-                    'numero_place' => $rep->numero_place,
-                    'code_anonymat'=> $rep->code_anonymat,
-                    'salle_index'  => (function ($codeGrille) {
-                        $str = str_pad((string) ($codeGrille ?? ''), 7, '0', STR_PAD_LEFT);
-                        $digit = (int) ($str[3] ?? 1);
-                        return $digit >= 1 ? $digit : 1;
-                    })($rep->code_grille),
+                    'cne'       => $student['cne'],
+                    'nom'       => $student['nom'],
+                    'prenom'    => $student['prenom'],
+                    'modules'   => $student['modules'],
+                    'is_credit' => $creditStatusByStudent[$key] ?? false,
                 ];
             })
             ->sortBy(function ($student) {
-                return sprintf('%s %s %s', $student['nom'] ?? '', $student['prenom'] ?? '', $student['cne'] ?? '');
+                $creditRank = $student['is_credit'] ? 1 : 0;
+                return sprintf(
+                    '%d|%s|%s|%s',
+                    $creditRank,
+                    strtolower($student['nom'] ?? ''),
+                    strtolower($student['prenom'] ?? ''),
+                    strtolower($student['cne'] ?? '')
+                );
             })
             ->values()
             ->map(function ($student, $index) {
@@ -410,14 +555,47 @@ class RepartitionEtudiantController extends Controller
             $salles = collect([$examen->salle]);
         }
 
+        // Preserve original counts per salle while keeping a single alphabetical ordering across salles
+        $salleCounts = $selectedRepartitions
+            ->map(function ($rep) {
+                $str = str_pad((string) ($rep->code_grille ?? ''), 7, '0', STR_PAD_LEFT);
+                $digit = (int) ($str[3] ?? 1);
+                return $digit >= 1 ? $digit : 1;
+            })
+            ->countBy()
+            ->sortKeys()
+            ->values();
+
+        $currentSalleIndex = 1;
+        $currentSalleFilled = 0;
+        $currentSalleCap = $salleCounts->get($currentSalleIndex - 1, $studentsWithSeats->count());
+
+        $studentsWithSeats = $studentsWithSeats->map(function ($student) use (&$currentSalleIndex, &$currentSalleFilled, &$currentSalleCap, $salleCounts, $studentsWithSeats) {
+            if ($currentSalleFilled >= $currentSalleCap && $currentSalleIndex < $salleCounts->count()) {
+                $currentSalleIndex++;
+                $currentSalleFilled = 0;
+                $currentSalleCap = $salleCounts->get($currentSalleIndex - 1, $studentsWithSeats->count());
+            }
+
+            $student['salle_index'] = $currentSalleIndex;
+            $currentSalleFilled++;
+
+            return $student;
+        });
+
         $groups = $studentsWithSeats
             ->groupBy(fn ($student) => $student['salle_index'] ?? 1)
             ->sortKeys()
             ->map(function ($rows, $salleIndex) use ($salles) {
                 $salle = $salles[$salleIndex - 1] ?? null;
+                $rows = $rows->values()->map(function ($student, $index) {
+                    $student['global_index'] = $index + 1;
+                    return $student;
+                });
+
                 return [
                     'salle'       => $salle,
-                    'rows'        => $rows->values(),
+                    'rows'        => $rows,
                     'total'       => $rows->count(),
                     'salle_index' => (int) $salleIndex,
                 ];
@@ -443,6 +621,7 @@ class RepartitionEtudiantController extends Controller
             'sessionName'   => $sessionName,
             'firstExamDate' => $firstExamDate,
             'niveauFiliere' => $payload['niveauFiliere'],
+            'footerSalleLabel' => $salles->pluck('nom_salle')->filter()->unique()->implode(' | ') ?: $examen->salle?->nom_salle,
         ];
 
         $filename = sprintf(
@@ -450,6 +629,24 @@ class RepartitionEtudiantController extends Controller
             $sessionName,
             $examen->id_session_examen
         );
+
+        $requestedSalleIndex = $request->integer('salle_index');
+        if ($requestedSalleIndex) {
+            $targetGroup = $groups->firstWhere('salle_index', $requestedSalleIndex);
+            if (!$targetGroup) {
+                return back()->with('error', 'Aucune repartition pour cette salle.');
+            }
+
+            $payload['groups'] = collect([$targetGroup]);
+            $payload['studentsTotal'] = $targetGroup['total'];
+            $footerData['footerSalleLabel'] = $targetGroup['salle']->nom_salle ?? ('Salle ' . $targetGroup['salle_index']);
+            $filename = sprintf(
+                'presence-collective-%s-%s-salle-%s.pdf',
+                $sessionName,
+                $examen->id_session_examen,
+                $targetGroup['salle_index']
+            );
+        }
 
         return Pdf::view('pdfs.repartition-collective', $payload)
             ->format('a4')
@@ -530,6 +727,11 @@ class RepartitionEtudiantController extends Controller
             'niveauFiliere'=> $this->niveauFiliereLabel($examen),
         ];
 
+        $footerSalleLabel = $salles->pluck('nom_salle')->filter()->unique()->implode(' | ');
+        if (empty($footerSalleLabel) && $examen->salle) {
+            $footerSalleLabel = $examen->salle->nom_salle;
+        }
+
         $filename = sprintf(
             'repartition-salles-places-%s-%s.pdf',
             $examen->module->code_module ?? 'examen',
@@ -539,7 +741,7 @@ class RepartitionEtudiantController extends Controller
         return Pdf::view('pdfs.repartition-salles-places', $payload)
             ->format('a4')
             ->margins(12, 10, 14, 10)
-            ->footerView('pdfs.partials.footer')
+            ->footerView('pdfs.partials.footer', ['footerSalleLabel' => $footerSalleLabel])
             ->download($filename);
     }
 
@@ -554,5 +756,232 @@ class RepartitionEtudiantController extends Controller
             ($niveauName && $filiereName ? ' - ' : '') .
             ($filiereName ?? '')
         );
+    }
+
+    private function eligibleInscriptionsForExam(Examen $examen)
+    {
+        $examen->loadMissing([
+            'sessionExamen:id_session_examen,id_filiere,id_annee',
+            'module.offresFormation:id_offre,id_module',
+        ]);
+
+        $anneeId = $examen->sessionExamen?->id_annee
+            ?: AnneeUniversitaireModel::where('est_active', true)->latest('date_debut')->value('id_annee');
+        $filiereId = $examen->sessionExamen?->id_filiere;
+
+        return InscriptionPedagogique::with([
+                'inscriptionAdministrative:id_inscription_admin,id_etudiant',
+                'inscriptionAdministrative.etudiant:id_etudiant,nom,prenom,cne',
+                'offreFormation.module:id_module,nom_module,code_module',
+            ])
+            ->whereHas('offreFormation', function ($query) use ($examen) {
+                $query->where('id_module', $examen->id_module);
+            })
+            ->when($anneeId, function ($query) use ($anneeId) {
+                $query->whereHas('inscriptionAdministrative', function ($adminQuery) use ($anneeId) {
+                    $adminQuery->where('id_annee', $anneeId);
+                });
+            })
+            ->when($filiereId, function ($query) use ($filiereId) {
+                $query->whereHas('inscriptionAdministrative.section.filiere', function ($filiereQuery) use ($filiereId) {
+                    $filiereQuery->where('id_filiere', $filiereId);
+                });
+            })
+            ->where('type_inscription', '!=', 'Capitalisation')
+            ->orderBy('id_inscription_pedagogique')
+            ->get([
+                'id_inscription_pedagogique',
+                'id_inscription_admin',
+                'id_offre',
+            ]);
+    }
+
+    private function buildSalleGroupsWithCollectiveOrder(Examen $examen, Collection $repartitions, Collection $salles): ?Collection
+    {
+        if ($repartitions->isEmpty()) {
+            return null;
+        }
+
+        $examen->loadMissing('module.offresFormation.semestre.niveau', 'module.offresFormation.section');
+
+        $referenceOffre = $examen->module->offresFormation
+            ->first(fn ($offre) => $offre->semestre !== null)
+            ?? $examen->module->offresFormation->first();
+
+        $targetSemestreId = $referenceOffre?->id_semestre;
+        $targetNiveauId = $referenceOffre?->semestre?->id_niveau;
+
+        $examensQuery = Examen::with([
+                'module:id_module',
+                'module.offresFormation:id_offre,id_module,id_semestre,id_section',
+                'module.offresFormation.semestre:id_semestre,id_niveau',
+            ])
+            ->where('id_session_examen', $examen->id_session_examen);
+
+        if ($targetSemestreId || $targetNiveauId) {
+            $examensQuery->whereHas('module.offresFormation', function ($query) use ($targetSemestreId, $targetNiveauId) {
+                if ($targetSemestreId) {
+                    $query->where('id_semestre', $targetSemestreId);
+                }
+                if ($targetNiveauId) {
+                    $query->whereHas('semestre', function ($semestreQuery) use ($targetNiveauId) {
+                        $semestreQuery->where('id_niveau', $targetNiveauId);
+                    });
+                }
+            });
+        }
+
+        $examens = $examensQuery
+            ->orderBy('date_examen')
+            ->orderBy('id_examen')
+            ->get(['id_examen']);
+
+        if ($examens->isEmpty()) {
+            return null;
+        }
+
+        $allRepartitions = RepartitionEtudiant::with([
+                'inscriptionPedagogique:id_inscription_pedagogique,id_inscription_admin,id_offre,type_inscription',
+                'inscriptionPedagogique.inscriptionAdministrative:id_inscription_admin,id_etudiant',
+                'inscriptionPedagogique.inscriptionAdministrative.etudiant:id_etudiant,nom,prenom,cne',
+            ])
+            ->whereIn('id_examen', $examens->pluck('id_examen'))
+            ->orderBy('id_inscription_pedagogique')
+            ->get([
+                'id_repartition',
+                'id_examen',
+                'id_inscription_pedagogique',
+            ]);
+
+        if ($allRepartitions->isEmpty()) {
+            return null;
+        }
+
+        $creditStatusByStudent = $allRepartitions->reduce(function ($carry, $rep) {
+            $key = $rep->inscriptionPedagogique?->inscriptionAdministrative?->id_etudiant
+                ?? $rep->id_inscription_pedagogique;
+            $type = strtolower($rep->inscriptionPedagogique?->type_inscription ?? '');
+
+            if (!array_key_exists($key, $carry)) {
+                $carry[$key] = false;
+            }
+
+            if ($type === 'credit') {
+                $carry[$key] = true;
+            }
+
+            return $carry;
+        }, []);
+
+        $studentsById = $allRepartitions
+            ->groupBy(function ($rep) {
+                return $rep->inscriptionPedagogique?->inscriptionAdministrative?->id_etudiant ?? $rep->id_inscription_pedagogique;
+            })
+            ->map(function ($rows, $studentKey) {
+                $ip = $rows->first()->inscriptionPedagogique;
+
+                return [
+                    'student_key' => $studentKey,
+                    'cne'        => $ip?->inscriptionAdministrative?->etudiant?->cne,
+                    'nom'        => $ip?->inscriptionAdministrative?->etudiant?->nom,
+                    'prenom'     => $ip?->inscriptionAdministrative?->etudiant?->prenom,
+                ];
+            });
+
+        $studentsWithSeats = $studentsById
+            ->map(function ($student) use ($creditStatusByStudent) {
+                $key = $student['student_key'];
+
+                return [
+                    'student_key' => $key,
+                    'cne'         => $student['cne'],
+                    'nom'         => $student['nom'],
+                    'prenom'      => $student['prenom'],
+                    'is_credit'   => $creditStatusByStudent[$key] ?? false,
+                ];
+            })
+            ->sortBy(function ($student) {
+                $creditRank = $student['is_credit'] ? 1 : 0;
+                return sprintf(
+                    '%d|%s|%s|%s',
+                    $creditRank,
+                    strtolower($student['nom'] ?? ''),
+                    strtolower($student['prenom'] ?? ''),
+                    strtolower($student['cne'] ?? '')
+                );
+            })
+            ->values()
+            ->map(function ($student, $index) {
+                $student['global_index'] = $index + 1;
+                return $student;
+            })
+            ->values();
+
+        $salleCounts = $repartitions
+            ->map(function ($rep) {
+                $str = str_pad((string) ($rep->code_grille ?? ''), 7, '0', STR_PAD_LEFT);
+                $digit = (int) ($str[3] ?? 1);
+                return $digit >= 1 ? $digit : 1;
+            })
+            ->countBy()
+            ->sortKeys()
+            ->values();
+
+        $currentSalleIndex = 1;
+        $currentSalleFilled = 0;
+        $currentSalleCap = $salleCounts->get($currentSalleIndex - 1, $studentsWithSeats->count());
+
+        $studentsWithSeats = $studentsWithSeats->map(function ($student, $index) use (&$currentSalleIndex, &$currentSalleFilled, &$currentSalleCap, $salleCounts, $studentsWithSeats) {
+            if ($currentSalleFilled >= $currentSalleCap && $currentSalleIndex < $salleCounts->count()) {
+                $currentSalleIndex++;
+                $currentSalleFilled = 0;
+                $currentSalleCap = $salleCounts->get($currentSalleIndex - 1, $studentsWithSeats->count());
+            }
+
+            $student['salle_index'] = $currentSalleIndex;
+            $currentSalleFilled++;
+
+            return $student;
+        });
+
+        $repartitionsByStudent = $repartitions->keyBy(function ($rep) {
+            return $rep->inscriptionPedagogique?->inscriptionAdministrative?->id_etudiant ?? $rep->id_inscription_pedagogique;
+        });
+
+        $orderedRows = $studentsWithSeats
+            ->map(function ($student) use ($repartitionsByStudent) {
+                $rep = $repartitionsByStudent->get($student['student_key']);
+                if (! $rep) {
+                    return null;
+                }
+
+                return [
+                    'salle_index' => $student['salle_index'] ?? 1,
+                    'rep'         => $rep,
+                ];
+            })
+            ->filter()
+            ->values();
+
+        if ($orderedRows->isEmpty()) {
+            return null;
+        }
+
+        return $orderedRows
+            ->groupBy('salle_index')
+            ->sortKeys()
+            ->map(function ($rows, $salleIndex) use ($salles) {
+                $orderedReps = $rows->map(fn ($row) => $row['rep'])->values();
+
+                return [
+                    'salle'       => $salles[$salleIndex - 1] ?? null,
+                    'rows'        => $orderedReps,
+                    'present'     => $orderedReps->where('present', true)->count(),
+                    'total'       => $orderedReps->count(),
+                    'absent'      => $orderedReps->count() - $orderedReps->where('present', true)->count(),
+                    'salle_index' => (int) $salleIndex,
+                ];
+            })
+            ->values();
     }
 }

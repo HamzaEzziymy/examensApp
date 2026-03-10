@@ -11,6 +11,7 @@ use App\Models\RepartitionEtudiant;
 use App\Models\Salle;
 use App\Models\SessionExamen;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
@@ -64,6 +65,8 @@ class ExamenController extends Controller
                 'date_examen',
                 'date_debut',
                 'date_fin',
+                'effectif_prevu',
+                'bareme_salle',
                 'statut',
                 'description',
             ]);
@@ -71,9 +74,6 @@ class ExamenController extends Controller
         $sessionsQuery = SessionExamen::select('id_session_examen', 'nom_session', 'type_session', 'date_session_examen', 'id_filiere', 'id_annee')
             ->orderByDesc('date_session_examen');
 
-        if ($selectedFiliere && $selectedFiliere !== 'all') {
-            $sessionsQuery->where('id_filiere', $selectedFiliere);
-        }
         if ($selectedAnnee && $selectedAnnee !== 'all') {
             $sessionsQuery->where('id_annee', $selectedAnnee);
         }
@@ -81,20 +81,65 @@ class ExamenController extends Controller
         $sessions = $sessionsQuery->get();
 
         $modulesQuery = Module::select('id_module', 'nom_module', 'code_module')
-            ->orderBy('nom_module');
-
-        if ($selectedFiliere && $selectedFiliere !== 'all') {
-            $modulesQuery->whereHas('offresFormation.section.filiere', function ($query) use ($selectedFiliere) {
-                $query->where('id_filiere', $selectedFiliere);
+            ->with([
+                'offresFormation' => function ($query) use ($selectedFiliere, $selectedAnnee) {
+                    if ($selectedFiliere && $selectedFiliere !== 'all') {
+                        $query->whereHas('section', fn ($q) => $q->where('id_filiere', $selectedFiliere));
+                    }
+                    if ($selectedAnnee && $selectedAnnee !== 'all') {
+                        $query->where('id_annee', $selectedAnnee);
+                    }
+                },
+                'offresFormation.semestre:id_semestre,nom_semestre,id_niveau',
+                'offresFormation.semestre.niveau:id_niveau,nom_niveau',
+            ])
+            ->orderBy('nom_module')
+            ->whereHas('offresFormation', function ($query) use ($selectedFiliere, $selectedAnnee) {
+                if ($selectedFiliere && $selectedFiliere !== 'all') {
+                    $query->whereHas('section', fn ($q) => $q->where('id_filiere', $selectedFiliere));
+                }
+                if ($selectedAnnee && $selectedAnnee !== 'all') {
+                    $query->where('id_annee', $selectedAnnee);
+                }
             });
-        }
-        if ($selectedAnnee && $selectedAnnee !== 'all') {
-            $modulesQuery->whereHas('offresFormation', function ($query) use ($selectedAnnee) {
-                $query->where('id_annee', $selectedAnnee);
-            });
-        }
 
-        $modules = $modulesQuery->get();
+        $modules = $modulesQuery->get()->map(function ($module) {
+            $semestres = $module->offresFormation
+                ->map(fn ($offre) => $offre->semestre)
+                ->filter()
+                ->unique('id_semestre')
+                ->values()
+                ->map(function ($semestre) {
+                    return [
+                        'id_semestre' => $semestre->id_semestre,
+                        'nom_semestre' => $semestre->nom_semestre,
+                        'id_niveau' => $semestre->id_niveau,
+                        'nom_niveau' => $semestre->niveau?->nom_niveau,
+                    ];
+                })
+                ->values();
+
+            return [
+                'id_module' => $module->id_module,
+                'nom_module' => $module->nom_module,
+                'code_module' => $module->code_module,
+                'semestres' => $semestres,
+            ];
+        });
+
+        $semestres = $modules
+            ->flatMap(fn ($module) => $module['semestres'])
+            ->unique('id_semestre')
+            ->values();
+
+        $niveaux = $semestres
+            ->map(fn ($semestre) => [
+                'id_niveau' => $semestre['id_niveau'] ?? null,
+                'nom_niveau' => $semestre['nom_niveau'] ?? null,
+            ])
+            ->filter(fn ($niveau) => $niveau['id_niveau'])
+            ->unique('id_niveau')
+            ->values();
 
         $salles = Salle::select('id_salle', 'code_salle', 'nom_salle', 'capacite_examens')
             ->orderBy('code_salle')
@@ -106,12 +151,16 @@ class ExamenController extends Controller
             'modules' => $modules,
             'salles' => $salles,
             'statuts' => Examen::STATUTS,
+            'semestres' => $semestres,
+            'niveaux' => $niveaux,
         ];
     }
 
     public function store(Request $request)
     {
         $validated = $this->validateExamen($request);
+        $manualSplit = collect($validated['repartition_salles'] ?? []);
+        unset($validated['repartition_salles']);
 
         $session = SessionExamen::find((int) $validated['id_session_examen'], ['id_session_examen', 'id_annee']);
         $salles = collect($request->input('salles', []))
@@ -133,7 +182,11 @@ class ExamenController extends Controller
         }
 
         // Validate capacity vs expected students
-        $registrations = $this->registrationsForModule((int) $validated['id_module'], $session?->id_annee);
+        $registrations = $this->registrationsForModule(
+            (int) $validated['id_module'],
+            $session?->id_annee,
+            $session?->id_filiere
+        );
         if ($registrations->isEmpty()) {
             return back()
                 ->withErrors([
@@ -142,14 +195,33 @@ class ExamenController extends Controller
                 ->withInput();
         }
         $studentCount = $registrations->count();
+        $manualSplit = $this->normalizeManualSplit($manualSplit, $allSalleIds);
+        $manualTotal = (int) $manualSplit->sum('nombre');
+
+        if ($manualTotal > 0 && $validated['effectif_prevu'] && $manualTotal !== (int) $validated['effectif_prevu']) {
+            return back()
+                ->withErrors(['repartition_salles' => 'Le total des repartitions par salle doit correspondre a l\'effectif attendu.'])
+                ->withInput();
+        }
+
+        if ($manualTotal > 0 && ! $validated['effectif_prevu']) {
+            $validated['effectif_prevu'] = $manualTotal;
+        }
+
+        $expectedCount = $validated['effectif_prevu'] ?? $studentCount;
+        $expectedCount = (int) ($manualTotal > 0 ? $manualTotal : $expectedCount);
         $salleModels = Salle::whereIn('id_salle', $allSalleIds)->get(['id_salle', 'code_salle', 'capacite_examens', 'capacite']);
         $totalCapacity = $salleModels->sum(function ($salle) {
             return $salle->capacite_examens ?? $salle->capacite ?? 0;
         });
 
-        if ($studentCount > $totalCapacity) {
+        if ($capacityError = $this->validateManualCapacities($manualSplit, $salleModels)) {
+            return back()->withErrors(['repartition_salles' => $capacityError])->withInput();
+        }
+
+        if ($expectedCount > $totalCapacity) {
             return back()
-                ->withErrors(['salles' => 'Capacite des salles insuffisante pour le nombre d\'etudiants. Ajoutez une salle.'])
+                ->withErrors(['salles' => 'Capacite des salles insuffisante pour le nombre d\'etudiants prevus. Ajoutez une salle ou reduisez l\'effectif.'])
                 ->withInput();
         }
 
@@ -157,7 +229,7 @@ class ExamenController extends Controller
         $examen->salles()->sync($allSalleIds);
         $examen->load('salles:id_salle,code_salle,capacite_examens,capacite');
 
-        $this->generateInitialRepartition($examen, $registrations);
+        $this->generateInitialRepartition($examen, $registrations, $expectedCount, $manualSplit);
 
         return redirect()
             ->route('examens.examens.index')
@@ -177,6 +249,8 @@ class ExamenController extends Controller
     public function update(Request $request, Examen $examen)
     {
         $validated = $this->validateExamen($request);
+        $manualSplit = collect($validated['repartition_salles'] ?? []);
+        unset($validated['repartition_salles']);
 
         $session = SessionExamen::find((int) $validated['id_session_examen'], ['id_session_examen', 'id_annee']);
         $salles = collect($request->input('salles', []))
@@ -185,19 +259,24 @@ class ExamenController extends Controller
             ->unique()
             ->values();
 
-        $validated['id_salle'] = $validated['id_salle'] ?? $salles->first();
+        // Prefer the first selected salle as the primary one to avoid keeping stale values
+        $primarySalleId = $salles->first() ?: ($validated['id_salle'] ?? null);
+        $validated['id_salle'] = $primarySalleId ? (int) $primarySalleId : null;
 
         // Ensure at least one salle is provided
-        $allSalleIds = $salles;
-        if ($validated['id_salle']) {
-            $allSalleIds = $allSalleIds->push((int) $validated['id_salle'])->unique()->values();
-        }
+        $allSalleIds = $salles->isNotEmpty()
+            ? $salles
+            : collect([$validated['id_salle']])->filter()->values();
         if ($allSalleIds->isEmpty()) {
             return back()->with('error', 'Veuillez selectionner au moins une salle.');
         }
 
         // Validate capacity vs expected students
-        $registrations = $this->registrationsForModule((int) $validated['id_module'], $session?->id_annee);
+        $registrations = $this->registrationsForModule(
+            (int) $validated['id_module'],
+            $session?->id_annee,
+            $session?->id_filiere
+        );
         if ($registrations->isEmpty()) {
             return back()
                 ->withErrors([
@@ -206,19 +285,43 @@ class ExamenController extends Controller
                 ->withInput();
         }
         $studentCount = $registrations->count();
+        $manualSplit = $this->normalizeManualSplit($manualSplit, $allSalleIds);
+        $manualTotal = (int) $manualSplit->sum('nombre');
+
+        if ($manualTotal > 0 && $validated['effectif_prevu'] && $manualTotal !== (int) $validated['effectif_prevu']) {
+            return back()
+                ->withErrors(['repartition_salles' => 'Le total des repartitions par salle doit correspondre a l\'effectif attendu.'])
+                ->withInput();
+        }
+
+        if ($manualTotal > 0 && ! $validated['effectif_prevu']) {
+            $validated['effectif_prevu'] = $manualTotal;
+        }
+
+        $expectedCount = $validated['effectif_prevu'] ?? $studentCount;
+        $expectedCount = (int) ($manualTotal > 0 ? $manualTotal : $expectedCount);
         $salleModels = Salle::whereIn('id_salle', $allSalleIds)->get(['id_salle', 'code_salle', 'capacite_examens', 'capacite']);
         $totalCapacity = $salleModels->sum(function ($salle) {
             return $salle->capacite_examens ?? $salle->capacite ?? 0;
         });
 
-        if ($studentCount > $totalCapacity) {
+        if ($capacityError = $this->validateManualCapacities($manualSplit, $salleModels)) {
+            return back()->withErrors(['repartition_salles' => $capacityError])->withInput();
+        }
+
+        if ($expectedCount > $totalCapacity) {
             return back()
-                ->withErrors(['salles' => 'Capacite des salles insuffisante pour le nombre d\'etudiants. Ajoutez une salle.'])
+                ->withErrors(['salles' => 'Capacite des salles insuffisante pour le nombre d\'etudiants prevus. Ajoutez une salle ou reduisez l\'effectif.'])
                 ->withInput();
         }
 
         $examen->update($validated);
         $examen->salles()->sync($allSalleIds);
+
+        RepartitionEtudiant::where('id_examen', $examen->id_examen)->delete();
+        Anonymat::where('id_examen', $examen->id_examen)->delete();
+
+        $this->generateInitialRepartition($examen, $registrations, $expectedCount, $manualSplit);
 
         return redirect()
             ->route('examens.examens.index')
@@ -248,6 +351,8 @@ class ExamenController extends Controller
                 ->filter()
                 ->values()
                 ->all(),
+            'effectif_prevu' => $request->filled('effectif_prevu') ? $request->input('effectif_prevu') : null,
+            'bareme_salle' => $request->filled('bareme_salle') ? $request->input('bareme_salle') : null,
         ]);
 
         return $request->validate([
@@ -256,20 +361,29 @@ class ExamenController extends Controller
             'id_salle'          => ['nullable', 'exists:salles,id_salle'],
             'salles'            => ['nullable', 'array'],
             'salles.*'          => ['nullable', 'exists:salles,id_salle'],
+            'repartition_salles'            => ['nullable', 'array'],
+            'repartition_salles.*.id_salle' => ['required_with:repartition_salles.*.nombre', 'exists:salles,id_salle'],
+            'repartition_salles.*.nombre'   => ['nullable', 'integer', 'min:1'],
             'date_examen'       => ['required', 'date'],
             'date_debut'        => ['required', 'date'],
             'date_fin'          => ['required', 'date', 'after:date_debut'],
             'statut'            => ['required', Rule::in(Examen::STATUTS)],
+            'effectif_prevu'    => ['nullable', 'integer', 'min:1'],
+            'bareme_salle'      => ['nullable', 'integer', 'min:1'],
             'description'       => ['nullable', 'string'],
         ]);
     }
 
-    private function generateInitialRepartition(Examen $examen, $registrations = null): void
+    private function generateInitialRepartition(Examen $examen, $registrations = null, ?int $limitCount = null, ?Collection $manualSplit = null): void
     {
         $registrations = $registrations ?? $this->registrationsForModule(
             (int) $examen->id_module,
-            $examen->sessionExamen?->id_annee
+            $examen->sessionExamen?->id_annee,
+            $examen->sessionExamen?->id_filiere
         );
+        if ($limitCount) {
+            $registrations = $registrations->take($limitCount);
+        }
 
         if ($registrations->isEmpty()) {
             return;
@@ -298,9 +412,12 @@ class ExamenController extends Controller
         $rooms = $salles->values();
         $offset = 0;
         $totalStudents = $registrations->count();
+        $manualSplit = collect($manualSplit)
+            ->filter(fn ($row) => isset($row['id_salle'], $row['nombre']) && $row['nombre'] > 0)
+            ->mapWithKeys(fn ($row) => [(int) $row['id_salle'] => (int) $row['nombre']]);
 
         // Keep only as many salles as needed to cover everyone
-        if ($rooms->count() > 1) {
+        if ($manualSplit->isEmpty() && $rooms->count() > 1) {
             $ordered = collect();
             $remainingSeats = $totalStudents;
             foreach ($rooms as $room) {
@@ -315,7 +432,7 @@ class ExamenController extends Controller
         }
 
         // If first salle is enough, stick to it
-        if ($rooms->first()) {
+        if ($manualSplit->isEmpty() && $rooms->first()) {
             $firstCap = $rooms->first()->capacite_examens ?? $rooms->first()->capacite ?? 0;
             if ($firstCap >= $totalStudents) {
                 $rooms = collect([$rooms->first()]);
@@ -330,7 +447,10 @@ class ExamenController extends Controller
             $capacity = $salle->capacite_examens ?? $salle->capacite ?? $remaining;
             $roomsLeft = $roomCount - $index;
             $balancedTake = (int) ceil($remaining / max(1, $roomsLeft));
-            $take = min($capacity > 0 ? $capacity : $remaining, $balancedTake, $remaining);
+            $bareme = $examen->bareme_salle ?? null;
+            $manualTarget = $manualSplit->get($salle->id_salle);
+            $target = $manualTarget ?? ($bareme && $bareme > 0 ? $bareme : $balancedTake);
+            $take = min($capacity > 0 ? $capacity : $remaining, $target, $remaining);
 
             $slice = $registrations->slice($offset, $take);
             $offset += $slice->count();
@@ -387,7 +507,59 @@ class ExamenController extends Controller
         }
     }
 
-    private function registrationsForModule(int $moduleId, ?int $anneeId = null)
+    private function normalizeManualSplit(Collection $manualSplit, Collection $allowedSalleIds): Collection
+    {
+        return $manualSplit
+            ->map(function ($row) {
+                if (is_array($row)) {
+                    return [
+                        'id_salle' => (int) ($row['id_salle'] ?? $row['id'] ?? $row['value'] ?? 0),
+                        'nombre' => isset($row['nombre']) ? (int) $row['nombre'] : null,
+                    ];
+                }
+
+                return null;
+            })
+            ->filter(fn ($row) => $row && $row['id_salle'] && $row['nombre'])
+            ->filter(fn ($row) => $allowedSalleIds->contains((int) $row['id_salle']))
+            ->map(function ($row) {
+                $row['nombre'] = (int) $row['nombre'];
+                $row['id_salle'] = (int) $row['id_salle'];
+                return $row;
+            })
+            ->keyBy('id_salle');
+    }
+
+    private function validateManualCapacities(Collection $manualSplit, Collection $salles): ?string
+    {
+        if ($manualSplit->isEmpty()) {
+            return null;
+        }
+
+        $salleById = $salles->keyBy('id_salle');
+
+        foreach ($manualSplit as $idSalle => $row) {
+            $salle = $salleById->get($idSalle);
+            if (! $salle) {
+                continue;
+            }
+
+            $capacity = (int) ($salle->capacite_examens ?? $salle->capacite ?? 0);
+            if ($capacity && $row['nombre'] > $capacity) {
+                $label = $salle->code_salle ?? $salle->nom_salle ?? ('Salle '.$idSalle);
+                return sprintf(
+                    'La salle %s ne peut pas accueillir %d etudiants (capacite %d).',
+                    $label,
+                    $row['nombre'],
+                    $capacity
+                );
+            }
+        }
+
+        return null;
+    }
+
+    private function registrationsForModule(int $moduleId, ?int $anneeId = null, ?int $filiereId = null)
     {
         $activeYearId = $anneeId
             ?: AnneeUniversitaire::where('est_active', true)->latest('date_debut')->value('id_annee');
@@ -401,6 +573,12 @@ class ExamenController extends Controller
                     $adminQuery->where('id_annee', $activeYearId);
                 });
             })
+            ->when($filiereId, function ($query) use ($filiereId) {
+                $query->whereHas('inscriptionAdministrative.section.filiere', function ($filiereQuery) use ($filiereId) {
+                    $filiereQuery->where('id_filiere', $filiereId);
+                });
+            })
+            ->where('type_inscription', '!=', 'Capitalisation')
             ->orderBy('id_inscription_pedagogique')
             ->get(['id_inscription_pedagogique']);
     }

@@ -1,10 +1,11 @@
-import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
+﻿import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, router, useForm } from '@inertiajs/react';
 import ExamHeader from '../Header';
 import { useEffect, useMemo, useState } from 'react';
 import InputError from '@/Components/InputError';
 import Swal from 'sweetalert2';
-import { CheckCircle2, Edit3, Trash2, XCircle } from 'lucide-react';
+import { CheckCircle2, Edit3, FileSpreadsheet, Trash2, XCircle } from 'lucide-react';
+import XlsxPopulate from 'xlsx-populate/browser/xlsx-populate';
 
 const badgeClasses = (present) =>
     present
@@ -26,6 +27,55 @@ const normalizeText = (value) => {
         .replace(/[\u0300-\u036f]/g, '');
 };
 
+const sanitizeFileName = (value) =>
+    (value || '')
+        .toString()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^A-Za-z0-9._-]+/g, '_')
+        .replace(/_+/g, '_')
+        .replace(/^_|_$/g, '');
+
+const ensureXlsxExtension = (value) => {
+    const trimmed = value?.trim();
+    if (!trimmed) return 'notes.xlsx';
+    return trimmed.toLowerCase().endsWith('.xlsx') ? trimmed : `${trimmed}.xlsx`;
+};
+
+const TEMPLATE_URL = '/templates/repartition.xlsx';
+
+const safeSheetName = (value) => {
+    const name = (value || 'Sheet').replace(/[\\/?*[\]:]/g, ' ').trim() || 'Sheet';
+    return name.slice(0, 31);
+};
+
+const formatModuleLabel = (module) => {
+    const parts = [module?.code_module, module?.nom_module].filter(Boolean);
+    return parts.length ? parts.join(' - ') : 'Module';
+};
+
+const formatElementLabel = (element) => {
+    const parts = [element?.code_element, element?.nom_element].filter(Boolean);
+    return parts.length ? parts.join(' - ') : 'Element';
+};
+
+const formatSessionLabel = (session) => {
+    if (!session) return null;
+    const parts = [session.nom_session, session.type_session].filter(Boolean);
+    return parts.join(' - ') || null;
+};
+
+const downloadBlob = (blob, filename) => {
+    const blobUrl = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = blobUrl;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(blobUrl);
+};
+
 const defaultFormState = (examenId) => ({
     id_examen: examenId ? String(examenId) : '',
     id_inscription_pedagogique: '',
@@ -38,9 +88,41 @@ const defaultFormState = (examenId) => ({
     observation: '',
 });
 
+const resolveExamMeta = (examen) => {
+    if (examen.semestre_id || examen.niveau_id) {
+        return {
+            semestreId: examen.semestre_id,
+            semestreNom: examen.semestre_nom,
+            niveauId: examen.niveau_id,
+            niveauNom: examen.niveau_nom,
+        };
+    }
+
+    const offres = examen.module?.offres_formation || [];
+    const session = examen.session_examen;
+    const matchedOffre =
+        offres.find((offre) => {
+            const matchFiliere = session?.id_filiere ? offre.section?.id_filiere == session.id_filiere : true;
+            const matchAnnee = session?.id_annee ? offre.id_annee == session.id_annee : true;
+            return matchFiliere && matchAnnee;
+        }) || offres[0];
+
+    const semestre = matchedOffre?.semestre;
+    const niveau = semestre?.niveau;
+
+    return {
+        semestreId: semestre?.id_semestre,
+        semestreNom: semestre?.nom_semestre,
+        niveauId: niveau?.id_niveau,
+        niveauNom: niveau?.nom_niveau,
+    };
+};
+
 export default function RepartitionIndex({ examens, repartitions, inscriptions, selectedExamenId, salles }) {
     const [editingId, setEditingId] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const [selectedNiveau, setSelectedNiveau] = useState('');
+    const [selectedSemestre, setSelectedSemestre] = useState('');
     const [columns, setColumns] = useState({
         cne: true,
         etudiant: true,
@@ -50,6 +132,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         presence: true,
     });
     const [presenceFilled, setPresenceFilled] = useState(true);
+    const [templateBuffer, setTemplateBuffer] = useState(null);
     const { data, setData, post, put, delete: destroy, processing, errors } = useForm(defaultFormState(selectedExamenId));
 
     const selectedExamen = useMemo(
@@ -68,8 +151,8 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         setSearchTerm('');
     }, [selectedExamenId]);
 
-    const handleExamChange = (event) => {
-        const value = event.target.value;
+    const handleExamChange = (eventOrValue) => {
+        const value = typeof eventOrValue === 'string' ? eventOrValue : eventOrValue.target.value;
         router.get(
             route('surveillance.repartition-etudiants.index'),
             value ? { examen: value } : {},
@@ -166,6 +249,69 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
 
     const searchActive = searchTerm.trim().length > 0;
 
+    const examensWithMeta = useMemo(
+        () =>
+            examens.map((examen) => ({
+                examen,
+                ...resolveExamMeta(examen),
+            })),
+        [examens],
+    );
+
+    const availableNiveaux = useMemo(() => {
+        const map = new Map();
+        examensWithMeta.forEach(({ niveauId, niveauNom }) => {
+            if (!niveauId) return;
+            if (!map.has(niveauId)) {
+                map.set(niveauId, {
+                    id: niveauId,
+                    nom: niveauNom || `Niveau ${niveauId}`,
+                });
+            }
+        });
+        return Array.from(map.values()).sort((a, b) => a.nom.localeCompare(b.nom));
+    }, [examensWithMeta]);
+
+    const availableSemestres = useMemo(() => {
+        const map = new Map();
+        examensWithMeta.forEach(({ semestreId, semestreNom, niveauId }) => {
+            if (!semestreId) return;
+            if (selectedNiveau && String(niveauId) !== String(selectedNiveau)) return;
+            if (!map.has(semestreId)) {
+                map.set(semestreId, {
+                    id: semestreId,
+                    nom: semestreNom || `Semestre ${semestreId}`,
+                    niveauId,
+                });
+            }
+        });
+        return Array.from(map.values()).sort((a, b) => a.nom.localeCompare(b.nom));
+    }, [examensWithMeta, selectedNiveau]);
+
+    const filteredExamens = useMemo(() => {
+        return examensWithMeta
+            .filter(({ niveauId, semestreId }) => {
+                if (selectedNiveau && String(niveauId) !== String(selectedNiveau)) {
+                    return false;
+                }
+                if (selectedSemestre && String(semestreId) !== String(selectedSemestre)) {
+                    return false;
+                }
+                return true;
+            })
+            .map(({ examen }) => examen);
+    }, [examensWithMeta, selectedNiveau, selectedSemestre]);
+
+    useEffect(() => {
+        if (filteredExamens.length === 0) return;
+
+        const selectedId = selectedExamenId ? String(selectedExamenId) : '';
+        const exists = filteredExamens.some((examen) => String(examen.id_examen) === selectedId);
+        if (!exists) {
+            handleExamChange(String(filteredExamens[0].id_examen));
+        }
+    }, [filteredExamens, selectedExamenId]);
+
     const resetForm = () => {
         setEditingId(null);
         setData(() => defaultFormState(selectedExamenId));
@@ -200,7 +346,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
             put(route('surveillance.repartition-etudiants.update', editingId), {
                 preserveScroll: true,
                 onSuccess: () => {
-                    Swal.fire({ icon: 'success', title: 'Répartition mise à jour', timer: 1200, showConfirmButton: false });
+                    Swal.fire({ icon: 'success', title: 'RÃ©partition mise Ã  jour', timer: 1200, showConfirmButton: false });
                     resetForm();
                 },
             });
@@ -208,7 +354,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
             post(route('surveillance.repartition-etudiants.store'), {
                 preserveScroll: true,
                 onSuccess: () => {
-                    Swal.fire({ icon: 'success', title: 'Étudiant ajouté', timer: 1200, showConfirmButton: false });
+                    Swal.fire({ icon: 'success', title: 'Ã‰tudiant ajoutÃ©', timer: 1200, showConfirmButton: false });
                     resetForm();
                 },
             });
@@ -228,7 +374,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                 onSuccess: () =>
                     Swal.fire({
                         icon: 'success',
-                        title: 'Répartition supprimée',
+                        title: 'RÃ©partition supprimÃ©e',
                         timer: 1200,
                         showConfirmButton: false,
                     }),
@@ -259,14 +405,62 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         window.open(url, '_blank');
     };
 
-    const handleCollectiveExport = () => {
+    const handleCollectiveExport = async () => {
         if (!selectedExamenId) {
             Swal.fire({ icon: 'info', title: 'Choisissez un examen' });
             return;
         }
 
-        const url = route('surveillance.repartition-etudiants.export-collective', selectedExamenId);
-        window.open(url, '_blank');
+        const salleIndices = Array.from(
+            new Set(
+                repartitions.map((item) => {
+                    const str = String(item.code_grille ?? '').padStart(7, '0');
+                    const digit = Number(str.charAt(3));
+                    return Number.isNaN(digit) || digit < 1 ? 1 : digit;
+                }),
+            ),
+        ).sort((a, b) => a - b);
+
+        if (salleIndices.length === 0) {
+            Swal.fire({ icon: 'info', title: 'Aucune repartition pour cet examen' });
+            return;
+        }
+
+        const baseUrl = route('surveillance.repartition-etudiants.export-collective', selectedExamenId);
+        for (const index of salleIndices) {
+            const url = `${baseUrl}?salle_index=${index}`;
+            try {
+                const response = await fetch(url, { credentials: 'same-origin' });
+                if (!response.ok) {
+                    throw new Error(`Erreur serveur (${response.status})`);
+                }
+
+                const blob = await response.blob();
+                const disposition = response.headers.get('Content-Disposition') || '';
+                const match = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/i.exec(disposition);
+                const filename = match
+                    ? match[1].replace(/['"]/g, '')
+                    : `presence-collective-salle-${index}.pdf`;
+
+                const blobUrl = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = blobUrl;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                window.URL.revokeObjectURL(blobUrl);
+
+                await new Promise((resolve) => setTimeout(resolve, 200));
+            } catch (error) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Echec du telechargement',
+                    text: error?.message || 'Impossible de telecharger les PDFs.',
+                });
+                break;
+            }
+        }
     };
 
     const handleSallesPlacesExport = () => {
@@ -279,6 +473,116 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         window.open(url, '_blank');
     };
 
+    const handleExcelTemplates = async () => {
+        if (!selectedExamen || !selectedExamenId) {
+            Swal.fire({ icon: 'info', title: 'Choisissez un examen' });
+            return;
+        }
+
+        if (!repartitions.length) {
+            Swal.fire({ icon: 'info', title: 'Aucune repartition pour cet examen' });
+            return;
+        }
+
+        try {
+            const buffer =
+                templateBuffer ??
+                (await fetch(TEMPLATE_URL).then((response) => {
+                    if (!response.ok) {
+                        throw new Error('Modele Excel introuvable.');
+                    }
+                    return response.arrayBuffer();
+                }));
+
+            if (!templateBuffer) {
+                setTemplateBuffer(buffer);
+            }
+
+            const moduleLabel = formatModuleLabel(selectedExamen.module);
+            const sessionLabel = formatSessionLabel(selectedExamen.session_examen);
+            const { semestreNom, niveauNom } = resolveExamMeta(selectedExamen);
+            const filiereName = selectedExamen.session_examen?.filiere?.nom_filiere;
+            const headerLine = [niveauNom, semestreNom, filiereName ? `Filiere ${filiereName}` : null]
+                .filter(Boolean)
+                .join(' - ');
+            const noteScale = selectedExamen.bareme_salle || 20;
+            const anonymatList = repartitions.map((rep) => rep.code_anonymat ?? rep.code_grille ?? '');
+
+            const baseName =
+                sanitizeFileName(
+                    [sessionLabel, selectedExamen.module?.code_module, selectedExamen.module?.nom_module]
+                        .filter(Boolean)
+                        .join('_'),
+                ) || 'notes_module';
+
+            const fillWorkbook = async ({ sheetTitle, moduleName, moduleCode }) => {
+                const workbook = await XlsxPopulate.fromDataAsync(buffer.slice(0));
+                const sheet = workbook.sheet(0);
+
+                sheet.name(safeSheetName(sheetTitle || moduleLabel || 'RN'));
+
+                sheet.cell('B3').value(sessionLabel || '');
+                sheet.cell('B4').value(headerLine || '');
+                sheet.cell('B6').value(moduleName || moduleLabel || '');
+                sheet.cell('B7').value(moduleCode || '');
+                sheet.cell('C9').value(`NOTE SUR ${noteScale}`);
+
+                const startRow = 10;
+                const minimumRows = 103;
+                const targetRows = Math.max(anonymatList.length, minimumRows);
+
+                for (let index = 0; index < targetRows; index += 1) {
+                    const value = anonymatList[index] ?? '';
+                    sheet.cell(`B${startRow + index}`).value(value);
+                }
+
+                return workbook.outputAsync();
+            };
+
+            const moduleFilename = ensureXlsxExtension(`${baseName}_module`);
+            const moduleBlob = await fillWorkbook({
+                sheetTitle: 'Module',
+                moduleName: selectedExamen.module?.nom_module,
+                moduleCode: selectedExamen.module?.code_module,
+            });
+            downloadBlob(moduleBlob, moduleFilename);
+
+            const elements = selectedExamen.module?.elements || [];
+            for (const [index, element] of elements.entries()) {
+                const elementLabel = formatElementLabel(element);
+                const elementBase =
+                    sanitizeFileName(`${baseName}_${element.code_element || element.nom_element || `element_${index + 1}`}`) ||
+                    `element_${index + 1}`;
+                const filename = ensureXlsxExtension(elementBase);
+
+                const blob = await fillWorkbook({
+                    sheetTitle: elementLabel,
+                    moduleName: element?.nom_element || elementLabel,
+                    moduleCode: element?.code_element || elementLabel,
+                });
+
+                downloadBlob(blob, filename);
+            }
+
+            Swal.fire({
+                icon: 'success',
+                title: 'Fichier(s) Excel generes',
+                text:
+                    elements.length > 0
+                        ? `1 module + ${elements.length} element(s) telecharges.`
+                        : 'Fichier module telecharge.',
+                timer: 1800,
+                showConfirmButton: false,
+            });
+        } catch (error) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Echec du telechargement',
+                text: error?.message || 'Impossible de generer les fichiers Excel.',
+            });
+        }
+    };
+
     return (
         <AuthenticatedLayout
             header={<h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100">Repartition des etudiants</h2>}
@@ -289,6 +593,41 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
 
             <div className="mb-6 grid gap-4 rounded-xl border border-gray-200 bg-white/90 p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900 md:grid-cols-3">
                 <div className="md:col-span-2 space-y-3">
+                    <div className="grid gap-3 sm:grid-cols-2">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Niveau</label>
+                            <select
+                                value={selectedNiveau}
+                                onChange={(event) => {
+                                    setSelectedNiveau(event.target.value);
+                                    setSelectedSemestre('');
+                                }}
+                                className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:bg-slate-800 dark:text-white"
+                            >
+                                <option value="">Tous</option>
+                                {availableNiveaux.map((niveau) => (
+                                    <option key={niveau.id} value={niveau.id}>
+                                        {niveau.nom}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Semestre</label>
+                            <select
+                                value={selectedSemestre}
+                                onChange={(event) => setSelectedSemestre(event.target.value)}
+                                className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:bg-slate-800 dark:text-white"
+                            >
+                                <option value="">Tous</option>
+                                {availableSemestres.map((semestre) => (
+                                    <option key={semestre.id} value={semestre.id}>
+                                        {semestre.nom}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Selectionnez un examen</label>
                         <select
@@ -297,7 +636,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                             className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:bg-slate-800 dark:text-white"
                         >
                             <option value="">-- Choisir un examen --</option>
-                            {examens.map((examen) => (
+                            {filteredExamens.map((examen) => (
                                 <option key={examen.id_examen} value={examen.id_examen}>
                                     {examen.module?.nom_module ?? 'Module'} - {examen.session_examen?.nom_session ?? 'Session'} - {new Date(examen.date_examen).toLocaleDateString()}
                                 </option>
@@ -331,7 +670,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                         <div key={salle.code} className="flex items-center justify-between rounded-md bg-white/70 p-2 dark:bg-gray-800/60">
                                             <div className="font-semibold">{salle.code}</div>
                                             <div className="text-gray-700 dark:text-gray-200">
-                                                {salle.usage} / {salle.capacity || '—'}
+                                                {salle.usage} / {salle.capacity || '--'}
                                                 {salle.percent !== null && ` (${salle.percent}%)`}
                                             </div>
                                         </div>
@@ -362,6 +701,17 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                     disabled={!selectedExamenId}
                                 >
                                     Plan salles / places (PDF)
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={handleExcelTemplates}
+                                    className="mt-2 rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60 md:ml-2 md:mt-0"
+                                    disabled={!selectedExamenId || repartitions.length === 0}
+                                >
+                                    <span className="inline-flex items-center gap-2">
+                                        <FileSpreadsheet size={16} />
+                                        Excel correcteurs (module + elements)
+                                    </span>
                                 </button>
                                 <div className="mt-3 space-y-1 text-xs text-gray-600 dark:text-gray-300">
                                     <div className="font-semibold text-gray-700 dark:text-gray-100">Colonnes</div>
@@ -408,30 +758,30 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                     <div className="rounded-xl border border-gray-200 bg-white/90 p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
                         <div className="mb-4 flex items-center justify-between">
                             <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">
-                                {editingId ? 'Modifier la répartition' : 'Nouvelle répartition'}
+                                {editingId ? 'Modifier la rÃ©partition' : 'Nouvelle rÃ©partition'}
                             </h3>
                             {editingId && (
                                 <button
                                     onClick={resetForm}
                                     className="text-sm text-indigo-600 hover:underline dark:text-indigo-300"
                                 >
-                                    Annuler l’édition
+                                    Annuler lâ€™Ã©dition
                                 </button>
                             )}
                         </div>
                         <form onSubmit={submit} className="space-y-4">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Étudiant</label>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Ã‰tudiant</label>
                                 <select
                                     value={data.id_inscription_pedagogique}
                                     onChange={(e) => setData('id_inscription_pedagogique', e.target.value)}
                                     disabled={!selectedExamenId}
                                     className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:bg-slate-800 dark:text-white"
                                 >
-                                    <option value="">Sélectionner</option>
+                                    <option value="">SÃ©lectionner</option>
                                     {availableInscriptions.map((inscription) => (
                                         <option key={inscription.id_inscription_pedagogique} value={inscription.id_inscription_pedagogique}>
-                                            {inscription.etudiant?.cne} • {inscription.etudiant?.nom} {inscription.etudiant?.prenom}
+                                            {inscription.etudiant?.cne} â€¢ {inscription.etudiant?.nom} {inscription.etudiant?.prenom}
                                         </option>
                                     ))}
                                 </select>
@@ -460,7 +810,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                 </div>
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Numéro de place</label>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">NumÃ©ro de place</label>
                                 <input
                                     value={data.numero_place}
                                     onChange={(e) => setData('numero_place', e.target.value)}
@@ -477,12 +827,12 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                     className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
                                 />
                                 <label htmlFor="present" className="text-sm text-gray-700 dark:text-gray-200">
-                                    Étudiant présent
+                                    Ã‰tudiant prÃ©sent
                                 </label>
                             </div>
                             <div className="grid gap-4 sm:grid-cols-2">
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Heure d’arrivée</label>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Heure dâ€™arrivÃ©e</label>
                                     <input
                                         type="time"
                                         value={data.heure_arrivee}
@@ -518,14 +868,14 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                     className="rounded-lg px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
                                     onClick={resetForm}
                                 >
-                                    Réinitialiser
+                                    RÃ©initialiser
                                 </button>
                                 <button
                                     type="submit"
                                     disabled={processing || !selectedExamenId}
                                     className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70"
                                 >
-                                    {editingId ? 'Mettre à jour' : 'Affecter'}
+                                    {editingId ? 'Mettre Ã  jour' : 'Affecter'}
                                 </button>
                             </div>
                         </form>
@@ -536,7 +886,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                     <div className="rounded-xl border border-gray-200 bg-white/90 p-6 shadow-sm dark:border-gray-700 dark:bg-gray-900">
                         <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                             <div>
-                                <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Étudiants affectés</h3>
+                                <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Ã‰tudiants affectÃ©s</h3>
                                 <span className="text-sm text-gray-200 dark:text-gray-400">
                                     {searchActive ? (
                                         <>
@@ -549,7 +899,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                             </div>
                             <div className="w-full md:w-72">
                                 <label htmlFor="repartition-search" className="sr-only">
-                                    Rechercher un étudiant
+                                    Rechercher un Ã©tudiant
                                 </label>
                                 <input
                                     id="repartition-search"
@@ -567,7 +917,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                 <thead className="bg-gray-50 dark:bg-gray-900/40">
                                     <tr>
                                         <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-200 dark:text-gray-400">
-                                            Étudiant
+                                            Ã‰tudiant
                                         </th>
                                         <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-200 dark:text-gray-400">
                                             Grille / Place
@@ -576,7 +926,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                             Anonymat
                                         </th>
                                         <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-200 dark:text-gray-400">
-                                            Présence
+                                            PrÃ©sence
                                         </th>
                                         <th className="px-4 py-3" />
                                     </tr>
@@ -600,7 +950,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                             <td className="px-4 py-3">
                                                 <div className="font-medium">{repartition.code_anonymat ?? '-'}</div>
                                                 <div className="text-xs text-gray-200 dark:text-gray-400">
-                                                    {formatTime(repartition.heure_arrivee)} → {formatTime(repartition.heure_sortie)}
+                                                    {formatTime(repartition.heure_arrivee)} â†’ {formatTime(repartition.heure_sortie)}
                                                 </div>
                                             </td>
                                             <td className="px-4 py-3">
@@ -608,7 +958,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                                     {repartition.present ? (
                                                         <>
                                                             <CheckCircle2 size={14} />
-                                                            Présent
+                                                            PrÃ©sent
                                                         </>
                                                     ) : (
                                                         <>
@@ -642,8 +992,8 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                         <tr>
                                             <td colSpan={5} className="px-4 py-6 text-center text-sm text-gray-200 dark:text-gray-400">
                                                 {searchActive
-                                                    ? 'Aucun résultat ne correspond à cette recherche.'
-                                                    : 'Aucune répartition pour cet examen.'}
+                                                    ? 'Aucun rÃ©sultat ne correspond Ã  cette recherche.'
+                                                    : 'Aucune rÃ©partition pour cet examen.'}
                                             </td>
                                         </tr>
                                     )}
@@ -656,5 +1006,4 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         </AuthenticatedLayout>
     );
 }
-
 

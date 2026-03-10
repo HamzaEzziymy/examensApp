@@ -23,14 +23,15 @@
     $modulesList = ($modules ?? collect());
     $sessionLabel = $sessionName ?? ($exam->sessionExamen->nom_session ?? '-');
     $dateLabel = optional($firstExamDate ?? $exam->date_examen ?? null)->format('d/m/Y') ?? '-';
-    $salleLabel = collect($exam?->salles ?? [])
+    $salleNames = collect($exam?->salles ?? [])
         ->pluck('nom_salle')
         ->filter()
         ->unique()
-        ->implode(' | ');
-    if (empty($salleLabel)) {
-        $salleLabel = $exam?->salle?->nom_salle ?? '-';
-    }
+        ->values();
+    $salleLabel = $footerSalleLabel
+        ?? ($salleNames->count() === 1
+            ? $salleNames->first()
+            : ($salleNames->isNotEmpty() ? $salleNames->implode(' | ') : ($exam?->salle?->nom_salle ?? '-')));
     $niveauLabel = $niveauFiliere ?? ($exam?->module?->offresFormation?->first()?->semestre?->niveau?->nom_niveau ?? '');
     $semestreLabel = $modulesList->pluck('semestre')->filter()->first()
         ?? ($exam?->module?->offresFormation?->first()?->semestre?->nom_semestre ?? '');
@@ -38,10 +39,10 @@
 
 <footer class="pdf-pagination-footer">
     <span class="meta">
-        <span>Salle: {{ $salleLabel }}</span>
-        <span>Session: {{ $sessionLabel }}</span>
-        <span>Niveau: {{ $niveauLabel ?: '-' }}</span>
-        <span>Semestre: {{ $semestreLabel ?: '-' }}</span>
+        <span> {{ $salleLabel }}</span>
+        <span> {{ $sessionLabel }}</span>
+        <span> {{ $niveauLabel ?: '-' }}</span>
+        <span> {{ $semestreLabel ?: '-' }}</span>
     </span>
     <span>| Page @pageNumber / @totalPages</span>
 </footer>

@@ -6,7 +6,7 @@ import ExamensTable from './ExamensTable';
 import ExamensCalendar from './ExamensCalendar';
 import { useState } from 'react';
 
-export default function ExamensIndex({ examens, sessions, modules, salles, statuts }) {
+export default function ExamensIndex({ examens, sessions, modules, salles, statuts, semestres, niveaux }) {
     const [view, setView] = useState('list');
     const [formOpen, setFormOpen] = useState(false);
 
@@ -63,6 +63,8 @@ export default function ExamensIndex({ examens, sessions, modules, salles, statu
                         modules={modules}
                         salles={salles}
                         statuts={statuts}
+                        semestres={semestres}
+                        niveaux={niveaux}
                     />
                 )}
                 {view === 'calendar' && (
@@ -72,6 +74,8 @@ export default function ExamensIndex({ examens, sessions, modules, salles, statu
                         modules={modules}
                         salles={salles}
                         statuts={statuts}
+                        semestres={semestres}
+                        niveaux={niveaux}
                     />
                 )}
             </div>
@@ -94,6 +98,8 @@ export default function ExamensIndex({ examens, sessions, modules, salles, statu
                             modules={modules}
                             salles={salles}
                             statuts={statuts}
+                            semestres={semestres}
+                            niveaux={niveaux}
                             asCard={false}
                             hideTitle
                             onCancel={() => setFormOpen(false)}

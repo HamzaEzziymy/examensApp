@@ -182,7 +182,11 @@
         <img src="{{ public_path('/logo.png') }}" alt="Logo" style="top: 20px; left: 20px; width: 100%; height: 70px;">
         <div class="date-service">
             <div class="header">Service Examens</div>
+              <!-- <h5>@if(isset($data["section"]) && $data["section"])
+                {{ $data["section"] }}
+            @endif</h5> -->
             <div class="date">Fès le : {{ now()->format('d/m/Y') }}</div>
+      
         </div>
         
         <h1>PROCÈS VERBAL</h1>
@@ -190,10 +194,7 @@
             {{ $data["niveau"] }}
             @if(isset($data["filiere"]) && $data["filiere"])
                 {{ $data["filiere"] }}
-            @endif
-            <!-- @if(isset($data["section"]) && $data["section"])
-                {{ $data["section"] }}
-            @endif -->
+            @endif 
         </h2>
 
         <table class="info-table">

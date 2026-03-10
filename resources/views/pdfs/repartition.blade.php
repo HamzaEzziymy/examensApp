@@ -22,6 +22,10 @@
         th { background: #FFD966; text-align: center; }
         tbody tr:nth-child(odd) { background: #e5e5e5; }
         .text-center { text-align: center; }
+        .student-cell { display: flex; align-items: baseline; gap: 6px; }
+        .student-name { font-size: 11px; line-height: 1.2; font-family: Arial, Helvetica, sans-serif; font-weight: bold; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .student-cne { font-size: 9px; color: #444; line-height: 1.1; font-weight: bold; flex: 0 0 auto; }
+        .cap { background: #d9d9d9; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -60,13 +64,13 @@
                     <td class="label">Module</td>
                     <td class="value">{{ $examen->module->nom_module ?? '-' }}</td>
                     <td class="label">Salle</td>
-                    <td class="value">{{ $group['salle']->nom_salle ?? ('#'.$group['salle_index']) }}</td>
+                    <td class="value">{{ $group['salle']->nom_salle ?? ('nb place'.$group['salle_index']) }}</td>
                 </tr>
                 <tr>
                     <td class="label">Date</td>
                     <td class="value">{{ optional($examen->date_examen)->format('d/m/Y') ?? '-' }}</td>
-                    <td class="label">Horaire</td>
-                    <td class="value">{{ optional($examen->date_debut)->format('H:i') ?? '-' }} - {{ optional($examen->date_fin)->format('H:i') ?? '-' }}</td>
+                    <!-- <td class="label">Horaire</td> --><td></td>
+                    <td></td><!-- <td class="value">{{ optional($examen->date_debut)->format('H:i') ?? '-' }} - {{ optional($examen->date_fin)->format('H:i') ?? '-' }}</td> -->
                 </tr>
             </table>
 
@@ -81,7 +85,7 @@
             <table>
                 <thead>
                     <tr>
-                        <th>#</th>
+                        <th>N de place</th>
                         @if($showCne)
                             <th>CNE</th>
                         @endif
