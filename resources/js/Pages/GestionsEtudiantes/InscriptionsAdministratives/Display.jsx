@@ -35,6 +35,10 @@ const Display = ({
   const [itemsPerPage, setItemsPerPage] = useState(initialFilters.per_page || 25);
   const [showFilters, setShowFilters] = useState(false);
   const [isFiltering, setIsFiltering] = useState(false);
+  const [studentSearch, setStudentSearch] = useState('');
+  const [studentSearchEdit, setStudentSearchEdit] = useState('');
+  const [showStudentDropdown, setShowStudentDropdown] = useState(false);
+  const [showStudentDropdownEdit, setShowStudentDropdownEdit] = useState(false);
 
   // Using useForm for better error handling
   const inscriptionForm = useForm({
@@ -159,6 +163,32 @@ const Display = ({
       onFinish: () => setIsFiltering(false),
     });
   };
+
+  // Filter students based on search term
+  const filteredStudents = useMemo(() => {
+    if (!studentSearch.trim()) return students;
+    
+    const searchLower = studentSearch.toLowerCase().trim();
+    return students.filter(student => 
+      (student.cne && student.cne.toLowerCase().includes(searchLower)) ||
+      (student.nom && student.nom.toLowerCase().includes(searchLower)) ||
+      (student.prenom && student.prenom.toLowerCase().includes(searchLower)) ||
+      (student.mail_academique && student.mail_academique.toLowerCase().includes(searchLower))
+    );
+  }, [studentSearch, students]);
+
+  // Filter students for edit form
+  const filteredStudentsEdit = useMemo(() => {
+    if (!studentSearchEdit.trim()) return students;
+    
+    const searchLower = studentSearchEdit.toLowerCase().trim();
+    return students.filter(student => 
+      (student.cne && student.cne.toLowerCase().includes(searchLower)) ||
+      (student.nom && student.nom.toLowerCase().includes(searchLower)) ||
+      (student.prenom && student.prenom.toLowerCase().includes(searchLower)) ||
+      (student.mail_academique && student.mail_academique.toLowerCase().includes(searchLower))
+    );
+  }, [studentSearchEdit, students]);
 
   // Pagination info
   const currentPage = pagination?.current_page || 1;
@@ -1003,21 +1033,53 @@ const Display = ({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Étudiant *</label>
-                    <select
-                      name="id_etudiant"
-                      value={inscriptionForm.data.id_etudiant}
-                      onChange={(e) => inscriptionForm.setData('id_etudiant', e.target.value)}
-                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 ${
-                        inscriptionForm.errors.id_etudiant ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'
-                      }`}
-                    >
-                      <option value="">--Sélectionner un étudiant--</option>
-                      {students.map(student => (
-                        <option key={student.id_etudiant} value={student.id_etudiant}>
-                          {student.cne} - {student.nom} {student.prenom}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="Rechercher par CNE, nom, prénom ou email..."
+                        value={studentSearch}
+                        onChange={(e) => setStudentSearch(e.target.value)}
+                        onFocus={() => setShowStudentDropdown(true)}
+                        className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 ${
+                          inscriptionForm.errors.id_etudiant ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'
+                        }`}
+                      />
+                      {showStudentDropdown && (
+                        <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto">
+                          {filteredStudents.length > 0 ? (
+                            filteredStudents.map(student => (
+                              <button
+                                key={student.id_etudiant}
+                                type="button"
+                                onClick={() => {
+                                  inscriptionForm.setData('id_etudiant', student.id_etudiant);
+                                  setStudentSearch(`${student.cne} - ${student.nom} ${student.prenom}`);
+                                  setShowStudentDropdown(false);
+                                }}
+                                className="w-full text-left px-4 py-2 hover:bg-blue-50 dark:hover:bg-gray-600 border-b border-gray-200 dark:border-gray-600 last:border-b-0 transition-colors"
+                              >
+                                <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{student.cne} - {student.nom} {student.prenom}</div>
+                                <div className="text-xs text-gray-600 dark:text-gray-400">{student.mail_academique}</div>
+                              </button>
+                            ))
+                          ) : (
+                            <div className="px-4 py-3 text-gray-500 dark:text-gray-400 text-center">Aucun étudiant trouvé</div>
+                          )}
+                        </div>
+                      )}
+                      {inscriptionForm.data.id_etudiant && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            inscriptionForm.setData('id_etudiant', '');
+                            setStudentSearch('');
+                          }}
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                     {inscriptionForm.errors.id_etudiant && (
                       <div className="text-red-500 text-sm mt-1">{inscriptionForm.errors.id_etudiant}</div>
                     )}
@@ -1171,21 +1233,53 @@ const Display = ({
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Étudiant *</label>
-                    <select
-                      name="id_etudiant"
-                      value={editForm.data.id_etudiant}
-                      onChange={(e) => editForm.setData('id_etudiant', e.target.value)}
-                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 ${
-                        editForm.errors.id_etudiant ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'
-                      }`}
-                    >
-                      <option value="">--Sélectionner un étudiant--</option>
-                      {students.map(student => (
-                        <option key={student.id_etudiant} value={student.id_etudiant}>
-                          {student.cne} - {student.nom} {student.prenom}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="Rechercher par CNE, nom, prénom ou email..."
+                        value={studentSearchEdit}
+                        onChange={(e) => setStudentSearchEdit(e.target.value)}
+                        onFocus={() => setShowStudentDropdownEdit(true)}
+                        className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 ${
+                          editForm.errors.id_etudiant ? 'border-red-500 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'
+                        }`}
+                      />
+                      {showStudentDropdownEdit && (
+                        <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto">
+                          {filteredStudentsEdit.length > 0 ? (
+                            filteredStudentsEdit.map(student => (
+                              <button
+                                key={student.id_etudiant}
+                                type="button"
+                                onClick={() => {
+                                  editForm.setData('id_etudiant', student.id_etudiant);
+                                  setStudentSearchEdit(`${student.cne} - ${student.nom} ${student.prenom}`);
+                                  setShowStudentDropdownEdit(false);
+                                }}
+                                className="w-full text-left px-4 py-2 hover:bg-blue-50 dark:hover:bg-gray-600 border-b border-gray-200 dark:border-gray-600 last:border-b-0 transition-colors"
+                              >
+                                <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{student.cne} - {student.nom} {student.prenom}</div>
+                                <div className="text-xs text-gray-600 dark:text-gray-400">{student.mail_academique}</div>
+                              </button>
+                            ))
+                          ) : (
+                            <div className="px-4 py-3 text-gray-500 dark:text-gray-400 text-center">Aucun étudiant trouvé</div>
+                          )}
+                        </div>
+                      )}
+                      {editForm.data.id_etudiant && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            editForm.setData('id_etudiant', '');
+                            setStudentSearchEdit('');
+                          }}
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                     {editForm.errors.id_etudiant && (
                       <div className="text-red-500 text-sm mt-1">{editForm.errors.id_etudiant}</div>
                     )}

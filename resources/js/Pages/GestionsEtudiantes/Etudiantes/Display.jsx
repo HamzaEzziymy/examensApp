@@ -922,8 +922,9 @@ const StudentDataTable = ({
                     </td>
                     <td className="px-6 py-4 text-right text-sm font-medium">
                       <button
-                        // onClick={() => router.visit(`/etudiants/${student.id_etudiant}/edit`)}
+                        onClick={() => router.visit(route('personnes.etudiants.details', student.id_etudiant))}
                         className="text-blue-600 dark:text-blue-400 hover:text-blue-900 dark:hover:text-blue-300 mr-3"
+                        title="Voir les détails"
                       >
                         <Eye className="w-4 h-4 inline" />
                       </button>

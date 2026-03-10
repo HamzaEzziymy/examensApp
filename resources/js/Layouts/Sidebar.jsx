@@ -48,14 +48,14 @@ function Sidebar({ sidebarOpen, setSidebarOpen, mobileMenuOpen, setMobileMenuOpe
             href: route('correction.notes.index'),
             current: route().current('correction.*')
         },
-        { name: 'Profile', icon: <FaUser size={20} />, href: route('profile.edit'), current: route().current('profile.edit') }
     ];
-
+    
     const configRoutes = [
-        { name: 'Faculté', icon: <FaSchool size={20} />, href: route('configuration.faculte.index'), current: route().current('configuration.faculte.index') },
-        { name: 'Années Universitaires', icon: <CalendarDays size={20} />, href: route("configuration.annees-universitaires.index"), current: route().current('configuration.annees-universitaires.index') },
+        { name: 'Enseignants', icon: <FaChalkboardTeacher size={20} />, href: route('configuration.enseignants.index'), current: route().current('configuration.enseignants.*') },
         { name: 'Salles', icon: <Building size={20} />, href: route('configuration.salles.index'), current: route().current('configuration.salles.*') },
-        { name: 'Enseignants', icon: <FaChalkboardTeacher size={20} />, href: route('configuration.enseignants.index'), current: route().current('configuration.enseignants.*') }
+        { name: 'Années Universitaires', icon: <CalendarDays size={20} />, href: route("configuration.annees-universitaires.index"), current: route().current('configuration.annees-universitaires.index') },
+        { name: 'Profile', icon: <FaUser size={20} />, href: route('profile.edit'), current: route().current('profile.edit') },
+        { name: 'Faculté', icon: <FaSchool size={20} />, href: route('configuration.faculte.index'), current: route().current('configuration.faculte.index') },
     ]
 
     return (
