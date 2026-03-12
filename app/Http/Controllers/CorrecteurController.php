@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use Inertia\Inertia;
 
 class CorrecteurController extends Controller
 {
@@ -12,7 +13,7 @@ class CorrecteurController extends Controller
      */
     public function index()
     {
-        //
+        return Inertia::render('correction/Correcteurs/Index');
     }
 
     /**

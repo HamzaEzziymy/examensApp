@@ -1,14 +1,16 @@
-import React from 'react'
-import { Link, usePage } from '@inertiajs/react';
+import React, { useState } from 'react'
+import { Link } from '@inertiajs/react';
 import ApplicationLogo from '@/Components/ApplicationLogo';
-import { FaHome, FaPaperclip, FaSchool, FaTasks, FaUser, FaChalkboardTeacher } from 'react-icons/fa';
+import { FaHome, FaSchool, FaTasks, FaUser, FaChalkboardTeacher } from 'react-icons/fa';
 import { IoDocumentsSharp } from "react-icons/io5";
-import { MdAccountTree, MdFestival, MdOutlineGrading } from "react-icons/md";
+import { MdAccountTree, MdOutlineGrading } from "react-icons/md";
 import { PiStudent } from "react-icons/pi";
-import { CalendarDays, Building } from 'lucide-react';
+import { CalendarDays, Building, ChevronDown, FileText, BarChart3, Users, Settings } from 'lucide-react';
 
 
 function Sidebar({ sidebarOpen, setSidebarOpen, mobileMenuOpen, setMobileMenuOpen }) {
+    const [correctionOpen, setCorrectionOpen] = useState(false);
+    const [configOpen, setConfigOpen] = useState(false);
 
     // Navigation items
     const navigation = [
@@ -37,25 +39,26 @@ function Sidebar({ sidebarOpen, setSidebarOpen, mobileMenuOpen, setMobileMenuOpe
             current: route().current('examens.*') || route().current('surveillance.repartition-etudiants.*')
         },
         {
-            name: 'Correction & notes',
-            icon: <MdOutlineGrading size={20} />,
-            href: route('correction.notes.index'),
-            current: route().current('correction.*')
-        },
-        {
             name: 'Documents',
             icon: <IoDocumentsSharp size={20} />,
             href: route('proces-v'),
             current: route().current('*.documents.*')
         },
     ];
+
+    const correctionSubmenu = [
+        { name: 'Notes', icon: <FileText size={16} />, href: route('correction.notes.index'), current: route().current('correction.notes.*') },
+        { name: 'Résultats modules', icon: <BarChart3 size={16} />, href: route('correction.resultats-modules.index'), current: route().current('correction.resultats-modules.*') },
+        { name: 'Résultats éléments', icon: <BarChart3 size={16} />, href: route('correction.resultats-elements.index'), current: route().current('correction.resultats-elements.*') },
+        { name: 'Correcteurs', icon: <Users size={16} />, href: route('correction.correcteurs.index'), current: route().current('correction.correcteurs.*') },
+    ];
     
     const configRoutes = [
         { name: 'Enseignants', icon: <FaChalkboardTeacher size={20} />, href: route('configuration.enseignants.index'), current: route().current('configuration.enseignants.*') },
         { name: 'Salles', icon: <Building size={20} />, href: route('configuration.salles.index'), current: route().current('configuration.salles.*') },
         { name: 'Années Universitaires', icon: <CalendarDays size={20} />, href: route("configuration.annees-universitaires.index"), current: route().current('configuration.annees-universitaires.index') },
-        { name: 'Profile', icon: <FaUser size={20} />, href: route('profile.edit'), current: route().current('profile.edit') },
         { name: 'Faculté', icon: <FaSchool size={20} />, href: route('configuration.faculte.index'), current: route().current('configuration.faculte.index') },
+        { name: 'Profile', icon: <FaUser size={20} />, href: route('profile.edit'), current: route().current('profile.edit') },
     ]
 
     return (
@@ -88,6 +91,74 @@ function Sidebar({ sidebarOpen, setSidebarOpen, mobileMenuOpen, setMobileMenuOpe
                             {item.name}
                         </Link>
                     ))}
+                    
+                    {/* Correction & Notes Submenu */}
+                    <div>
+                        <button
+                            onClick={() => setCorrectionOpen(!correctionOpen)}
+                            className={`w-full group flex items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-colors ${route().current('correction.*')
+                                ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400'
+                                : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
+                                }`}
+                        >
+                            <span className="flex items-center">
+                                <MdOutlineGrading size={20} className="mr-3" />
+                                Correction & notes
+                            </span>
+                            <ChevronDown size={16} className={`transition-transform ${correctionOpen ? 'rotate-180' : ''}`} />
+                        </button>
+                        {correctionOpen && (
+                            <div className="mt-1 space-y-1 pl-4">
+                                {correctionSubmenu.map((item) => (
+                                    <Link
+                                        key={item.name}
+                                        href={item.href}
+                                        className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${item.current
+                                            ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400'
+                                            : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
+                                            }`}
+                                    >
+                                        {item.icon}
+                                        {item.name}
+                                    </Link>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Configuration Submenu */}
+                    <div>
+                        <button
+                            onClick={() => setConfigOpen(!configOpen)}
+                            className={`w-full group flex items-center justify-between rounded-lg px-3 py-2 text-sm font-medium transition-colors ${route().current('configuration.*') || route().current('profile.edit')
+                                ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400'
+                                : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
+                                }`}
+                        >
+                            <span className="flex items-center">
+                                <Settings size={20} className="mr-3" />
+                                Configuration
+                            </span>
+                            <ChevronDown size={16} className={`transition-transform ${configOpen ? 'rotate-180' : ''}`} />
+                        </button>
+                        {configOpen && (
+                            <div className="mt-1 space-y-1 pl-4">
+                                {configRoutes.map((item) => (
+                                    <Link
+                                        key={item.name}
+                                        href={item.href}
+                                        className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${item.current
+                                            ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400'
+                                            : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
+                                            }`}
+                                    >
+                                        {item.icon}
+                                        {item.name}
+                                    </Link>
+                                ))}
+                            </div>
+                        )}
+                    </div>
                 </nav>
 
             </div>
@@ -129,28 +200,83 @@ function Sidebar({ sidebarOpen, setSidebarOpen, mobileMenuOpen, setMobileMenuOpe
                                     </Link>
                                 </li>
                             ))}
+                            
+                            {/* Correction & Notes Submenu */}
+                            <li>
+                                <button
+                                    onClick={() => {
+                                        setCorrectionOpen(!correctionOpen);
+                                        if (!sidebarOpen) setSidebarOpen(true);
+                                    }}
+                                    className={`w-full group flex items-center justify-between gap-x-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${route().current('correction.*')
+                                        ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400'
+                                        : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
+                                        }`}
+                                    title={!sidebarOpen ? 'Correction & notes' : ''}
+                                >
+                                    <span className={`flex items-center gap-x-3 ${!sidebarOpen && 'mx-auto'}`}>
+                                        <MdOutlineGrading size={20} />
+                                        {sidebarOpen && <span>Correction & notes</span>}
+                                    </span>
+                                    {sidebarOpen && <ChevronDown size={16} className={`transition-transform ${correctionOpen ? 'rotate-180' : ''}`} />}
+                                </button>
+                                {correctionOpen && sidebarOpen && (
+                                    <div className="mt-1 space-y-1 pl-4">
+                                        {correctionSubmenu.map((item) => (
+                                            <Link
+                                                key={item.name}
+                                                href={item.href}
+                                                className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${item.current
+                                                    ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400'
+                                                    : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
+                                                    }`}
+                                            >
+                                                {item.icon}
+                                                {item.name}
+                                            </Link>
+                                        ))}
+                                    </div>
+                                )}
+                            </li>
                         </ul>
                     </nav>
                     {/* bottom route */}
                     <div className="mt-4 space-y-1 px-3 mb-8">
-                        {
-                            configRoutes.map((item) => (
-                                <Link
-                                    key={item.name}
-                                    href={item.href}
-                                    className={`group flex items-center gap-x-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${item.current
-                                        ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400'
-                                        : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
-                                        }`}
-                                    title={!sidebarOpen ? item.name : ''}
-                                >
-                                    <span className={`${!sidebarOpen && 'mx-auto'}`}>
+                        {/* Configuration Submenu */}
+                        <button
+                            onClick={() => {
+                                setConfigOpen(!configOpen);
+                                if (!sidebarOpen) setSidebarOpen(true);
+                            }}
+                            className={`w-full group flex items-center justify-between gap-x-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${route().current('configuration.*') || route().current('profile.edit')
+                                ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400'
+                                : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
+                                }`}
+                            title={!sidebarOpen ? 'Configuration' : ''}
+                        >
+                            <span className={`flex items-center gap-x-3 ${!sidebarOpen && 'mx-auto'}`}>
+                                <Settings size={20} />
+                                {sidebarOpen && <span>Configuration</span>}
+                            </span>
+                            {sidebarOpen && <ChevronDown size={16} className={`transition-transform ${configOpen ? 'rotate-180' : ''}`} />}
+                        </button>
+                        {configOpen && sidebarOpen && (
+                            <div className="mt-1 space-y-1 pl-4">
+                                {configRoutes.map((item) => (
+                                    <Link
+                                        key={item.name}
+                                        href={item.href}
+                                        className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${item.current
+                                            ? 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/50 dark:text-indigo-400'
+                                            : 'text-gray-700 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-white'
+                                            }`}
+                                    >
                                         {item.icon}
-                                    </span>
-                                    {sidebarOpen && <span>{item.name}</span>}
-                                </Link>
-                            ))
-                        }
+                                        {item.name}
+                                    </Link>
+                                ))}
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>
