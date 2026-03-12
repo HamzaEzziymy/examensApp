@@ -17,6 +17,7 @@ class Correcteur extends Model
     protected $fillable = [
         'id_examen',
         'id_enseignant',
+        'id_element',
         'nombre_copies',
         'date_attribution',
         'date_limite_correction',
@@ -31,6 +32,11 @@ class Correcteur extends Model
     public function enseignant(): BelongsTo
     {
         return $this->belongsTo(Enseignant::class, 'id_enseignant', 'id_enseignant');
+    }
+
+    public function element(): BelongsTo
+    {
+        return $this->belongsTo(ElementModule::class, 'id_element', 'id_element');
     }
 
     public function notes(): HasMany

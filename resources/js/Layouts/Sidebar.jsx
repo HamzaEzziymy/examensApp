@@ -47,10 +47,10 @@ function Sidebar({ sidebarOpen, setSidebarOpen, mobileMenuOpen, setMobileMenuOpe
     ];
 
     const correctionSubmenu = [
+        { name: 'Correcteurs', icon: <Users size={16} />, href: route('correction.correcteurs.index'), current: route().current('correction.correcteurs.*') },
         { name: 'Notes', icon: <FileText size={16} />, href: route('correction.notes.index'), current: route().current('correction.notes.*') },
         { name: 'Résultats modules', icon: <BarChart3 size={16} />, href: route('correction.resultats-modules.index'), current: route().current('correction.resultats-modules.*') },
         { name: 'Résultats éléments', icon: <BarChart3 size={16} />, href: route('correction.resultats-elements.index'), current: route().current('correction.resultats-elements.*') },
-        { name: 'Correcteurs', icon: <Users size={16} />, href: route('correction.correcteurs.index'), current: route().current('correction.correcteurs.*') },
     ];
     
     const configRoutes = [
