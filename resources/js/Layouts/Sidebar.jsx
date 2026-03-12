@@ -19,12 +19,6 @@ function Sidebar({ sidebarOpen, setSidebarOpen, mobileMenuOpen, setMobileMenuOpe
             current: route().current('dashboard')
         },
         {
-            name: 'Documents',
-            icon: <IoDocumentsSharp size={20} />,
-            href: route('proces-v'),
-            current: route().current('*.documents.*')
-        },
-        {
             name: 'Structure académique',
             icon: <MdAccountTree size={20} />,
             href: route('academique.filieres.index'),
@@ -47,6 +41,12 @@ function Sidebar({ sidebarOpen, setSidebarOpen, mobileMenuOpen, setMobileMenuOpe
             icon: <MdOutlineGrading size={20} />,
             href: route('correction.notes.index'),
             current: route().current('correction.*')
+        },
+        {
+            name: 'Documents',
+            icon: <IoDocumentsSharp size={20} />,
+            href: route('proces-v'),
+            current: route().current('*.documents.*')
         },
     ];
     
