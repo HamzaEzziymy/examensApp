@@ -59,7 +59,6 @@ class RepartitionEtudiantController extends Controller
                 'date_debut',
                 'date_fin',
                 'statut',
-                'bareme_salle',
             ]);
 
         $examens->each(function ($examen) {

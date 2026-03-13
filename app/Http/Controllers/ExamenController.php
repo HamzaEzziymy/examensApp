@@ -65,8 +65,6 @@ class ExamenController extends Controller
                 'date_examen',
                 'date_debut',
                 'date_fin',
-                'effectif_prevu',
-                'bareme_salle',
                 'statut',
                 'description',
             ]);
@@ -162,7 +160,7 @@ class ExamenController extends Controller
         $manualSplit = collect($validated['repartition_salles'] ?? []);
         unset($validated['repartition_salles']);
 
-        $session = SessionExamen::find((int) $validated['id_session_examen'], ['id_session_examen', 'id_annee']);
+        $session = SessionExamen::find((int) $validated['id_session_examen'], ['id_session_examen', 'id_annee', 'id_filiere']);
         $salles = collect($request->input('salles', []))
             ->filter()
             ->map(fn ($id) => (int) $id)
@@ -197,19 +195,7 @@ class ExamenController extends Controller
         $studentCount = $registrations->count();
         $manualSplit = $this->normalizeManualSplit($manualSplit, $allSalleIds);
         $manualTotal = (int) $manualSplit->sum('nombre');
-
-        if ($manualTotal > 0 && $validated['effectif_prevu'] && $manualTotal !== (int) $validated['effectif_prevu']) {
-            return back()
-                ->withErrors(['repartition_salles' => 'Le total des repartitions par salle doit correspondre a l\'effectif attendu.'])
-                ->withInput();
-        }
-
-        if ($manualTotal > 0 && ! $validated['effectif_prevu']) {
-            $validated['effectif_prevu'] = $manualTotal;
-        }
-
-        $expectedCount = $validated['effectif_prevu'] ?? $studentCount;
-        $expectedCount = (int) ($manualTotal > 0 ? $manualTotal : $expectedCount);
+        $expectedCount = $manualTotal > 0 ? $manualTotal : $studentCount;
         $salleModels = Salle::whereIn('id_salle', $allSalleIds)->get(['id_salle', 'code_salle', 'capacite_examens', 'capacite']);
         $totalCapacity = $salleModels->sum(function ($salle) {
             return $salle->capacite_examens ?? $salle->capacite ?? 0;
@@ -221,7 +207,7 @@ class ExamenController extends Controller
 
         if ($expectedCount > $totalCapacity) {
             return back()
-                ->withErrors(['salles' => 'Capacite des salles insuffisante pour le nombre d\'etudiants prevus. Ajoutez une salle ou reduisez l\'effectif.'])
+                ->withErrors(['salles' => 'Capacite des salles insuffisante pour les etudiants a repartir. Ajoutez une salle ou ajustez la repartition.'])
                 ->withInput();
         }
 
@@ -252,7 +238,7 @@ class ExamenController extends Controller
         $manualSplit = collect($validated['repartition_salles'] ?? []);
         unset($validated['repartition_salles']);
 
-        $session = SessionExamen::find((int) $validated['id_session_examen'], ['id_session_examen', 'id_annee']);
+        $session = SessionExamen::find((int) $validated['id_session_examen'], ['id_session_examen', 'id_annee', 'id_filiere']);
         $salles = collect($request->input('salles', []))
             ->filter()
             ->map(fn ($id) => (int) $id)
@@ -287,19 +273,7 @@ class ExamenController extends Controller
         $studentCount = $registrations->count();
         $manualSplit = $this->normalizeManualSplit($manualSplit, $allSalleIds);
         $manualTotal = (int) $manualSplit->sum('nombre');
-
-        if ($manualTotal > 0 && $validated['effectif_prevu'] && $manualTotal !== (int) $validated['effectif_prevu']) {
-            return back()
-                ->withErrors(['repartition_salles' => 'Le total des repartitions par salle doit correspondre a l\'effectif attendu.'])
-                ->withInput();
-        }
-
-        if ($manualTotal > 0 && ! $validated['effectif_prevu']) {
-            $validated['effectif_prevu'] = $manualTotal;
-        }
-
-        $expectedCount = $validated['effectif_prevu'] ?? $studentCount;
-        $expectedCount = (int) ($manualTotal > 0 ? $manualTotal : $expectedCount);
+        $expectedCount = $manualTotal > 0 ? $manualTotal : $studentCount;
         $salleModels = Salle::whereIn('id_salle', $allSalleIds)->get(['id_salle', 'code_salle', 'capacite_examens', 'capacite']);
         $totalCapacity = $salleModels->sum(function ($salle) {
             return $salle->capacite_examens ?? $salle->capacite ?? 0;
@@ -311,7 +285,7 @@ class ExamenController extends Controller
 
         if ($expectedCount > $totalCapacity) {
             return back()
-                ->withErrors(['salles' => 'Capacite des salles insuffisante pour le nombre d\'etudiants prevus. Ajoutez une salle ou reduisez l\'effectif.'])
+                ->withErrors(['salles' => 'Capacite des salles insuffisante pour les etudiants a repartir. Ajoutez une salle ou ajustez la repartition.'])
                 ->withInput();
         }
 
@@ -351,8 +325,6 @@ class ExamenController extends Controller
                 ->filter()
                 ->values()
                 ->all(),
-            'effectif_prevu' => $request->filled('effectif_prevu') ? $request->input('effectif_prevu') : null,
-            'bareme_salle' => $request->filled('bareme_salle') ? $request->input('bareme_salle') : null,
         ]);
 
         return $request->validate([
@@ -368,8 +340,6 @@ class ExamenController extends Controller
             'date_debut'        => ['required', 'date'],
             'date_fin'          => ['required', 'date', 'after:date_debut'],
             'statut'            => ['required', Rule::in(Examen::STATUTS)],
-            'effectif_prevu'    => ['nullable', 'integer', 'min:1'],
-            'bareme_salle'      => ['nullable', 'integer', 'min:1'],
             'description'       => ['nullable', 'string'],
         ]);
     }
@@ -447,9 +417,8 @@ class ExamenController extends Controller
             $capacity = $salle->capacite_examens ?? $salle->capacite ?? $remaining;
             $roomsLeft = $roomCount - $index;
             $balancedTake = (int) ceil($remaining / max(1, $roomsLeft));
-            $bareme = $examen->bareme_salle ?? null;
             $manualTarget = $manualSplit->get($salle->id_salle);
-            $target = $manualTarget ?? ($bareme && $bareme > 0 ? $bareme : $balancedTake);
+            $target = $manualTarget ?? $balancedTake;
             $take = min($capacity > 0 ? $capacity : $remaining, $target, $remaining);
 
             $slice = $registrations->slice($offset, $take);
