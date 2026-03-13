@@ -1,31 +1,47 @@
-import React, { useState, useEffect } from 'react';
-import { useForm } from '@inertiajs/react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useForm, router, usePage } from '@inertiajs/react';
 import Swal from 'sweetalert2';
 import { Pencil, Trash2, Plus, Search, ChevronDown, ChevronUp, Filter } from 'lucide-react';
 
 export default function Display({ 
-    offresFormation: initialOffres, 
+    offresFormation: paginatedOffres, 
     sections = [], 
     semestres = [], 
     modules = [], 
     coordinateurs = [],
-    anneeUniversitaires = []
+    anneeUniversitaires = [],
+    filters: initialFilters = {},
+    totalCount = 0
 }) {
+    const { auth } = usePage().props;
+    
+    // Get user's selected année and filière from Years_Sectors_Selecters
+    const userSelectedAnnee = auth.user_filiere_annee?.id_annee || 'all';
+    const userSelectedFiliere = auth.user_filiere_annee?.id_filiere || 'all';
+    
     const [expandedRows, setExpandedRows] = useState({});
     const [modalOpen, setModalOpen] = useState(false);
     const [modalType, setModalType] = useState(''); // 'add' or 'edit'
     const [selectedOffre, setSelectedOffre] = useState(null);
     
-    // Search and pagination states
-    const [searchTerm, setSearchTerm] = useState('');
-    const [currentPage, setCurrentPage] = useState(1);
-    const [itemsPerPage, setItemsPerPage] = useState(10);
-    const [filteredOffres, setFilteredOffres] = useState(initialOffres);
-    const [filters, setFilters] = useState({
-        semestre: '',
-        module: '',
-        coordinateur: ''
-    });
+    // Search and filter states (now using backend)
+    const [searchTerm, setSearchTerm] = useState(initialFilters.search || '');
+    const [semestreFilter, setSemestreFilter] = useState(initialFilters.semestre || '');
+    const [perPage, setPerPage] = useState(initialFilters.per_page || 25);
+    
+    // Filter sections based on user's selected filière
+    const filteredSections = useMemo(() => {
+        if (userSelectedFiliere === 'all') {
+            return sections;
+        }
+        return sections.filter(section => section.id_filiere == userSelectedFiliere);
+    }, [sections, userSelectedFiliere]);
+
+    // Extract offres data from paginated response
+    const offres = paginatedOffres.data || [];
+    const currentPage = paginatedOffres.current_page || 1;
+    const lastPage = paginatedOffres.last_page || 1;
+    const total = paginatedOffres.total || 0;
 
     const offreForm = useForm({
         id_offre: null,
@@ -37,37 +53,57 @@ export default function Display({
         nom_affiche: ''
     });
 
-    // Remove filiere filter - no longer needed
-
-    // Filter offres based on search term and filters
-    useEffect(() => {
-        let filtered = initialOffres.filter(offre => {
-            const matchesSearch = 
-                offre.module?.nom_module?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                offre.module?.code_module?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                offre.section?.nom_section?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                offre.section?.filiere?.nom_filiere?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                offre.semestre?.nom_semestre?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                offre.coordinateur?.nom?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                offre.coordinateur?.prenom?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                offre.nom_affiche?.toLowerCase().includes(searchTerm.toLowerCase());
-
-            const matchesSemestre = !filters.semestre || offre.id_semestre?.toString() === filters.semestre;
-            const matchesModule = !filters.module || offre.id_module?.toString() === filters.module;
-            const matchesCoordinateur = !filters.coordinateur || offre.id_coordinateur?.toString() === filters.coordinateur;
-
-            return matchesSearch && matchesSemestre && matchesModule && matchesCoordinateur;
+    // Handle search with backend
+    const handleSearch = (value) => {
+        setSearchTerm(value);
+        router.get(route('academique.offres-formations.index'), {
+            search: value,
+            annee: userSelectedAnnee !== 'all' ? userSelectedAnnee : '',
+            section: '', // Section filtering removed - depends on Years_Sectors_Selecters
+            semestre: semestreFilter,
+            per_page: perPage,
+        }, {
+            preserveState: true,
+            preserveScroll: true,
         });
-        
-        setFilteredOffres(filtered);
-        setCurrentPage(1);
-    }, [searchTerm, filters, initialOffres]);
+    };
 
-    // Calculate pagination
-    const totalItems = filteredOffres.length;
-    const totalPages = Math.ceil(totalItems / itemsPerPage);
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    const currentOffres = filteredOffres.slice(startIndex, startIndex + itemsPerPage);
+    // Handle filter changes with backend
+    const handleFilterChange = (filterName, value) => {
+        const newFilters = {
+            search: searchTerm,
+            annee: userSelectedAnnee !== 'all' ? userSelectedAnnee : '',
+            section: '', // Section filtering removed - depends on Years_Sectors_Selecters
+            semestre: semestreFilter,
+            per_page: perPage,
+        };
+        
+        newFilters[filterName] = value;
+        
+        // Update local state
+        if (filterName === 'semestre') setSemestreFilter(value);
+        if (filterName === 'per_page') setPerPage(value);
+        
+        router.get(route('academique.offres-formations.index'), newFilters, {
+            preserveState: true,
+            preserveScroll: true,
+        });
+    };
+
+    // Handle pagination
+    const goToPage = (page) => {
+        router.get(route('academique.offres-formations.index'), {
+            search: searchTerm,
+            annee: userSelectedAnnee !== 'all' ? userSelectedAnnee : '',
+            section: '', // Section filtering removed - depends on Years_Sectors_Selecters
+            semestre: semestreFilter,
+            per_page: perPage,
+            page: page,
+        }, {
+            preserveState: true,
+            preserveScroll: true,
+        });
+    };
 
     const toggleRow = (id) => {
         setExpandedRows(prev => ({ ...prev, [id]: !prev[id] }));
@@ -197,31 +233,17 @@ export default function Display({
         });
     };
 
-    // Pagination handlers
-    const goToPage = (page) => {
-        setCurrentPage(page);
-    };
-
-    const goToPreviousPage = () => {
-        setCurrentPage(prev => Math.max(prev - 1, 1));
-    };
-
-    const goToNextPage = () => {
-        setCurrentPage(prev => Math.min(prev + 1, totalPages));
-    };
-
-    const handleItemsPerPageChange = (e) => {
-        setItemsPerPage(Number(e.target.value));
-        setCurrentPage(1);
-    };
-
     const clearFilters = () => {
-        setFilters({
+        router.get(route('academique.offres-formations.index'), {
+            search: '',
+            annee: userSelectedAnnee !== 'all' ? userSelectedAnnee : '',
+            section: '', // Section filtering removed - depends on Years_Sectors_Selecters
             semestre: '',
-            module: '',
-            coordinateur: ''
+            per_page: 25,
+        }, {
+            preserveState: true,
+            preserveScroll: true,
         });
-        setSearchTerm('');
     };
 
     const getModuleTypeColor = (type) => {
@@ -262,7 +284,7 @@ export default function Display({
                             type="text"
                             placeholder="Rechercher..."
                             value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
+                            onChange={(e) => handleSearch(e.target.value)}
                             className="pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 w-full sm:w-80 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         />
                     </div>
@@ -280,72 +302,50 @@ export default function Display({
                 </div>
             </div>
 
-            {/* Filters */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
-                <div>
-                    <label className="block text-sm font-medium mb-1">Semestre</label>
+            {/* Results Count and Filters */}
+            <div className="mb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div className="text-sm text-gray-600 dark:text-gray-400">
+                    {total} offre(s) trouvée(s)
+                    {searchTerm && (
+                        <span> pour "{searchTerm}"</span>
+                    )}
+                </div>
+                
+                {/* Filters */}
+                <div className="flex flex-wrap items-center gap-2">
+                    <label className="text-sm text-gray-600 dark:text-gray-400">Semestre:</label>
                     <select
-                        value={filters.semestre}
-                        onChange={(e) => setFilters(prev => ({ ...prev, semestre: e.target.value }))}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-sm"
+                        value={semestreFilter}
+                        onChange={(e) => handleFilterChange('semestre', e.target.value)}
+                        className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-blue-500"
                     >
-                        <option value="">Tous les semestres</option>
-                        {semestres.map((semestre) => (
+                        <option value="">Tous</option>
+                        {semestres.map(semestre => (
                             <option key={semestre.id_semestre} value={semestre.id_semestre}>
                                 {semestre.nom_semestre}
                             </option>
                         ))}
                     </select>
-                </div>
-
-                <div>
-                    <label className="block text-sm font-medium mb-1">Module</label>
+                    
+                    <label className="text-sm text-gray-600 dark:text-gray-400">Par page:</label>
                     <select
-                        value={filters.module}
-                        onChange={(e) => setFilters(prev => ({ ...prev, module: e.target.value }))}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-sm"
+                        value={perPage}
+                        onChange={(e) => handleFilterChange('per_page', Number(e.target.value))}
+                        className="px-5 py-1 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-blue-500"
                     >
-                        <option value="">Tous les modules</option>
-                        {modules.map((module) => (
-                            <option key={module.id_module} value={module.id_module}>
-                                {module.nom_module}
-                            </option>
-                        ))}
+                        <option value="10">10</option>
+                        <option value="25">25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
                     </select>
-                </div>
-
-                <div>
-                    <label className="block text-sm font-medium mb-1">Coordinateur</label>
-                    <select
-                        value={filters.coordinateur}
-                        onChange={(e) => setFilters(prev => ({ ...prev, coordinateur: e.target.value }))}
-                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded bg-white dark:bg-gray-700 text-sm"
-                    >
-                        <option value="">Tous les coordinateurs</option>
-                        {coordinateurs.map((coordinateur) => (
-                            <option key={coordinateur.id_enseignant} value={coordinateur.id_enseignant}>
-                                {coordinateur.nom} {coordinateur.prenom}
-                            </option>
-                        ))}
-                    </select>
-                </div>
-
-                <div className="flex items-end">
+                    
                     <button
                         onClick={clearFilters}
-                        className="w-full px-3 py-2 bg-gray-500 hover:bg-gray-600 text-white rounded text-sm"
+                        className="px-3 py-1 bg-gray-500 hover:bg-gray-600 text-white rounded text-sm"
                     >
-                        Effacer les filtres
+                        Effacer
                     </button>
                 </div>
-            </div>
-
-            {/* Results Count */}
-            <div className="mb-4 text-sm text-gray-600 dark:text-gray-400">
-                {totalItems} offre(s) trouvée(s)
-                {(searchTerm || Object.values(filters).some(f => f)) && (
-                    <span> - <button onClick={clearFilters} className="text-blue-500 hover:text-blue-700 underline">Afficher tout</button></span>
-                )}
             </div>
 
             {/* Offres Table */}
@@ -363,7 +363,7 @@ export default function Display({
                         </tr>
                     </thead>
                     <tbody>
-                        {currentOffres.map((offre) => (
+                        {offres.map((offre) => (
                             <React.Fragment key={offre.id_offre}>
                                 <tr className="border-t border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
                                     <td className="px-4 py-3">
@@ -536,7 +536,7 @@ export default function Display({
             </div>
 
             {/* No results message */}
-            {filteredOffres.length === 0 && (
+            {offres.length === 0 && (
                 <div className="text-center py-12 text-gray-500 dark:text-gray-400">
                     <p className="text-lg mb-2">Aucune offre trouvée</p>
                     <p className="text-sm">Essayez de modifier vos critères de recherche ou créez une nouvelle offre</p>
@@ -544,33 +544,17 @@ export default function Display({
             )}
 
             {/* Pagination */}
-            {totalPages > 1 && (
+            {lastPage > 1 && (
                 <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-                    {/* Items per page selector */}
-                    <div className="flex items-center gap-2">
-                        <span className="text-sm text-gray-600 dark:text-gray-400">Afficher:</span>
-                        <select
-                            value={itemsPerPage}
-                            onChange={handleItemsPerPageChange}
-                            className="border border-gray-300 dark:border-gray-600 rounded px-5 py-1 bg-white dark:bg-gray-700 text-sm"
-                        >
-                            <option value={10}>10</option>
-                            <option value={25}>25</option>
-                            <option value={50}>50</option>
-                            <option value={100}>100</option>
-                        </select>
-                        <span className="text-sm text-gray-600 dark:text-gray-400">par page</span>
-                    </div>
-
                     {/* Page info */}
                     <div className="text-sm text-gray-600 dark:text-gray-400">
-                        Page {currentPage} sur {totalPages} - {totalItems} offre(s)
+                        Page {currentPage} sur {lastPage} - {total} offre(s)
                     </div>
 
                     {/* Pagination controls */}
                     <div className="flex items-center gap-2">
                         <button
-                            onClick={goToPreviousPage}
+                            onClick={() => goToPage(currentPage - 1)}
                             disabled={currentPage === 1}
                             className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-700"
                         >
@@ -579,16 +563,16 @@ export default function Display({
                         
                         {/* Page numbers */}
                         <div className="flex gap-1">
-                            {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                            {Array.from({ length: Math.min(lastPage, 10) }, (_, i) => {
                                 let page;
-                                if (totalPages <= 5) {
+                                if (lastPage <= 10) {
                                     page = i + 1;
-                                } else if (currentPage <= 3) {
+                                } else if (currentPage <= 5) {
                                     page = i + 1;
-                                } else if (currentPage >= totalPages - 2) {
-                                    page = totalPages - 4 + i;
+                                } else if (currentPage >= lastPage - 4) {
+                                    page = lastPage - 9 + i;
                                 } else {
-                                    page = currentPage - 2 + i;
+                                    page = currentPage - 5 + i;
                                 }
                                 return (
                                     <button
@@ -607,8 +591,8 @@ export default function Display({
                         </div>
 
                         <button
-                            onClick={goToNextPage}
-                            disabled={currentPage === totalPages}
+                            onClick={() => goToPage(currentPage + 1)}
+                            disabled={currentPage === lastPage}
                             className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-700"
                         >
                             Suivant
@@ -635,7 +619,7 @@ export default function Display({
                                         required
                                     >
                                         <option value="">Sélectionner une section</option>
-                                        {sections.map((section) => (
+                                        {filteredSections.map((section) => (
                                             <option key={section.id_section} value={section.id_section}>
                                                 {section.filiere?.nom_filiere} - {section.nom_section} ({section.langue})
                                             </option>

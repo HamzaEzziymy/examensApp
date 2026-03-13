@@ -10,14 +10,46 @@ use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 class ModuleController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $modules = Module::with('elements')
-            ->orderBy('code_module')
-            ->get();
+        // Get filter parameters from request
+        $search = $request->input('search', '');
+        $filterType = $request->input('type', '');
+        $perPage = $request->input('per_page', 10);
+        
+        // Build query for modules with backend filtering
+        $modulesQuery = Module::with('elements');
+        
+        // Apply search filter (code_module, nom_module)
+        if (!empty($search)) {
+            $modulesQuery->where(function ($query) use ($search) {
+                $query->where('code_module', 'like', "%{$search}%")
+                      ->orWhere('nom_module', 'like', "%{$search}%");
+            });
+        }
+        
+        // Apply type filter
+        if (!empty($filterType)) {
+            $modulesQuery->where('type_module', $filterType);
+        }
+        
+        // Order and paginate
+        $modulesQuery->orderBy('code_module');
+        
+        // Get total count before pagination
+        $totalCount = $modulesQuery->count();
+        
+        // Paginate results
+        $modules = $modulesQuery->paginate($perPage)->withQueryString();
 
          return Inertia::render('Academique/Modules/Index', [
             'modules' => $modules,
+            'filters' => [
+                'search' => $search,
+                'type' => $filterType,
+                'per_page' => $perPage,
+            ],
+            'totalCount' => $totalCount,
         ]);
     }
 

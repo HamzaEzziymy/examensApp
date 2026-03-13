@@ -17,13 +17,21 @@ class OffreFormationController extends Controller
     /**
      * Display a listing of the resource.
      */
-    public function index()
+    public function index(Request $request)
     {
-        // Get user's selected year (remove filiere filtering)
+        // Get user's selected year and filière from Years_Sectors_Selecters
         $userFiliereAnnee = auth()->user()->userFiliereAnnees()->first();
         $selectedAnnee = $userFiliereAnnee ? $userFiliereAnnee->id_annee : null;
+        $selectedFiliere = $userFiliereAnnee ? $userFiliereAnnee->id_filiere : null;
 
-        // Build query for offres formation (no filiere filter)
+        // Get filter parameters from request
+        $search = $request->input('search', '');
+        $filterAnnee = $request->input('annee', '');
+        $filterSection = $request->input('section', '');
+        $filterSemestre = $request->input('semestre', '');
+        $perPage = $request->input('per_page', 25);
+
+        // Build query for offres formation with backend filtering
         $offresQuery = OffreFormation::with([
             'module.elements',
             'semestre.niveau',
@@ -32,12 +40,60 @@ class OffreFormationController extends Controller
             'coordinateur'
         ]);
 
-        // Apply year filter if a specific year is selected (not "all")
-        if ($selectedAnnee && $selectedAnnee !== 'all') {
+        // Apply user's year filter if a specific year is selected (default context)
+        if ($selectedAnnee && $selectedAnnee !== 'all' && empty($filterAnnee)) {
             $offresQuery->where('id_annee', $selectedAnnee);
         }
 
-        $offresFormation = $offresQuery->get();
+        // Apply user's filière filter if a specific filière is selected
+        if ($selectedFiliere && $selectedFiliere !== 'all') {
+            $offresQuery->whereHas('section', function ($q) use ($selectedFiliere) {
+                $q->where('id_filiere', $selectedFiliere);
+            });
+        }
+
+        // Apply search filter (module name, section name, coordinateur name)
+        if (!empty($search)) {
+            $offresQuery->where(function ($query) use ($search) {
+                $query->whereHas('module', function ($q) use ($search) {
+                    $q->where('nom_module', 'like', "%{$search}%")
+                      ->orWhere('code_module', 'like', "%{$search}%");
+                })
+                ->orWhereHas('section', function ($q) use ($search) {
+                    $q->where('nom_section', 'like', "%{$search}%");
+                })
+                ->orWhereHas('coordinateur', function ($q) use ($search) {
+                    $q->where('nom', 'like', "%{$search}%")
+                      ->orWhere('prenom', 'like', "%{$search}%");
+                });
+            });
+        }
+
+        // Apply année filter
+        if (!empty($filterAnnee)) {
+            $offresQuery->where('id_annee', $filterAnnee);
+        }
+
+        // Apply section filter (removed - now depends on Years_Sectors_Selecters filière)
+        // if (!empty($filterSection)) {
+        //     $offresQuery->where('id_section', $filterSection);
+        // }
+
+        // Apply semestre filter
+        if (!empty($filterSemestre)) {
+            $offresQuery->where('id_semestre', $filterSemestre);
+        }
+
+        // Order and paginate
+        $offresQuery->orderBy('id_annee', 'desc')
+                    ->orderBy('id_semestre')
+                    ->orderBy('id_section');
+
+        // Get total count before pagination
+        $totalCount = $offresQuery->count();
+
+        // Paginate results
+        $offresFormation = $offresQuery->paginate($perPage)->withQueryString();
 
         // Get all sections (no filiere filter)
         $sections = Section::with('filiere')->get();
@@ -65,6 +121,14 @@ class OffreFormationController extends Controller
                 'modules' => $modules,
                 'coordinateurs' => $cordinateurs,
                 'anneeUniversitaires' => $anneeUniversitaires,
+                'filters' => [
+                    'search' => $search,
+                    'annee' => $filterAnnee,
+                    'section' => $filterSection,
+                    'semestre' => $filterSemestre,
+                    'per_page' => $perPage,
+                ],
+                'totalCount' => $totalCount,
             ]
         );
     }

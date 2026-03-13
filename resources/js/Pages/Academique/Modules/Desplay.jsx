@@ -4,18 +4,17 @@ import Swal from 'sweetalert2';
 import { Pencil, Trash2, Plus, ChevronDown, ChevronUp, Search, Upload, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
-export default function ModulesDisplay({ modules: initialModules }) {
+export default function ModulesDisplay({ modules: paginatedModules, filters = {}, totalCount = 0 }) {
     const [expandedRows, setExpandedRows] = useState({});
     const [modalOpen, setModalOpen] = useState(false);
     const [modalType, setModalType] = useState(''); // 'add' or 'edit'
     const [entityType, setEntityType] = useState(''); // 'module' or 'element'
     const [selectedModule, setSelectedModule] = useState(null);
     
-    // Search and pagination states
-    const [searchTerm, setSearchTerm] = useState('');
-    const [currentPage, setCurrentPage] = useState(1);
-    const [itemsPerPage, setItemsPerPage] = useState(10);
-    const [filteredModules, setFilteredModules] = useState(initialModules);
+    // Search and filter states (now using backend)
+    const [searchTerm, setSearchTerm] = useState(filters.search || '');
+    const [typeFilter, setTypeFilter] = useState(filters.type || '');
+    const [perPage, setPerPage] = useState(filters.per_page || 25);
     
     // Excel import states
     const [importModalOpen, setImportModalOpen] = useState(false);
@@ -23,6 +22,18 @@ export default function ModulesDisplay({ modules: initialModules }) {
     const [isImporting, setIsImporting] = useState(false);
     const [importPreview, setImportPreview] = useState([]);
     const [importErrors, setImportErrors] = useState([]);
+
+    // Extract modules data from paginated response
+    const modules = paginatedModules.data || [];
+    const currentPage = paginatedModules.current_page || 1;
+    const lastPage = paginatedModules.last_page || 1;
+    const total = paginatedModules.total || 0;
+
+    // Helper function to check if an element is self-referencing
+    const isSelfReferencingElement = (element, module) => {
+        return element.code_element === module.code_module && 
+               element.nom_element === module.nom_module;
+    };
 
     const elementForm = useForm({
         id_element: null,
@@ -41,21 +52,57 @@ export default function ModulesDisplay({ modules: initialModules }) {
         credits: ''
     });
 
-    // Filter modules based on search term
-    useEffect(() => {
-        const filtered = initialModules.filter(module =>
-            module.nom_module.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            module.code_module.toLowerCase().includes(searchTerm.toLowerCase())
-        );
-        setFilteredModules(filtered);
-        setCurrentPage(1); // Reset to first page when search changes
-    }, [searchTerm, initialModules]);
+    // Handle search with backend
+    const handleSearch = (value) => {
+        setSearchTerm(value);
+        router.get(route('academique.modules.index'), {
+            search: value,
+            type: typeFilter,
+            per_page: perPage,
+        }, {
+            preserveState: true,
+            preserveScroll: true,
+        });
+    };
 
-    // Calculate pagination
-    const totalItems = filteredModules.length;
-    const totalPages = Math.ceil(totalItems / itemsPerPage);
-    const startIndex = (currentPage - 1) * itemsPerPage;
-    const currentModules = filteredModules.slice(startIndex, startIndex + itemsPerPage);
+    // Handle type filter with backend
+    const handleTypeFilter = (value) => {
+        setTypeFilter(value);
+        router.get(route('academique.modules.index'), {
+            search: searchTerm,
+            type: value,
+            per_page: perPage,
+        }, {
+            preserveState: true,
+            preserveScroll: true,
+        });
+    };
+
+    // Handle per page change
+    const handlePerPageChange = (value) => {
+        setPerPage(value);
+        router.get(route('academique.modules.index'), {
+            search: searchTerm,
+            type: typeFilter,
+            per_page: value,
+        }, {
+            preserveState: true,
+            preserveScroll: true,
+        });
+    };
+
+    // Handle pagination
+    const goToPage = (page) => {
+        router.get(route('academique.modules.index'), {
+            search: searchTerm,
+            type: typeFilter,
+            per_page: perPage,
+            page: page,
+        }, {
+            preserveState: true,
+            preserveScroll: true,
+        });
+    };
 
     const toggleRow = (id) => {
         setExpandedRows(prev => ({ ...prev, [id]: !prev[id] }));
@@ -197,9 +244,20 @@ export default function ModulesDisplay({ modules: initialModules }) {
     };
 
     const handleElementDelete = (element) => {
+        const module = modules.find(m => m.id_module === element.id_module);
+        const isSelfReferencing = isSelfReferencingElement(element, module);
+        const isLastElement = module.elements && module.elements.length === 1;
+
+        let warningText = "Cette action est irréversible !";
+        if (isSelfReferencing && isLastElement) {
+            warningText = "Cet élément est auto-généré. Si vous le supprimez, un nouvel élément auto-généré sera créé automatiquement.";
+        } else if (isLastElement) {
+            warningText = "C'est le dernier élément de ce module. Si vous le supprimez, un élément auto-généré sera créé automatiquement.";
+        }
+
         Swal.fire({
             title: 'Êtes-vous sûr ?',
-            text: "Cette action est irréversible !",
+            text: warningText,
             icon: 'warning',
             showCancelButton: true,
             confirmButtonColor: '#d33',
@@ -244,7 +302,8 @@ export default function ModulesDisplay({ modules: initialModules }) {
             'TP': 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200',
             'COURS': 'bg-purple-100 dark:bg-purple-900 text-purple-800 dark:text-purple-200',
             'TD': 'bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200',
-            'EXAMEN': 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200'
+            'STAGE_ELEMENT': 'bg-teal-100 dark:bg-teal-900 text-teal-800 dark:text-teal-200',
+            'AUTRE': 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
         };
         return colors[type] || 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200';
     };
@@ -255,27 +314,10 @@ export default function ModulesDisplay({ modules: initialModules }) {
             'TP': 'Travaux Pratiques',
             'COURS': 'Cours',
             'TD': 'Travaux Dirigés',
-            'EXAMEN': 'Examen'
+            'STAGE_ELEMENT': 'Stage',
+            'AUTRE': 'Autre'
         };
         return labels[type] || type;
-    };
-
-    // Pagination handlers
-    const goToPage = (page) => {
-        setCurrentPage(page);
-    };
-
-    const goToPreviousPage = () => {
-        setCurrentPage(prev => Math.max(prev - 1, 1));
-    };
-
-    const goToNextPage = () => {
-        setCurrentPage(prev => Math.min(prev + 1, totalPages));
-    };
-
-    const handleItemsPerPageChange = (e) => {
-        setItemsPerPage(Number(e.target.value));
-        setCurrentPage(1);
     };
 
     // Excel import functions
@@ -354,7 +396,7 @@ export default function ModulesDisplay({ modules: initialModules }) {
                     }
 
                     // Check for duplicate code_module in existing modules
-                    const existingModule = initialModules.find(m => m.code_module === codeModule);
+                    const existingModule = modules.find(m => m.code_module === codeModule);
                     if (existingModule) {
                         errors.push(`Ligne ${rowNumber}: Code Module "${codeModule}" existe déjà`);
                     }
@@ -461,7 +503,7 @@ export default function ModulesDisplay({ modules: initialModules }) {
                             type="text"
                             placeholder="Rechercher par nom ou code module..."
                             value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
+                            onChange={(e) => handleSearch(e.target.value)}
                             className="pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 w-full sm:w-80 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                         />
                     </div>
@@ -498,12 +540,42 @@ export default function ModulesDisplay({ modules: initialModules }) {
                 </div>
             </div>
 
-            {/* Results Count */}
-            <div className="mb-4 text-sm text-gray-600 dark:text-gray-400">
-                {totalItems} module(s) trouvé(s)
-                {searchTerm && (
-                    <span> pour "{searchTerm}"</span>
-                )}
+            {/* Results Count and Filters */}
+            <div className="mb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div className="text-sm text-gray-600 dark:text-gray-400">
+                    {total} module(s) trouvé(s)
+                    {searchTerm && (
+                        <span> pour "{searchTerm}"</span>
+                    )}
+                </div>
+                
+                {/* Type Filter */}
+                <div className="flex items-center gap-2">
+                    <label className="text-sm text-gray-600 dark:text-gray-400">Type:</label>
+                    <select
+                        value={typeFilter}
+                        onChange={(e) => handleTypeFilter(e.target.value)}
+                        className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-blue-500"
+                    >
+                        <option value="">Tous</option>
+                        <option value="CONNAISSANCE">CONNAISSANCE</option>
+                        <option value="HORIZONTAL">HORIZONTAL</option>
+                        <option value="STAGE">STAGE</option>
+                        <option value="THESE">THESE</option>
+                    </select>
+                    
+                    <label className="text-sm text-gray-600 dark:text-gray-400 ml-4">Par page:</label>
+                    <select
+                        value={perPage}
+                        onChange={(e) => handlePerPageChange(Number(e.target.value))}
+                        className="px-5 py-1 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-blue-500"
+                    >
+                        <option value="10">10</option>
+                        <option value="25">25</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </div>
             </div>
 
             {/* Modules Table */}
@@ -521,7 +593,7 @@ export default function ModulesDisplay({ modules: initialModules }) {
                         </tr>
                     </thead>
                     <tbody>
-                        {currentModules.map((module) => (
+                        {modules.map((module) => (
                             <React.Fragment key={module.id_module}>
                                 <tr className="border-t border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
                                     <td className="px-4 py-2">
@@ -596,9 +668,16 @@ export default function ModulesDisplay({ modules: initialModules }) {
                                                                 <div className="flex items-center justify-between">
                                                                     <div className="flex items-center gap-4">
                                                                         <div>
-                                                                            <span className="font-semibold text-gray-800 dark:text-gray-200 block">
-                                                                                {element.nom_element}
-                                                                            </span>
+                                                                            <div className="flex items-center gap-2">
+                                                                                <span className="font-semibold text-gray-800 dark:text-gray-200 block">
+                                                                                    {element.nom_element}
+                                                                                </span>
+                                                                                {isSelfReferencingElement(element, module) && (
+                                                                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200">
+                                                                                        Auto-généré
+                                                                                    </span>
+                                                                                )}
+                                                                            </div>
                                                                             <span className="text-sm text-gray-600 dark:text-gray-400 font-mono">
                                                                                 {element.code_element}
                                                                             </span>
@@ -646,33 +725,17 @@ export default function ModulesDisplay({ modules: initialModules }) {
             </div>
 
             {/* Pagination */}
-            {totalPages > 1 && (
+            {lastPage > 1 && (
                 <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-                    {/* Items per page selector */}
-                    <div className="flex items-center gap-2">
-                        <span className="text-sm text-gray-600 dark:text-gray-400">Afficher:</span>
-                        <select
-                            value={itemsPerPage}
-                            onChange={handleItemsPerPageChange}
-                            className="border border-gray-300 dark:border-gray-600 rounded px-5 py-1 bg-white dark:bg-gray-700 text-sm"
-                        >
-                            <option value={10}>10</option>
-                            <option value={25}>25</option>
-                            <option value={50}>50</option>
-                            <option value={100}>100</option>
-                        </select>
-                        <span className="text-sm text-gray-600 dark:text-gray-400">par page</span>
-                    </div>
-
                     {/* Page info */}
                     <div className="text-sm text-gray-600 dark:text-gray-400">
-                        Page {currentPage} sur {totalPages} - {totalItems} module(s)
+                        Page {currentPage} sur {lastPage} - {total} module(s)
                     </div>
 
                     {/* Pagination controls */}
                     <div className="flex items-center gap-2">
                         <button
-                            onClick={goToPreviousPage}
+                            onClick={() => goToPage(currentPage - 1)}
                             disabled={currentPage === 1}
                             className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-700"
                         >
@@ -681,24 +744,36 @@ export default function ModulesDisplay({ modules: initialModules }) {
                         
                         {/* Page numbers */}
                         <div className="flex gap-1">
-                            {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                                <button
-                                    key={page}
-                                    onClick={() => goToPage(page)}
-                                    className={`w-8 h-8 rounded text-sm ${
-                                        currentPage === page
-                                            ? 'bg-blue-500 text-white'
-                                            : 'border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
-                                    }`}
-                                >
-                                    {page}
-                                </button>
-                            ))}
+                            {Array.from({ length: Math.min(lastPage, 10) }, (_, i) => {
+                                let page;
+                                if (lastPage <= 10) {
+                                    page = i + 1;
+                                } else if (currentPage <= 5) {
+                                    page = i + 1;
+                                } else if (currentPage >= lastPage - 4) {
+                                    page = lastPage - 9 + i;
+                                } else {
+                                    page = currentPage - 5 + i;
+                                }
+                                return (
+                                    <button
+                                        key={page}
+                                        onClick={() => goToPage(page)}
+                                        className={`w-8 h-8 rounded text-sm ${
+                                            currentPage === page
+                                                ? 'bg-blue-500 text-white'
+                                                : 'border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
+                                        }`}
+                                    >
+                                        {page}
+                                    </button>
+                                );
+                            })}
                         </div>
 
                         <button
-                            onClick={goToNextPage}
-                            disabled={currentPage === totalPages}
+                            onClick={() => goToPage(currentPage + 1)}
+                            disabled={currentPage === lastPage}
                             className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-700"
                         >
                             Suivant
@@ -708,7 +783,7 @@ export default function ModulesDisplay({ modules: initialModules }) {
             )}
 
             {/* No results message */}
-            {filteredModules.length === 0 && (
+            {modules.length === 0 && (
                 <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                     <p>Aucun module trouvé</p>
                     {searchTerm && (
@@ -990,7 +1065,8 @@ export default function ModulesDisplay({ modules: initialModules }) {
                                             <option value="TP">Travaux Pratiques</option>
                                             <option value="COURS">Cours</option>
                                             <option value="TD">Travaux Dirigés</option>
-                                            <option value="EXAMEN">Examen</option>
+                                            <option value="STAGE_ELEMENT">Stage</option>
+                                            <option value="AUTRE">Autre</option>
                                         </select>
                                         {elementForm.errors.type_element && (
                                             <div className="text-red-500 text-sm mt-1">{elementForm.errors.type_element}</div>
@@ -1007,10 +1083,14 @@ export default function ModulesDisplay({ modules: initialModules }) {
                                             className="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600"
                                             required
                                             min="0"
+                                            max="99.99"
                                         />
                                         {elementForm.errors.coefficient && (
                                             <div className="text-red-500 text-sm mt-1">{elementForm.errors.coefficient}</div>
                                         )}
+                                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                            Maximum: 99.99
+                                        </p>
                                     </div>
 
                                     <div>

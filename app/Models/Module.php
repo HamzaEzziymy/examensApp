@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\ModuleService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -64,4 +65,29 @@ class Module extends Model
     {
         return $this->hasMany(Examen::class, 'id_module', 'id_module');
     }
+
+    /**
+     * Get the self-referencing element for this module
+     *
+     * @return ElementModule|null
+     */
+    public function getSelfReferencingElement(): ?ElementModule
+    {
+        $moduleService = app(ModuleService::class);
+
+        return $this->elements->first(function ($element) use ($moduleService) {
+            return $moduleService->isSelfReferencingElement($element);
+        });
+    }
+
+    /**
+     * Check if this module has a self-referencing element
+     *
+     * @return bool
+     */
+    public function hasSelfReferencingElement(): bool
+    {
+        return $this->getSelfReferencingElement() !== null;
+    }
+
 }

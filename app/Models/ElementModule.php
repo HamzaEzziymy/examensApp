@@ -49,4 +49,14 @@ class ElementModule extends Model
     {
         return $this->hasMany(Reclamation::class, 'id_element_module', 'id_element');
     }
+
+    /**
+     * Determine if this ElementModule is self-referencing
+     * 
+     * @return bool
+     */
+    public function isSelfReferencing(): bool
+    {
+        return app(\App\Services\ModuleService::class)->isSelfReferencingElement($this);
+    }
 }

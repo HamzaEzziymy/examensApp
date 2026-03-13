@@ -4,7 +4,7 @@ import React from 'react'
 import Header from '../Header'
 import Desplay from './Desplay';
 
-function Index({ modules }) {
+function Index({ modules, filters, totalCount }) {
   
   return (
     <AuthenticatedLayout
@@ -17,7 +17,7 @@ function Index({ modules }) {
       <Head title="modules" />
       <Header />
       <div className="p-4 rounded-lg">
-        <Desplay modules={modules} />
+        <Desplay modules={modules} filters={filters} totalCount={totalCount} />
       </div>
 
 

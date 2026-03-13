@@ -414,6 +414,9 @@ export default function CorrectorsIndex({ correcteurs = {}, examens = [], enseig
                                             Examen
                                         </th>
                                         <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 dark:text-white">
+                                            Élément du module
+                                        </th>
+                                        <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 dark:text-white">
                                             Copies
                                         </th>
                                         <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 dark:text-white">
@@ -446,6 +449,20 @@ export default function CorrectorsIndex({ correcteurs = {}, examens = [], enseig
                                                     <div className="text-xs text-gray-500">
                                                         {correcteur.examen?.module?.nom_module}
                                                     </div>
+                                                </td>
+                                                <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
+                                                    {correcteur.element ? (
+                                                        <>
+                                                            <div className="font-semibold">
+                                                                {correcteur.element.code_element}
+                                                            </div>
+                                                            <div className="text-xs text-gray-500">
+                                                                {correcteur.element.nom_element}
+                                                            </div>
+                                                        </>
+                                                    ) : (
+                                                        <span className="text-xs text-gray-400 italic">Module complet</span>
+                                                    )}
                                                 </td>
                                                 <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
                                                     {correcteur.nombre_copies}

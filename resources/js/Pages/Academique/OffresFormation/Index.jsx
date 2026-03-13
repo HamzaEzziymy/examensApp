@@ -4,7 +4,7 @@ import React from 'react'
 import Header from '../Header'
 import Display from './Display';
 
-function Index({ offresFormation, sections, semestres, modules, coordinateurs, anneeUniversitaires }) {
+function Index({ offresFormation, sections, semestres, modules, coordinateurs, anneeUniversitaires, filters, totalCount }) {
 
   return (
     <AuthenticatedLayout
@@ -24,6 +24,8 @@ function Index({ offresFormation, sections, semestres, modules, coordinateurs, a
           modules={modules}
           coordinateurs={coordinateurs}
           anneeUniversitaires={anneeUniversitaires}
+          filters={filters}
+          totalCount={totalCount}
         />
       </div>
 
