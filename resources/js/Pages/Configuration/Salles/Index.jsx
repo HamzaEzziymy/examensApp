@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { router, useForm } from '@inertiajs/react';
-import { Search, Plus, Edit, Trash2, X, Building, Users, CheckCircle, XCircle, Filter, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Search, Plus, Edit, Trash2, X, Building, Users, CheckCircle, XCircle, Filter, ChevronLeft, ChevronRight, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react';
 import Swal from 'sweetalert2';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head } from '@inertiajs/react';
@@ -15,6 +15,8 @@ const SallesIndex = ({ salles: initialSalles = [] }) => {
   const [availabilityFilter, setAvailabilityFilter] = useState('all');
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(25);
+  const [sortField, setSortField] = useState(null);
+  const [sortDirection, setSortDirection] = useState('asc');
 
   // Sync local state with props when data changes
   useEffect(() => {
@@ -43,27 +45,91 @@ const SallesIndex = ({ salles: initialSalles = [] }) => {
     specificites: '',
   });
 
+  // Handle sort
+  const handleSort = (field) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('asc');
+    }
+    setCurrentPage(1);
+  };
+
   // Filter and search salles
   const filteredSalles = useMemo(() => {
-    let filtered = salles;
+    let filtered = [...salles];
     
     // Apply search term
-    if (searchTerm) {
+    if (searchTerm && searchTerm.trim()) {
+      const searchLower = searchTerm.toLowerCase().trim();
       filtered = filtered.filter(salle => 
-        salle.code_salle?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        salle.nom_salle?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        salle.batiment?.toLowerCase().includes(searchTerm.toLowerCase())
+        (salle.code_salle && salle.code_salle.toLowerCase().includes(searchLower)) ||
+        (salle.nom_salle && salle.nom_salle.toLowerCase().includes(searchLower)) ||
+        (salle.batiment && salle.batiment.toLowerCase().includes(searchLower))
       );
     }
 
     // Apply availability filter
     if (availabilityFilter !== 'all') {
       const isAvailable = availabilityFilter === 'available';
-      filtered = filtered.filter(salle => salle.est_disponible === isAvailable);
+      filtered = filtered.filter(salle => {
+        // Handle different data types (boolean, string, number)
+        const disponible = salle.est_disponible;
+        const isDisponible = disponible === true || disponible === 1 || disponible === '1' || disponible === 'true';
+        return isAvailable ? isDisponible : !isDisponible;
+      });
+    }
+
+    // Apply sorting
+    if (sortField) {
+      filtered.sort((a, b) => {
+        let aVal = a[sortField];
+        let bVal = b[sortField];
+
+        // Handle null/undefined values
+        if (aVal == null) aVal = '';
+        if (bVal == null) bVal = '';
+
+        // Handle numeric comparison for specific fields
+        if (sortField === 'capacite' || sortField === 'capacite_examens') {
+          aVal = parseInt(aVal) || 0;
+          bVal = parseInt(bVal) || 0;
+        }
+        // Handle code field - try to extract numeric part for natural sorting
+        else if (sortField === 'code_salle') {
+          const aNum = parseInt(aVal.toString().replace(/\D/g, '')) || 0;
+          const bNum = parseInt(bVal.toString().replace(/\D/g, '')) || 0;
+          
+          // If both have numeric parts, compare numerically
+          if (aNum !== 0 || bNum !== 0) {
+            if (aNum !== bNum) {
+              return sortDirection === 'asc' ? aNum - bNum : bNum - aNum;
+            }
+          }
+          // Otherwise fall through to string comparison
+          aVal = aVal.toString().toLowerCase();
+          bVal = bVal.toString().toLowerCase();
+        }
+        // Handle boolean comparison for status
+        else if (sortField === 'est_disponible') {
+          aVal = aVal ? 1 : 0;
+          bVal = bVal ? 1 : 0;
+        }
+        // String comparison for other fields
+        else {
+          if (typeof aVal === 'string') aVal = aVal.toLowerCase();
+          if (typeof bVal === 'string') bVal = bVal.toLowerCase();
+        }
+
+        if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+        if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
+        return 0;
+      });
     }
 
     return filtered;
-  }, [salles, searchTerm, availabilityFilter]);
+  }, [salles, searchTerm, availabilityFilter, sortField, sortDirection]);
 
   // Pagination
   const totalPages = Math.ceil(filteredSalles.length / itemsPerPage);
@@ -250,6 +316,16 @@ const SallesIndex = ({ salles: initialSalles = [] }) => {
     }
   };
 
+  // Helper function to render sort icon
+  const renderSortIcon = (field) => {
+    if (sortField !== field) {
+      return <ArrowUpDown className="w-4 h-4 ml-1 opacity-40" />;
+    }
+    return sortDirection === 'asc' 
+      ? <ArrowUp className="w-4 h-4 ml-1" /> 
+      : <ArrowDown className="w-4 h-4 ml-1" />;
+  };
+
   // Stats calculations
   const stats = useMemo(() => {
     const total = salles.length;
@@ -392,11 +468,51 @@ const SallesIndex = ({ salles: initialSalles = [] }) => {
                         className="rounded border-gray-300 dark:border-gray-600 text-blue-600 dark:text-blue-400 focus:ring-blue-500 dark:focus:ring-blue-400"
                       />
                     </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Code</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Nom</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Bâtiment</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Capacité</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Statut</th>
+                    <th 
+                      onClick={() => handleSort('code_salle')}
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600/50 transition-colors"
+                    >
+                      <div className="flex items-center">
+                        Code
+                        {renderSortIcon('code_salle')}
+                      </div>
+                    </th>
+                    <th 
+                      onClick={() => handleSort('nom_salle')}
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600/50 transition-colors"
+                    >
+                      <div className="flex items-center">
+                        Nom
+                        {renderSortIcon('nom_salle')}
+                      </div>
+                    </th>
+                    <th 
+                      onClick={() => handleSort('batiment')}
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600/50 transition-colors"
+                    >
+                      <div className="flex items-center">
+                        Bâtiment
+                        {renderSortIcon('batiment')}
+                      </div>
+                    </th>
+                    <th 
+                      onClick={() => handleSort('capacite')}
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600/50 transition-colors"
+                    >
+                      <div className="flex items-center">
+                        Capacité
+                        {renderSortIcon('capacite')}
+                      </div>
+                    </th>
+                    <th 
+                      onClick={() => handleSort('est_disponible')}
+                      className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600/50 transition-colors"
+                    >
+                      <div className="flex items-center">
+                        Statut
+                        {renderSortIcon('est_disponible')}
+                      </div>
+                    </th>
                     <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">Actions</th>
                   </tr>
                 </thead>

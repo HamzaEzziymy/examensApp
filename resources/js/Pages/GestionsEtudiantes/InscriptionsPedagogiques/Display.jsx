@@ -33,6 +33,14 @@ const InscriptionPedagogiqueDataTable = ({
   const [editingInscription, setEditingInscription] = useState(null);
   const [showFilters, setShowFilters] = useState(false);
   const [isFiltering, setIsFiltering] = useState(false);
+  const [adminInscriptionSearch, setAdminInscriptionSearch] = useState('');
+  const [adminInscriptionSearchEdit, setAdminInscriptionSearchEdit] = useState('');
+  const [offreFormationSearch, setOffreFormationSearch] = useState('');
+  const [offreFormationSearchEdit, setOffreFormationSearchEdit] = useState('');
+  const [showAdminInscriptionDropdown, setShowAdminInscriptionDropdown] = useState(false);
+  const [showAdminInscriptionDropdownEdit, setShowAdminInscriptionDropdownEdit] = useState(false);
+  const [showOffreFormationDropdown, setShowOffreFormationDropdown] = useState(false);
+  const [showOffreFormationDropdownEdit, setShowOffreFormationDropdownEdit] = useState(false);
 
   // Using useForm for better error handling
   const inscriptionForm = useForm({
@@ -147,6 +155,60 @@ const InscriptionPedagogiqueDataTable = ({
       onFinish: () => setIsFiltering(false),
     });
   };
+
+  // Filter inscriptions administratives based on search
+  const filteredAdminInscriptions = useMemo(() => {
+    if (!adminInscriptionSearch.trim()) return inscriptions_administratives;
+    
+    const searchLower = adminInscriptionSearch.toLowerCase().trim();
+    return inscriptions_administratives.filter(insc => 
+      (insc.etudiant?.cne && insc.etudiant.cne.toLowerCase().includes(searchLower)) ||
+      (insc.etudiant?.nom && insc.etudiant.nom.toLowerCase().includes(searchLower)) ||
+      (insc.etudiant?.prenom && insc.etudiant.prenom.toLowerCase().includes(searchLower)) ||
+      (insc.id_inscription_admin && insc.id_inscription_admin.toString().includes(searchLower))
+    );
+  }, [adminInscriptionSearch, inscriptions_administratives]);
+
+  // Filter inscriptions administratives for edit form
+  const filteredAdminInscriptionsEdit = useMemo(() => {
+    if (!adminInscriptionSearchEdit.trim()) return inscriptions_administratives;
+    
+    const searchLower = adminInscriptionSearchEdit.toLowerCase().trim();
+    return inscriptions_administratives.filter(insc => 
+      (insc.etudiant?.cne && insc.etudiant.cne.toLowerCase().includes(searchLower)) ||
+      (insc.etudiant?.nom && insc.etudiant.nom.toLowerCase().includes(searchLower)) ||
+      (insc.etudiant?.prenom && insc.etudiant.prenom.toLowerCase().includes(searchLower)) ||
+      (insc.id_inscription_admin && insc.id_inscription_admin.toString().includes(searchLower))
+    );
+  }, [adminInscriptionSearchEdit, inscriptions_administratives]);
+
+  // Filter offres de formation based on search
+  const filteredOffresFormation = useMemo(() => {
+    if (!offreFormationSearch.trim()) return offres_formation;
+    
+    const searchLower = offreFormationSearch.toLowerCase().trim();
+    return offres_formation.filter(offre => 
+      (offre.module?.nom_module && offre.module.nom_module.toLowerCase().includes(searchLower)) ||
+      (offre.semestre?.nom_semestre && offre.semestre.nom_semestre.toLowerCase().includes(searchLower)) ||
+      (offre.semestre?.niveau?.nom_niveau && offre.semestre.niveau.nom_niveau.toLowerCase().includes(searchLower)) ||
+      (offre.section?.nom_section && offre.section.nom_section.toLowerCase().includes(searchLower)) ||
+      (offre.section?.filiere?.nom_filiere && offre.section.filiere.nom_filiere.toLowerCase().includes(searchLower))
+    );
+  }, [offreFormationSearch, offres_formation]);
+
+  // Filter offres de formation for edit form
+  const filteredOffresFormationEdit = useMemo(() => {
+    if (!offreFormationSearchEdit.trim()) return offres_formation;
+    
+    const searchLower = offreFormationSearchEdit.toLowerCase().trim();
+    return offres_formation.filter(offre => 
+      (offre.module?.nom_module && offre.module.nom_module.toLowerCase().includes(searchLower)) ||
+      (offre.semestre?.nom_semestre && offre.semestre.nom_semestre.toLowerCase().includes(searchLower)) ||
+      (offre.semestre?.niveau?.nom_niveau && offre.semestre.niveau.nom_niveau.toLowerCase().includes(searchLower)) ||
+      (offre.section?.nom_section && offre.section.nom_section.toLowerCase().includes(searchLower)) ||
+      (offre.section?.filiere?.nom_filiere && offre.section.filiere.nom_filiere.toLowerCase().includes(searchLower))
+    );
+  }, [offreFormationSearchEdit, offres_formation]);
 
   // Pagination info
   const currentPage = pagination?.current_page || 1;
@@ -1148,21 +1210,53 @@ const InscriptionPedagogiqueDataTable = ({
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Inscription Administrative *
                     </label>
-                    <select
-                      value={inscriptionForm.data.id_inscription_admin}
-                      onChange={(e) => inscriptionForm.setData('id_inscription_admin', e.target.value)}
-                      required
-                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 ${
-                        inscriptionForm.errors.id_inscription_admin ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
-                      }`}
-                    >
-                      <option value="">-- Sélectionner une inscription administrative --</option>
-                      {inscriptions_administratives.map(insc => (
-                        <option key={insc.id_inscription_admin} value={insc.id_inscription_admin}>
-                          {insc.id_inscription_admin} - {insc.etudiant?.nom} {insc.etudiant?.prenom} ({insc.etudiant?.cne})
-                        </option>
-                      ))}
-                    </select>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="Rechercher par CNE, nom, prénom ou ID..."
+                        value={adminInscriptionSearch}
+                        onChange={(e) => setAdminInscriptionSearch(e.target.value)}
+                        onFocus={() => setShowAdminInscriptionDropdown(true)}
+                        className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 ${
+                          inscriptionForm.errors.id_inscription_admin ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
+                        }`}
+                      />
+                      {showAdminInscriptionDropdown && (
+                        <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto">
+                          {filteredAdminInscriptions.length > 0 ? (
+                            filteredAdminInscriptions.map(insc => (
+                              <button
+                                key={insc.id_inscription_admin}
+                                type="button"
+                                onClick={() => {
+                                  inscriptionForm.setData('id_inscription_admin', insc.id_inscription_admin);
+                                  setAdminInscriptionSearch(`${insc.etudiant?.cne} - ${insc.etudiant?.nom} ${insc.etudiant?.prenom}`);
+                                  setShowAdminInscriptionDropdown(false);
+                                }}
+                                className="w-full text-left px-4 py-2 hover:bg-blue-50 dark:hover:bg-gray-600 border-b border-gray-200 dark:border-gray-600 last:border-b-0 transition-colors"
+                              >
+                                <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{insc.etudiant?.cne} - {insc.etudiant?.nom} {insc.etudiant?.prenom}</div>
+                                <div className="text-xs text-gray-600 dark:text-gray-400">ID: {insc.id_inscription_admin}</div>
+                              </button>
+                            ))
+                          ) : (
+                            <div className="px-4 py-3 text-gray-500 dark:text-gray-400 text-center">Aucune inscription trouvée</div>
+                          )}
+                        </div>
+                      )}
+                      {inscriptionForm.data.id_inscription_admin && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            inscriptionForm.setData('id_inscription_admin', '');
+                            setAdminInscriptionSearch('');
+                          }}
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                     {inscriptionForm.errors.id_inscription_admin && (
                       <p className="mt-1 text-sm text-red-600">{inscriptionForm.errors.id_inscription_admin}</p>
                     )}
@@ -1171,21 +1265,53 @@ const InscriptionPedagogiqueDataTable = ({
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Offre de Formation *
                     </label>
-                    <select
-                      value={inscriptionForm.data.id_offre}
-                      onChange={(e) => inscriptionForm.setData('id_offre', e.target.value)}
-                      required
-                      className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 ${
-                        inscriptionForm.errors.id_offre ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
-                      }`}
-                    >
-                      <option value="">-- Sélectionner une offre --</option>
-                      {offres_formation.map(offre => (
-                        <option key={offre.id_offre} value={offre.id_offre}>
-                          {offre.module?.nom_module} - {offre.semestre?.niveau?.nom_niveau}({offre.semestre?.nom_semestre}) - {offre.section?.filiere?.nom_filiere} ({offre.section?.nom_section})
-                        </option>
-                      ))}
-                    </select>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="Rechercher par module, niveau, section ou filière..."
+                        value={offreFormationSearch}
+                        onChange={(e) => setOffreFormationSearch(e.target.value)}
+                        onFocus={() => setShowOffreFormationDropdown(true)}
+                        className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 ${
+                          inscriptionForm.errors.id_offre ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'
+                        }`}
+                      />
+                      {showOffreFormationDropdown && (
+                        <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto">
+                          {filteredOffresFormation.length > 0 ? (
+                            filteredOffresFormation.map(offre => (
+                              <button
+                                key={offre.id_offre}
+                                type="button"
+                                onClick={() => {
+                                  inscriptionForm.setData('id_offre', offre.id_offre);
+                                  setOffreFormationSearch(`${offre.module?.nom_module} - ${offre.semestre?.niveau?.nom_niveau}`);
+                                  setShowOffreFormationDropdown(false);
+                                }}
+                                className="w-full text-left px-4 py-2 hover:bg-blue-50 dark:hover:bg-gray-600 border-b border-gray-200 dark:border-gray-600 last:border-b-0 transition-colors"
+                              >
+                                <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{offre.module?.nom_module}</div>
+                                <div className="text-xs text-gray-600 dark:text-gray-400">{offre.semestre?.niveau?.nom_niveau} ({offre.semestre?.nom_semestre}) - {offre.section?.filiere?.nom_filiere} ({offre.section?.nom_section})</div>
+                              </button>
+                            ))
+                          ) : (
+                            <div className="px-4 py-3 text-gray-500 dark:text-gray-400 text-center">Aucune offre trouvée</div>
+                          )}
+                        </div>
+                      )}
+                      {inscriptionForm.data.id_offre && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            inscriptionForm.setData('id_offre', '');
+                            setOffreFormationSearch('');
+                          }}
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                     {inscriptionForm.errors.id_offre && (
                       <p className="mt-1 text-sm text-red-600">{inscriptionForm.errors.id_offre}</p>
                     )}
@@ -1270,35 +1396,101 @@ const InscriptionPedagogiqueDataTable = ({
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Inscription Administrative
                     </label>
-                    <select
-                      value={editForm.data.id_inscription_admin}
-                      onChange={(e) => editForm.setData('id_inscription_admin', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                    >
-                      <option value="">-- Sélectionner une inscription administrative --</option>
-                      {inscriptions_administratives.map(insc => (
-                        <option key={insc.id_inscription_admin} value={insc.id_inscription_admin}>
-                          {insc.id_inscription_admin} - {insc.etudiant?.nom} {insc.etudiant?.prenom} ({insc.etudiant?.cne})
-                        </option>
-                      ))}
-                    </select>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="Rechercher par CNE, nom, prénom ou ID..."
+                        value={adminInscriptionSearchEdit}
+                        onChange={(e) => setAdminInscriptionSearchEdit(e.target.value)}
+                        onFocus={() => setShowAdminInscriptionDropdownEdit(true)}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                      />
+                      {showAdminInscriptionDropdownEdit && (
+                        <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto">
+                          {filteredAdminInscriptionsEdit.length > 0 ? (
+                            filteredAdminInscriptionsEdit.map(insc => (
+                              <button
+                                key={insc.id_inscription_admin}
+                                type="button"
+                                onClick={() => {
+                                  editForm.setData('id_inscription_admin', insc.id_inscription_admin);
+                                  setAdminInscriptionSearchEdit(`${insc.etudiant?.cne} - ${insc.etudiant?.nom} ${insc.etudiant?.prenom}`);
+                                  setShowAdminInscriptionDropdownEdit(false);
+                                }}
+                                className="w-full text-left px-4 py-2 hover:bg-blue-50 dark:hover:bg-gray-600 border-b border-gray-200 dark:border-gray-600 last:border-b-0 transition-colors"
+                              >
+                                <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{insc.etudiant?.cne} - {insc.etudiant?.nom} {insc.etudiant?.prenom}</div>
+                                <div className="text-xs text-gray-600 dark:text-gray-400">ID: {insc.id_inscription_admin}</div>
+                              </button>
+                            ))
+                          ) : (
+                            <div className="px-4 py-3 text-gray-500 dark:text-gray-400 text-center">Aucune inscription trouvée</div>
+                          )}
+                        </div>
+                      )}
+                      {editForm.data.id_inscription_admin && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            editForm.setData('id_inscription_admin', '');
+                            setAdminInscriptionSearchEdit('');
+                          }}
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                       Offre de Formation
                     </label>
-                    <select
-                      value={editForm.data.id_offre}
-                      onChange={(e) => editForm.setData('id_offre', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                    >
-                      <option value="">-- Sélectionner une offre --</option>
-                      {offres_formation.map(offre => (
-                        <option key={offre.id_offre} value={offre.id_offre}>
-                          {offre.module?.nom_module} - {offre.semestre?.niveau?.nom_niveau}({offre.semestre?.nom_semestre}) - {offre.section?.filiere?.nom_filiere} ({offre.section?.nom_section})
-                        </option>
-                      ))}
-                    </select>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="Rechercher par module, niveau, section ou filière..."
+                        value={offreFormationSearchEdit}
+                        onChange={(e) => setOffreFormationSearchEdit(e.target.value)}
+                        onFocus={() => setShowOffreFormationDropdownEdit(true)}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                      />
+                      {showOffreFormationDropdownEdit && (
+                        <div className="absolute top-full left-0 right-0 mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg z-50 max-h-64 overflow-y-auto">
+                          {filteredOffresFormationEdit.length > 0 ? (
+                            filteredOffresFormationEdit.map(offre => (
+                              <button
+                                key={offre.id_offre}
+                                type="button"
+                                onClick={() => {
+                                  editForm.setData('id_offre', offre.id_offre);
+                                  setOffreFormationSearchEdit(`${offre.module?.nom_module} - ${offre.semestre?.niveau?.nom_niveau}`);
+                                  setShowOffreFormationDropdownEdit(false);
+                                }}
+                                className="w-full text-left px-4 py-2 hover:bg-blue-50 dark:hover:bg-gray-600 border-b border-gray-200 dark:border-gray-600 last:border-b-0 transition-colors"
+                              >
+                                <div className="text-sm font-medium text-gray-900 dark:text-gray-100">{offre.module?.nom_module}</div>
+                                <div className="text-xs text-gray-600 dark:text-gray-400">{offre.semestre?.niveau?.nom_niveau} ({offre.semestre?.nom_semestre}) - {offre.section?.filiere?.nom_filiere} ({offre.section?.nom_section})</div>
+                              </button>
+                            ))
+                          ) : (
+                            <div className="px-4 py-3 text-gray-500 dark:text-gray-400 text-center">Aucune offre trouvée</div>
+                          )}
+                        </div>
+                      )}
+                      {editForm.data.id_offre && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            editForm.setData('id_offre', '');
+                            setOffreFormationSearchEdit('');
+                          }}
+                          className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

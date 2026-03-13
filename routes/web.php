@@ -22,6 +22,7 @@ use App\Http\Controllers\{
     EnseignantController,
     SurveillantController,
     EtudiantController,
+    StudentDetailsController,
     EnseignantModuleController,
     // Inscriptions
     InscriptionAdministrativeController,
@@ -137,6 +138,10 @@ Route::prefix('personnes')->name('personnes.')->group(function () {
     // Pivot enseignant_module (assignations d’enseignants aux modules)
     Route::resource('enseignant-modules', EnseignantModuleController::class)
         ->only(['index', 'store', 'destroy']);
+
+    // Student details route
+    Route::get('etudiants/{id}/details', [StudentDetailsController::class, 'show'])
+        ->name('etudiants.details');
 });
 
 /* =========================
