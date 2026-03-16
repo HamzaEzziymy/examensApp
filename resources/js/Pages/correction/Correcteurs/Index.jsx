@@ -1,10 +1,17 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
-import { Head, useForm, Link } from '@inertiajs/react';
+import { Head, useForm, Link, usePage } from '@inertiajs/react';
 import { useState } from 'react';
 import { Users, Edit3, Trash2, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import InputError from '@/Components/InputError';
 
 export default function CorrectorsIndex({ correcteurs = {}, examens = [], enseignants = [], elements = [] }) {
+    const { auth } = usePage().props;
+    
+    // Get user's selected année and filière from Years_Sectors_Selecters
+    const userSelectedAnnee = auth.user_filiere_annee?.id_annee || 'all';
+    const userSelectedFiliere = auth.user_filiere_annee?.id_filiere || 'all';
+    
+    console.log(correcteurs)
     const [searchTerm, setSearchTerm] = useState('');
     const [editingId, setEditingId] = useState(null);
     const [examenSearch, setExamenSearch] = useState('');
@@ -36,7 +43,20 @@ export default function CorrectorsIndex({ correcteurs = {}, examens = [], enseig
         ? elements.filter(el => el.id_module === selectedModuleId)
         : [];
 
-    const filteredExamens = examens.filter((examen) => {
+    // Filter examens based on user's selected filière
+    const examensForSelectedFiliere = userSelectedFiliere !== 'all'
+        ? examens.filter(examen => {
+            // Check if the exam's module belongs to an offre in the selected filière
+            const hasMatchingOffre = examen.module?.offres_formation?.some(offre => offre.section?.id_filiere == userSelectedFiliere);
+            return hasMatchingOffre;
+        })
+        : examens;
+    
+    console.log('User selected filière:', userSelectedFiliere);
+    console.log('Total examens:', examens.length);
+    console.log('Filtered examens:', examensForSelectedFiliere.length);
+
+    const filteredExamens = examensForSelectedFiliere.filter((examen) => {
         const query = examenSearch.toLowerCase();
         const text = `${examen.module?.code_module} ${examen.module?.nom_module}`.toLowerCase();
         return text.includes(query);
@@ -54,14 +74,27 @@ export default function CorrectorsIndex({ correcteurs = {}, examens = [], enseig
         return text.includes(query);
     });
 
-    const filteredCorrecteurs = data.filter((correcteur) => {
-        const query = searchTerm.toLowerCase();
-        const enseignantName = correcteur.enseignant 
-            ? `${correcteur.enseignant.nom} ${correcteur.enseignant.prenom}`.toLowerCase()
-            : '';
-        const moduleName = correcteur.examen?.module?.nom_module?.toLowerCase() || '';
-        return enseignantName.includes(query) || moduleName.includes(query) || correcteur.statut.toLowerCase().includes(query);
-    });
+    // Filter correcteurs by selected filière first, then by search term
+    const filteredCorrecteurs = data
+        .filter((correcteur) => {
+            // If a specific filière is selected, only show correcteurs for that filière
+            if (userSelectedFiliere !== 'all') {
+                const hasMatchingOffre = correcteur.examen?.module?.offres_formation?.some(
+                    offre => offre.section?.id_filiere == userSelectedFiliere
+                );
+                return hasMatchingOffre;
+            }
+            return true;
+        })
+        .filter((correcteur) => {
+            // Then apply search filter
+            const query = searchTerm.toLowerCase();
+            const enseignantName = correcteur.enseignant 
+                ? `${correcteur.enseignant.nom} ${correcteur.enseignant.prenom}`.toLowerCase()
+                : '';
+            const moduleName = correcteur.examen?.module?.nom_module?.toLowerCase() || '';
+            return enseignantName.includes(query) || moduleName.includes(query) || correcteur.statut.toLowerCase().includes(query);
+        });
 
     const startEdit = (correcteur) => {
         setEditingId(correcteur.id_correcteur);
@@ -423,7 +456,7 @@ export default function CorrectorsIndex({ correcteurs = {}, examens = [], enseig
                                             Statut
                                         </th>
                                         <th className="px-4 py-3 text-left text-sm font-semibold text-gray-900 dark:text-white">
-                                            Limite
+                                            Dates
                                         </th>
                                         <th className="px-4 py-3 text-right text-sm font-semibold text-gray-900 dark:text-white">
                                             Actions
@@ -460,6 +493,10 @@ export default function CorrectorsIndex({ correcteurs = {}, examens = [], enseig
                                                                 {correcteur.element.nom_element}
                                                             </div>
                                                         </>
+                                                    ) : correcteur.examen?.module?.elements && correcteur.examen.module.elements.length > 0 ? (
+                                                        <div className="text-xs text-gray-500">
+                                                            {correcteur.examen.module.elements.length} élément(s)
+                                                        </div>
                                                     ) : (
                                                         <span className="text-xs text-gray-400 italic">Module complet</span>
                                                     )}
@@ -473,9 +510,19 @@ export default function CorrectorsIndex({ correcteurs = {}, examens = [], enseig
                                                     </span>
                                                 </td>
                                                 <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
-                                                    {correcteur.date_limite_correction
-                                                        ? new Date(correcteur.date_limite_correction).toLocaleDateString('fr-FR')
-                                                        : '-'}
+                                                    {correcteur.date_attribution && (
+                                                        <div className="text-xs">
+                                                            <span className="text-gray-500">Attrib: </span>
+                                                            {new Date(correcteur.date_attribution).toLocaleDateString('fr-FR')}
+                                                        </div>
+                                                    )}
+                                                    {correcteur.date_limite_correction && (
+                                                        <div className="text-xs font-semibold">
+                                                            <span className="text-gray-500">Limite: </span>
+                                                            {new Date(correcteur.date_limite_correction).toLocaleDateString('fr-FR')}
+                                                        </div>
+                                                    )}
+                                                    {!correcteur.date_attribution && !correcteur.date_limite_correction && '-'}
                                                 </td>
                                                 <td className="px-4 py-3 text-right">
                                                     <div className="flex justify-end gap-2">
@@ -499,7 +546,7 @@ export default function CorrectorsIndex({ correcteurs = {}, examens = [], enseig
                                         ))
                                     ) : (
                                         <tr>
-                                            <td colSpan="6" className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
+                                            <td colSpan="7" className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
                                                 Aucun correcteur trouvé
                                             </td>
                                         </tr>

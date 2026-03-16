@@ -17,10 +17,10 @@ class CorrecteurController extends Controller
      */
     public function index()
     {
-        $correcteurs = Correcteur::with(['enseignant', 'examen.module', 'element'])
+        $correcteurs = Correcteur::with(['enseignant', 'examen.module.elements', 'examen.module.offresFormation.section', 'element'])
             ->paginate(10);
         
-        $examens = Examen::with('module')->get();
+        $examens = Examen::with(['module.elements', 'module.offresFormation.section'])->get();
         $enseignants = Enseignant::all();
         $elements = ElementModule::all();
 
