@@ -21,13 +21,12 @@ const normalizeText = (value) => {
         .replace(/[\u0300-\u036f]/g, '');
 };
 
-export default function SessionTable({ sessions, filieres, annees, typesSession }) {
+export default function SessionTable({ sessions, annees, typesSession }) {
     const [modalOpen, setModalOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
 
     const { data, setData, put, delete: destroy, errors, processing, reset } = useForm({
         id_session_examen: null,
-        id_filiere: '',
         id_annee: '',
         nom_session: '',
         type_session: typesSession[0],
@@ -39,7 +38,6 @@ export default function SessionTable({ sessions, filieres, annees, typesSession 
     const openModal = (session) => {
         setData({
             id_session_examen: session.id_session_examen,
-            id_filiere: session.id_filiere ?? '',
             id_annee: session.id_annee ?? '',
             nom_session: session.nom_session,
             type_session: session.type_session,
@@ -65,7 +63,7 @@ export default function SessionTable({ sessions, filieres, annees, typesSession 
                 closeModal();
                 Swal.fire({
                     icon: 'success',
-                    title: 'Session modifiée',
+                    title: 'Session modifiee',
                     timer: 1500,
                     showConfirmButton: false,
                 });
@@ -77,7 +75,7 @@ export default function SessionTable({ sessions, filieres, annees, typesSession 
         Swal.fire({
             icon: 'warning',
             title: 'Supprimer cette session ?',
-            text: 'Toutes les informations liées seront perdues.',
+            text: 'La session sera supprimee. Les examens lies garderont leurs donnees sans session.',
             showCancelButton: true,
             confirmButtonText: 'Oui, supprimer',
             cancelButtonText: 'Annuler',
@@ -87,10 +85,22 @@ export default function SessionTable({ sessions, filieres, annees, typesSession 
                 onSuccess: () =>
                     Swal.fire({
                         icon: 'success',
-                        title: 'Session supprimée',
+                        title: 'Session supprimee',
                         timer: 1200,
                         showConfirmButton: false,
                     }),
+                onError: (formErrors) => {
+                    const errorMessage =
+                        formErrors.error ||
+                        Object.values(formErrors).flat().join(', ') ||
+                        'Impossible de supprimer cette session.';
+
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Suppression impossible',
+                        text: errorMessage,
+                    });
+                },
             });
         });
     };
@@ -103,13 +113,14 @@ export default function SessionTable({ sessions, filieres, annees, typesSession 
         }
 
         return sessions.filter((session) => {
+            const filiereLabel = session.filiere?.nom_filiere ?? 'Commune';
             const searchableValues = [
                 session.nom_session,
                 session.type_session,
                 session.quadrimestre,
                 session.description,
                 session.date_session_examen,
-                session.filiere?.nom_filiere,
+                filiereLabel,
                 session.annee_universitaire?.annee_univ,
             ];
 
@@ -123,7 +134,7 @@ export default function SessionTable({ sessions, filieres, annees, typesSession 
         <div className="rounded-xl bg-white p-6 shadow dark:bg-gray-800">
             <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                    <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Sessions planifiées</h2>
+                    <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Sessions planifiees</h2>
                     <span className="text-sm text-gray-500 dark:text-gray-400">
                         {searchActive ? (
                             <>
@@ -143,7 +154,7 @@ export default function SessionTable({ sessions, filieres, annees, typesSession 
                         type="search"
                         value={searchTerm}
                         onChange={(event) => setSearchTerm(event.target.value)}
-                        placeholder="Rechercher (nom, filière, type...)"
+                        placeholder="Rechercher (nom, filiere, type...)"
                         className="w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-700"
                     />
                 </div>
@@ -166,10 +177,10 @@ export default function SessionTable({ sessions, filieres, annees, typesSession 
                                 Date
                             </th>
                             <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                                Filière
+                                Filiere
                             </th>
                             <th className="px-4 py-3 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">
-                                Année
+                                Annee
                             </th>
                             <th className="px-4 py-3" />
                         </tr>
@@ -185,7 +196,7 @@ export default function SessionTable({ sessions, filieres, annees, typesSession 
                                 </td>
                                 <td className="px-4 py-3">{session.quadrimestre}</td>
                                 <td className="px-4 py-3">{formatDate(session.date_session_examen)}</td>
-                                <td className="px-4 py-3">{session.filiere?.nom_filiere ?? '—'}</td>
+                                <td className="px-4 py-3">{session.filiere?.nom_filiere ?? 'Commune'}</td>
                                 <td className="px-4 py-3">{session.annee_universitaire?.annee_univ ?? '—'}</td>
                                 <td className="px-4 py-3">
                                     <div className="flex items-center gap-2">
@@ -211,8 +222,8 @@ export default function SessionTable({ sessions, filieres, annees, typesSession 
                             <tr>
                                 <td colSpan={7} className="px-4 py-5 text-center text-sm text-gray-500 dark:text-gray-400">
                                     {searchActive
-                                        ? 'Aucune session ne correspond à votre recherche.'
-                                        : 'Aucune session prévue pour le moment.'}
+                                        ? 'Aucune session ne correspond a votre recherche.'
+                                        : 'Aucune session prevue pour le moment.'}
                                 </td>
                             </tr>
                         )}
@@ -268,39 +279,21 @@ export default function SessionTable({ sessions, filieres, annees, typesSession 
                                 </div>
                             </div>
 
-                            <div className="grid gap-4 sm:grid-cols-2">
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Année</label>
-                                    <select
-                                        value={data.id_annee}
-                                        onChange={(e) => setData('id_annee', e.target.value)}
-                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
-                                    >
-                                        <option value="">Sélectionner</option>
-                                        {annees.map((annee) => (
-                                            <option key={annee.id_annee} value={annee.id_annee}>
-                                                {annee.annee_univ}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    <InputError message={errors.id_annee} className="mt-1" />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Filière</label>
-                                    <select
-                                        value={data.id_filiere}
-                                        onChange={(e) => setData('id_filiere', e.target.value)}
-                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
-                                    >
-                                        <option value="">Toutes les filières</option>
-                                        {filieres.map((filiere) => (
-                                            <option key={filiere.id_filiere} value={filiere.id_filiere}>
-                                                {filiere.nom_filiere}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    <InputError message={errors.id_filiere} className="mt-1" />
-                                </div>
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Annee</label>
+                                <select
+                                    value={data.id_annee}
+                                    onChange={(e) => setData('id_annee', e.target.value)}
+                                    className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
+                                >
+                                    <option value="">Selectionner</option>
+                                    {annees.map((annee) => (
+                                        <option key={annee.id_annee} value={annee.id_annee}>
+                                            {annee.annee_univ}
+                                        </option>
+                                    ))}
+                                </select>
+                                <InputError message={errors.id_annee} className="mt-1" />
                             </div>
 
                             <div>
