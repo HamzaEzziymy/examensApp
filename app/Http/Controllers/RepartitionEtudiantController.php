@@ -287,11 +287,7 @@ class RepartitionEtudiantController extends Controller
             $salleGroups = $orderedSalleGroups;
         } else {
             $salleGroups = $repartitions
-                ->groupBy(function ($rep) {
-                    $str = str_pad((string) ($rep->code_grille ?? ''), 7, '0', STR_PAD_LEFT);
-                    $digit = (int) ($str[3] ?? 1);
-                    return $digit >= 1 ? $digit : 1;
-                })
+                ->groupBy(fn ($rep) => $this->salleIndexFromGrille($rep->code_grille))
                 ->map(function ($rows, $salleIndex) use ($salles) {
                     $salle = $salles[$salleIndex - 1] ?? null;
                     return [
@@ -574,32 +570,8 @@ class RepartitionEtudiantController extends Controller
         }
 
         // Preserve original counts per salle while keeping a single alphabetical ordering across salles
-        $salleCounts = $selectedRepartitions
-            ->map(function ($rep) {
-                $str = str_pad((string) ($rep->code_grille ?? ''), 7, '0', STR_PAD_LEFT);
-                $digit = (int) ($str[3] ?? 1);
-                return $digit >= 1 ? $digit : 1;
-            })
-            ->countBy()
-            ->sortKeys()
-            ->values();
-
-        $currentSalleIndex = 1;
-        $currentSalleFilled = 0;
-        $currentSalleCap = $salleCounts->get($currentSalleIndex - 1, $studentsWithSeats->count());
-
-        $studentsWithSeats = $studentsWithSeats->map(function ($student) use (&$currentSalleIndex, &$currentSalleFilled, &$currentSalleCap, $salleCounts, $studentsWithSeats) {
-            if ($currentSalleFilled >= $currentSalleCap && $currentSalleIndex < $salleCounts->count()) {
-                $currentSalleIndex++;
-                $currentSalleFilled = 0;
-                $currentSalleCap = $salleCounts->get($currentSalleIndex - 1, $studentsWithSeats->count());
-            }
-
-            $student['salle_index'] = $currentSalleIndex;
-            $currentSalleFilled++;
-
-            return $student;
-        });
+        $salleCounts = $this->salleCountsByIndex($selectedRepartitions);
+        $studentsWithSeats = $this->assignStudentsToSalleIndices($studentsWithSeats, $salleCounts);
 
         $groups = $studentsWithSeats
             ->groupBy(fn ($student) => $student['salle_index'] ?? 1)
@@ -676,7 +648,7 @@ class RepartitionEtudiantController extends Controller
     public function exportSallesPlaces(Request $request, Examen $examen)
     {
         $repartitions = RepartitionEtudiant::with([
-                'inscriptionPedagogique:id_inscription_pedagogique,id_inscription_admin,id_offre',
+                'inscriptionPedagogique:id_inscription_pedagogique,id_inscription_admin,id_offre,type_inscription',
                 'inscriptionPedagogique.inscriptionAdministrative:id_inscription_admin,id_etudiant',
                 'inscriptionPedagogique.inscriptionAdministrative.etudiant:id_etudiant,nom,prenom,cne',
             ])
@@ -711,15 +683,14 @@ class RepartitionEtudiantController extends Controller
 
         $rows = $repartitions
             ->map(function ($rep) use ($salles) {
-                $str = str_pad((string) ($rep->code_grille ?? ''), 7, '0', STR_PAD_LEFT);
-                $digit = (int) ($str[3] ?? 1);
-                $salleIndex = $digit >= 1 ? $digit : 1;
+                $salleIndex = $this->salleIndexFromGrille($rep->code_grille);
                 $salle = $salles[$salleIndex - 1] ?? null;
 
                 return [
                     'cne'          => $rep->inscriptionPedagogique->inscriptionAdministrative->etudiant->cne ?? '',
                     'nom'          => $rep->inscriptionPedagogique->inscriptionAdministrative->etudiant->nom ?? '',
                     'prenom'       => $rep->inscriptionPedagogique->inscriptionAdministrative->etudiant->prenom ?? '',
+                    'is_credit'    => strtolower((string) ($rep->inscriptionPedagogique->type_inscription ?? '')) === 'credit',
                     'salle'        => $salle->nom_salle ?? ('Salle '.$salleIndex),
                     'code_salle'   => $salle->code_salle ?? null,
                     'numero_place' => $rep->numero_place,
@@ -896,6 +867,54 @@ class RepartitionEtudiantController extends Controller
             : null;
     }
 
+    private function salleIndexFromGrille($codeGrille): int
+    {
+        $str = str_pad((string) ($codeGrille ?? ''), 7, '0', STR_PAD_LEFT);
+        $digit = (int) ($str[3] ?? 1);
+
+        return $digit >= 1 ? $digit : 1;
+    }
+
+    private function salleCountsByIndex(Collection $repartitions): Collection
+    {
+        return $repartitions
+            ->map(fn ($rep) => $this->salleIndexFromGrille($rep->code_grille))
+            ->countBy()
+            ->sortKeys();
+    }
+
+    private function assignStudentsToSalleIndices(Collection $students, Collection $salleCounts): Collection
+    {
+        $students = $students->values();
+        $salleIndices = $salleCounts
+            ->keys()
+            ->map(fn ($index) => (int) $index)
+            ->values();
+
+        if ($students->isEmpty() || $salleIndices->isEmpty()) {
+            return $students;
+        }
+
+        $currentSallePosition = 0;
+        $currentSalleIndex = (int) $salleIndices->first();
+        $currentSalleFilled = 0;
+        $currentSalleCap = (int) $salleCounts->get($currentSalleIndex, $students->count());
+
+        return $students->map(function ($student) use (&$currentSallePosition, &$currentSalleIndex, &$currentSalleFilled, &$currentSalleCap, $salleIndices, $salleCounts, $students) {
+            if ($currentSalleFilled >= $currentSalleCap && $currentSallePosition < $salleIndices->count() - 1) {
+                $currentSallePosition++;
+                $currentSalleIndex = (int) $salleIndices->get($currentSallePosition, $currentSalleIndex);
+                $currentSalleFilled = 0;
+                $currentSalleCap = (int) $salleCounts->get($currentSalleIndex, $students->count());
+            }
+
+            $student['salle_index'] = $currentSalleIndex;
+            $currentSalleFilled++;
+
+            return $student;
+        });
+    }
+
     private function buildSalleGroupsWithCollectiveOrder(Examen $examen, Collection $repartitions, Collection $salles): ?Collection
     {
         if ($repartitions->isEmpty()) {
@@ -1017,32 +1036,8 @@ class RepartitionEtudiantController extends Controller
             })
             ->values();
 
-        $salleCounts = $repartitions
-            ->map(function ($rep) {
-                $str = str_pad((string) ($rep->code_grille ?? ''), 7, '0', STR_PAD_LEFT);
-                $digit = (int) ($str[3] ?? 1);
-                return $digit >= 1 ? $digit : 1;
-            })
-            ->countBy()
-            ->sortKeys()
-            ->values();
-
-        $currentSalleIndex = 1;
-        $currentSalleFilled = 0;
-        $currentSalleCap = $salleCounts->get($currentSalleIndex - 1, $studentsWithSeats->count());
-
-        $studentsWithSeats = $studentsWithSeats->map(function ($student, $index) use (&$currentSalleIndex, &$currentSalleFilled, &$currentSalleCap, $salleCounts, $studentsWithSeats) {
-            if ($currentSalleFilled >= $currentSalleCap && $currentSalleIndex < $salleCounts->count()) {
-                $currentSalleIndex++;
-                $currentSalleFilled = 0;
-                $currentSalleCap = $salleCounts->get($currentSalleIndex - 1, $studentsWithSeats->count());
-            }
-
-            $student['salle_index'] = $currentSalleIndex;
-            $currentSalleFilled++;
-
-            return $student;
-        });
+        $salleCounts = $this->salleCountsByIndex($repartitions);
+        $studentsWithSeats = $this->assignStudentsToSalleIndices($studentsWithSeats, $salleCounts);
 
         $repartitionsByStudent = $repartitions->keyBy(function ($rep) {
             return $rep->inscriptionPedagogique?->inscriptionAdministrative?->id_etudiant ?? $rep->id_inscription_pedagogique;

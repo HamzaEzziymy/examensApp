@@ -209,13 +209,17 @@ class ExamenController extends Controller
         $manualSplit = $this->normalizeManualSplit($manualSplit, $allSalleIds);
         $manualTotal = (int) $manualSplit->sum('nombre');
         $expectedCount = $manualTotal > 0 ? $manualTotal : $studentCount;
-        $salleModels = Salle::whereIn('id_salle', $allSalleIds)->get(['id_salle', 'code_salle', 'capacite_examens', 'capacite']);
+        $salleModels = $this->orderedSalles($allSalleIds);
         $totalCapacity = $salleModels->sum(function ($salle) {
             return $salle->capacite_examens ?? $salle->capacite ?? 0;
         });
 
         if ($capacityError = $this->validateManualCapacities($manualSplit, $salleModels)) {
             return back()->withErrors(['repartition_salles' => $capacityError])->withInput();
+        }
+
+        if ($creditAllocationError = $this->validateCreditAllocation($registrations, $salleModels, $manualSplit, $expectedCount)) {
+            return back()->withErrors(['salles' => $creditAllocationError])->withInput();
         }
 
         if ($expectedCount > $totalCapacity) {
@@ -228,7 +232,7 @@ class ExamenController extends Controller
         $examen->salles()->sync($allSalleIds);
         $examen->load('salles:id_salle,code_salle,capacite_examens,capacite');
 
-        $this->generateInitialRepartition($examen, $registrations, $expectedCount, $manualSplit);
+        $this->generateInitialRepartition($examen, $registrations, $expectedCount, $manualSplit, $salleModels);
 
         return redirect()
             ->route('examens.examens.index')
@@ -288,13 +292,17 @@ class ExamenController extends Controller
         $manualSplit = $this->normalizeManualSplit($manualSplit, $allSalleIds);
         $manualTotal = (int) $manualSplit->sum('nombre');
         $expectedCount = $manualTotal > 0 ? $manualTotal : $studentCount;
-        $salleModels = Salle::whereIn('id_salle', $allSalleIds)->get(['id_salle', 'code_salle', 'capacite_examens', 'capacite']);
+        $salleModels = $this->orderedSalles($allSalleIds);
         $totalCapacity = $salleModels->sum(function ($salle) {
             return $salle->capacite_examens ?? $salle->capacite ?? 0;
         });
 
         if ($capacityError = $this->validateManualCapacities($manualSplit, $salleModels)) {
             return back()->withErrors(['repartition_salles' => $capacityError])->withInput();
+        }
+
+        if ($creditAllocationError = $this->validateCreditAllocation($registrations, $salleModels, $manualSplit, $expectedCount)) {
+            return back()->withErrors(['salles' => $creditAllocationError])->withInput();
         }
 
         if ($expectedCount > $totalCapacity) {
@@ -309,7 +317,7 @@ class ExamenController extends Controller
         RepartitionEtudiant::where('id_examen', $examen->id_examen)->delete();
         Anonymat::where('id_examen', $examen->id_examen)->delete();
 
-        $this->generateInitialRepartition($examen, $registrations, $expectedCount, $manualSplit);
+        $this->generateInitialRepartition($examen, $registrations, $expectedCount, $manualSplit, $salleModels);
 
         return redirect()
             ->route('examens.examens.index')
@@ -358,18 +366,40 @@ class ExamenController extends Controller
         ]);
     }
 
-    private function generateInitialRepartition(Examen $examen, $registrations = null, ?int $limitCount = null, ?Collection $manualSplit = null): void
+    private function generateInitialRepartition(
+        Examen $examen,
+        $registrations = null,
+        ?int $limitCount = null,
+        ?Collection $manualSplit = null,
+        ?Collection $orderedSalles = null
+    ): void
     {
         $registrations = $registrations ?? $this->registrationsForModule(
             (int) $examen->id_module,
             $examen->sessionExamen?->id_annee,
             $this->preferredExamFiliereId($examen)
         );
-        if ($limitCount) {
-            $registrations = $registrations->take($limitCount);
+        $registrations = $this->orderRegistrationsForRepartition(collect($registrations));
+        if ($registrations->isEmpty()) {
+            return;
         }
 
-        if ($registrations->isEmpty()) {
+        $normalRegistrations = $registrations
+            ->reject(fn ($registration) => $this->isCreditRegistration($registration))
+            ->values();
+        $creditRegistrations = $registrations
+            ->filter(fn ($registration) => $this->isCreditRegistration($registration))
+            ->values();
+
+        if ($limitCount !== null) {
+            $plannedCreditCount = min($creditRegistrations->count(), max(0, $limitCount));
+            $creditRegistrations = $creditRegistrations->take($plannedCreditCount)->values();
+            $remainingNormalSlots = max(0, $limitCount - $plannedCreditCount);
+            $normalRegistrations = $normalRegistrations->take($remainingNormalSlots)->values();
+        }
+
+        $totalStudents = $normalRegistrations->count() + $creditRegistrations->count();
+        if ($totalStudents === 0) {
             return;
         }
 
@@ -387,68 +417,130 @@ class ExamenController extends Controller
             'module.offresFormation.semestre.niveau:id_niveau,nom_niveau,ordre',
         ]);
 
-        $salles = $examen->salles()->select('salles.id_salle', 'salles.code_salle', 'salles.capacite_examens', 'salles.capacite')->get();
-        if ($salles->isEmpty() && $examen->id_salle) {
+        $allRooms = $orderedSalles?->values() ?? collect();
+        if ($allRooms->isEmpty()) {
+            $allRooms = $examen->salles()->select('salles.id_salle', 'salles.code_salle', 'salles.capacite_examens', 'salles.capacite')->get();
+        }
+        if ($allRooms->isEmpty() && $examen->id_salle) {
             $salle = Salle::find($examen->id_salle);
             if ($salle) {
-                $salles = collect([$salle]);
+                $allRooms = collect([$salle]);
             }
         }
 
-        $registrations = $registrations->values();
-        $remaining = $registrations->count();
-        $rooms = $salles->values();
-        $offset = 0;
-        $totalStudents = $registrations->count();
-        $manualSplit = collect($manualSplit)
+        if ($allRooms->isEmpty()) {
+            return;
+        }
+
+        $rooms = $allRooms->values();
+        $creditCount = $creditRegistrations->count();
+        $manualTargets = collect($manualSplit)
             ->filter(fn ($row) => isset($row['id_salle'], $row['nombre']) && $row['nombre'] > 0)
             ->mapWithKeys(fn ($row) => [(int) $row['id_salle'] => (int) $row['nombre']]);
 
         // Keep only as many salles as needed to cover everyone
-        if ($manualSplit->isEmpty() && $rooms->count() > 1) {
-            $ordered = collect();
-            $remainingSeats = $totalStudents;
-            foreach ($rooms as $room) {
-                $ordered->push($room);
-                $cap = $room->capacite_examens ?? $room->capacite ?? 0;
-                $remainingSeats -= $cap;
-                if ($remainingSeats <= 0) {
-                    break;
+        if ($manualTargets->isEmpty() && $rooms->count() > 1) {
+            if ($creditCount > 0) {
+                $lastRoom = $rooms->last();
+                $ordered = collect();
+                $remainingSeats = $normalRegistrations->count();
+
+                if ($remainingSeats > 0) {
+                    foreach ($rooms->slice(0, -1) as $room) {
+                        $ordered->push($room);
+                        $cap = $room->capacite_examens ?? $room->capacite ?? 0;
+                        $remainingSeats -= $cap;
+                        if ($remainingSeats <= 0) {
+                            break;
+                        }
+                    }
                 }
+
+                $rooms = $ordered->push($lastRoom)->unique('id_salle')->values();
+            } else {
+                $ordered = collect();
+                $remainingSeats = $totalStudents;
+                foreach ($rooms as $room) {
+                    $ordered->push($room);
+                    $cap = $room->capacite_examens ?? $room->capacite ?? 0;
+                    $remainingSeats -= $cap;
+                    if ($remainingSeats <= 0) {
+                        break;
+                    }
+                }
+                $rooms = $ordered;
             }
-            $rooms = $ordered;
         }
 
         // If first salle is enough, stick to it
-        if ($manualSplit->isEmpty() && $rooms->first()) {
+        if ($creditCount === 0 && $manualTargets->isEmpty() && $rooms->first()) {
             $firstCap = $rooms->first()->capacite_examens ?? $rooms->first()->capacite ?? 0;
             if ($firstCap >= $totalStudents) {
                 $rooms = collect([$rooms->first()]);
             }
         }
 
-        $roomCount = $rooms->count() ?: 1;
-        $remaining = $totalStudents;
-        $offset = 0;
+        if ($rooms->isEmpty()) {
+            return;
+        }
+
+        $roomPositions = $allRooms
+            ->pluck('id_salle')
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->flip();
+        $normalRemaining = $normalRegistrations->count();
+        $normalOffset = 0;
+        $lastRoomId = $rooms->last()?->id_salle;
 
         foreach ($rooms as $index => $salle) {
-            $capacity = $salle->capacite_examens ?? $salle->capacite ?? $remaining;
-            $roomsLeft = $roomCount - $index;
-            $balancedTake = (int) ceil($remaining / max(1, $roomsLeft));
-            $manualTarget = $manualSplit->get($salle->id_salle);
-            $target = $manualTarget ?? $balancedTake;
-            $take = min($capacity > 0 ? $capacity : $remaining, $target, $remaining);
+            $capacity = (int) ($salle->capacite_examens ?? $salle->capacite ?? 0);
+            $manualTarget = $manualTargets->get((int) $salle->id_salle);
+            $reservedCreditSeats = $creditCount > 0 && $salle->id_salle === $lastRoomId
+                ? $creditCount
+                : 0;
+            $roomLimit = $manualTarget ?? ($capacity > 0 ? $capacity : $normalRemaining + $reservedCreditSeats);
+            $normalCapacity = max(0, $roomLimit - $reservedCreditSeats);
+            $normalRoomsLeft = $rooms
+                ->slice($index)
+                ->filter(function ($room) use ($manualTargets, $creditCount, $lastRoomId, $normalRemaining) {
+                    $roomCapacity = (int) ($room->capacite_examens ?? $room->capacite ?? 0);
+                    $roomTarget = $manualTargets->get((int) $room->id_salle) ?? ($roomCapacity > 0 ? $roomCapacity : $normalRemaining);
+                    $reservedSeats = $creditCount > 0 && $room->id_salle === $lastRoomId
+                        ? $creditCount
+                        : 0;
 
-            $slice = $registrations->slice($offset, $take);
-            $offset += $slice->count();
-            $remaining -= $slice->count();
+                    return ($roomTarget - $reservedSeats) > 0;
+                })
+                ->count();
+            $balancedTake = (int) ceil($normalRemaining / max(1, $normalRoomsLeft));
+            if ($manualTarget !== null) {
+                $target = $normalCapacity;
+            } elseif ($creditCount > 0) {
+                $target = $salle->id_salle === $lastRoomId
+                    ? $normalRemaining
+                    : $normalCapacity;
+            } else {
+                $target = $balancedTake;
+            }
+            $take = min($normalCapacity, $target, $normalRemaining);
+
+            $slice = $normalRegistrations->slice($normalOffset, $take)->values();
+            $normalOffset += $slice->count();
+            $normalRemaining -= $slice->count();
+
+            if ($reservedCreditSeats > 0) {
+                $slice = $slice->concat($creditRegistrations)->values();
+            }
 
             $seat = 1;
             $seatPrefix = substr($salle->code_salle ?? 'S', 0, 4);
             $filiereCode = $this->filiereCode($examen);
             $niveauCode = $this->niveauCode($examen);
             $sessionCode = $this->sessionCode($examen);
-            $salleCode = $index + 1;
+            $salleCode = $roomPositions->has((int) $salle->id_salle)
+                ? ((int) $roomPositions->get((int) $salle->id_salle) + 1)
+                : ($index + 1);
 
             foreach ($slice as $ip) {
                 $codeAnonymat = sprintf('ANON-%d-%03d', $examen->id_examen, $seq);
@@ -546,6 +638,43 @@ class ExamenController extends Controller
         return null;
     }
 
+    private function validateCreditAllocation(Collection $registrations, Collection $salles, Collection $manualSplit, ?int $expectedCount = null): ?string
+    {
+        $creditCount = $registrations
+            ->filter(fn ($registration) => $this->isCreditRegistration($registration))
+            ->count();
+
+        if ($creditCount === 0 || $salles->isEmpty()) {
+            return null;
+        }
+
+        if ($expectedCount !== null && $expectedCount < $creditCount) {
+            return sprintf(
+                'La repartition doit prevoir au moins %d places pour les etudiants en credit.',
+                $creditCount
+            );
+        }
+
+        $lastSalle = $salles->last();
+        $lastSalleCapacity = (int) ($lastSalle->capacite_examens ?? $lastSalle->capacite ?? 0);
+        $lastSalleTarget = $manualSplit->get($lastSalle->id_salle)['nombre'] ?? null;
+        $availableForCredits = $lastSalleTarget !== null
+            ? (int) $lastSalleTarget
+            : $lastSalleCapacity;
+
+        if ($availableForCredits >= $creditCount) {
+            return null;
+        }
+
+        $label = $lastSalle->code_salle ?? $lastSalle->nom_salle ?? 'la derniere salle';
+
+        return sprintf(
+            'La derniere salle (%s) doit pouvoir accueillir tous les etudiants en credit (%d).',
+            $label,
+            $creditCount
+        );
+    }
+
     private function registrationsForModule(int $moduleId, ?int $anneeId = null, ?int $filiereId = null)
     {
         $activeYearId = $anneeId
@@ -573,7 +702,7 @@ class ExamenController extends Controller
             })
             ->where('type_inscription', '!=', 'Capitalisation')
             ->orderBy('id_inscription_pedagogique')
-            ->get(['id_inscription_pedagogique']);
+            ->get(['id_inscription_pedagogique', 'type_inscription']);
     }
 
     private function filiereCode(Examen $examen): int
@@ -674,6 +803,35 @@ class ExamenController extends Controller
     private function preferredExamFiliereId(Examen $examen): ?int
     {
         return $examen->sessionExamen?->id_filiere ?: $this->currentUserFiliereId();
+    }
+
+    private function orderedSalles(Collection $salleIds): Collection
+    {
+        $orderedIds = $salleIds->values()->map(fn ($id) => (int) $id);
+        $positions = $orderedIds->flip();
+
+        return Salle::whereIn('id_salle', $orderedIds)
+            ->get(['id_salle', 'code_salle', 'nom_salle', 'capacite_examens', 'capacite'])
+            ->sortBy(fn ($salle) => $positions->get((int) $salle->id_salle, PHP_INT_MAX))
+            ->values();
+    }
+
+    private function orderRegistrationsForRepartition(Collection $registrations): Collection
+    {
+        return $registrations
+            ->sortBy(function ($registration) {
+                return sprintf(
+                    '%d-%010d',
+                    $this->isCreditRegistration($registration) ? 1 : 0,
+                    (int) ($registration->id_inscription_pedagogique ?? 0)
+                );
+            })
+            ->values();
+    }
+
+    private function isCreditRegistration($registration): bool
+    {
+        return strtolower((string) ($registration->type_inscription ?? '')) === 'credit';
     }
 
     private function currentUserFiliereId(): ?int

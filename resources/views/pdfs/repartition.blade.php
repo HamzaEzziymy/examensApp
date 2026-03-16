@@ -26,6 +26,7 @@
         .student-name { font-size: 11px; line-height: 1.2; font-family: Arial, Helvetica, sans-serif; font-weight: bold; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .student-cne { font-size: 9px; color: #444; line-height: 1.1; font-weight: bold; flex: 0 0 auto; }
         .cap { background: #d9d9d9; font-weight: bold; }
+        .section-row td { background: #cfe2f3 !important; font-weight: bold; text-align: center; }
     </style>
 </head>
 <body>
@@ -38,6 +39,7 @@
         $showAnonymat = in_array('anonymat', $columns);
         $showPresence = in_array('presence', $columns);
         $presenceFilled = $presenceFilled ?? true;
+        $columnCount = 1 + ($showCne ? 1 : 0) + ($showEtudiant ? 1 : 0) + ($showGrille ? 1 : 0) + ($showPlace ? 1 : 0) + ($showAnonymat ? 1 : 0) + ($showPresence ? 1 : 0);
         $groups = $salleGroups ?? collect([[
             'salle' => $examen->salle,
             'rows' => $repartitions,
@@ -49,6 +51,15 @@
     @endphp
 
     @foreach($groups as $groupIndex => $group)
+        @php
+            $groupRows = collect($group['rows'] ?? []);
+            $normalRows = $groupRows
+                ->reject(fn ($rep) => strtolower((string) ($rep->inscriptionPedagogique->type_inscription ?? '')) === 'credit')
+                ->values();
+            $creditRows = $groupRows
+                ->filter(fn ($rep) => strtolower((string) ($rep->inscriptionPedagogique->type_inscription ?? '')) === 'credit')
+                ->values();
+        @endphp
         <div class="container" style="{{ $groupIndex > 0 ? 'page-break-before: always;' : '' }}">
             <img src="{{ public_path('/logo.png') }}" alt="Logo" style="top: 10px; left: 20px; width: 100%; height: 55px;">
             <div class="date-service" style="margin-top: 6px; width: 100%; display: flex; justify-content: space-between;">
@@ -107,7 +118,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach($group['rows'] as $index => $rep)
+                    @foreach($normalRows as $index => $rep)
                         <tr>
                             <td class="text-center">{{ $index + 1 }}</td>
                             @if($showCne)
@@ -130,6 +141,34 @@
                             @endif
                         </tr>
                     @endforeach
+                    @if($creditRows->isNotEmpty())
+                        <tr class="section-row">
+                            <td colspan="{{ $columnCount }}">Etudiants en credit</td>
+                        </tr>
+                        @foreach($creditRows as $creditIndex => $rep)
+                            <tr>
+                                <td class="text-center">{{ $normalRows->count() + $creditIndex + 1 }}</td>
+                                @if($showCne)
+                                    <td>{{ $rep->inscriptionPedagogique->etudiant->cne ?? '-' }}</td>
+                                @endif
+                                @if($showEtudiant)
+                                    <td>{{ $rep->inscriptionPedagogique->etudiant->nom ?? '' }} {{ $rep->inscriptionPedagogique->etudiant->prenom ?? '' }}</td>
+                                @endif
+                                @if($showGrille)
+                                    <td class="text-center">{{ $rep->code_grille ?? '-' }}</td>
+                                @endif
+                                @if($showPlace)
+                                    <td class="text-center">{{ $rep->numero_place ?? '-' }}</td>
+                                @endif
+                                @if($showAnonymat)
+                                    <td class="text-center">{{ $rep->code_anonymat ?? '-' }}</td>
+                                @endif
+                                @if($showPresence)
+                                    <td class="text-center">{{ $presenceFilled ? ($rep->present ? 'Present' : 'Absent') : '' }}</td>
+                                @endif
+                            </tr>
+                        @endforeach
+                    @endif
                 </tbody>
             </table>
 
