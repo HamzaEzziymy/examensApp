@@ -50,8 +50,6 @@ const buildPayload = (source, overrides = {}) => ({
     id_module: overrides.id_module ?? source.id_module ?? '',
     id_salle: overrides.id_salle ?? source.id_salle ?? '',
     salles: overrides.salles ?? source.salles ?? [],
-    effectif_prevu: overrides.effectif_prevu ?? source.effectif_prevu ?? '',
-    bareme_salle: overrides.bareme_salle ?? source.bareme_salle ?? '',
     repartition_salles: overrides.repartition_salles ?? source.repartition_salles ?? [],
     date_examen: overrides.date_examen ?? toInputDate(source.date_examen ?? source.date_debut),
     date_debut: overrides.date_debut ?? source.date_debut ?? source.date_examen,
@@ -70,8 +68,6 @@ export default function ExamensCalendar({ examens, sessions, modules, salles, st
         id_module: '',
         id_salle: '',
         salles: [],
-        effectif_prevu: '',
-        bareme_salle: '',
         repartition_salles: [],
         date_examen: '',
         date_debut: '',
@@ -148,8 +144,6 @@ export default function ExamensCalendar({ examens, sessions, modules, salles, st
             id_module: examen.id_module ?? '',
             id_salle: examen.id_salle ?? '',
             salles: (examen.salles || []).map((s) => String(s.id_salle)),
-            effectif_prevu: examen.effectif_prevu ?? '',
-            bareme_salle: examen.bareme_salle ?? '',
             date_examen: toInputDate(examen.date_examen ?? examen.date_debut),
             date_debut: toInputDateTime(examen.date_debut),
             date_fin: toInputDateTime(examen.date_fin),
@@ -188,9 +182,10 @@ export default function ExamensCalendar({ examens, sessions, modules, salles, st
 
     const autoDistribute = () => {
         if (!selectedSalles.length) return;
-        const totalStudents =
-            Number(data.effectif_prevu) ||
-            selectedSalles.reduce((sum, salle) => sum + (salle.capacite_examens ?? salle.capacite ?? 0), 0);
+        const totalStudents = selectedSalles.reduce(
+            (sum, salle) => sum + (salle.capacite_examens ?? salle.capacite ?? 0),
+            0,
+        );
 
         let remaining = totalStudents;
         const next = {};
@@ -460,31 +455,6 @@ export default function ExamensCalendar({ examens, sessions, modules, salles, st
                                     ))}
                                 </select>
                                 <InputError message={errors.statut} className="mt-1" />
-                            </div>
-
-                            <div className="grid gap-4 lg:col-span-2 sm:grid-cols-2">
-                                <div>
-                                    <label className="text-sm font-medium text-gray-700 dark:text-gray-200">Effectif attendu</label>
-                                    <input
-                                        type="number"
-                                        min="1"
-                                        value={data.effectif_prevu}
-                                        onChange={(event) => setData('effectif_prevu', event.target.value)}
-                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
-                                    />
-                                    <InputError message={errors.effectif_prevu} className="mt-1" />
-                                </div>
-                                <div>
-                                    <label className="text-sm font-medium text-gray-700 dark:text-gray-200">Bareme par salle</label>
-                                    <input
-                                        type="number"
-                                        min="1"
-                                        value={data.bareme_salle}
-                                        onChange={(event) => setData('bareme_salle', event.target.value)}
-                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
-                                    />
-                                    <InputError message={errors.bareme_salle} className="mt-1" />
-                                </div>
                             </div>
 
                             <div className="lg:col-span-2 rounded-lg border border-dashed border-gray-300 p-4 dark:border-gray-700">

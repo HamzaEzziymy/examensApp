@@ -505,7 +505,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
             const headerLine = [niveauNom, semestreNom, filiereName ? `Filiere ${filiereName}` : null]
                 .filter(Boolean)
                 .join(' - ');
-            const noteScale = selectedExamen.bareme_salle || 20;
+            const noteScale = 20;
             const anonymatList = repartitions.map((rep) => rep.code_anonymat ?? rep.code_grille ?? '');
 
             const baseName =
@@ -1006,4 +1006,3 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         </AuthenticatedLayout>
     );
 }
-
