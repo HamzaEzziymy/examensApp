@@ -792,36 +792,13 @@ class RepartitionEtudiantController extends Controller
             $preferredFiliereId
         );
 
-        $inscriptions = $this->eligibleInscriptionsForExamQuery((int) $examen->id_module, $anneeId, $filiereIds)
-            ->orderBy('id_inscription_pedagogique')
-            ->get([
-                'id_inscription_pedagogique',
-                'id_inscription_admin',
-                'id_offre',
-            ]);
-
-        if ($inscriptions->isNotEmpty() || $filiereIds === []) {
-            return $inscriptions;
-        }
-
-        return $this->eligibleInscriptionsForExamQuery((int) $examen->id_module, $anneeId, [])
-            ->orderBy('id_inscription_pedagogique')
-            ->get([
-                'id_inscription_pedagogique',
-                'id_inscription_admin',
-                'id_offre',
-            ]);
-    }
-
-    private function eligibleInscriptionsForExamQuery(int $moduleId, ?int $anneeId, array $filiereIds)
-    {
         return InscriptionPedagogique::with([
                 'inscriptionAdministrative:id_inscription_admin,id_etudiant',
                 'inscriptionAdministrative.etudiant:id_etudiant,nom,prenom,cne',
                 'offreFormation.module:id_module,nom_module,code_module',
             ])
-            ->whereHas('offreFormation', function ($query) use ($moduleId, $anneeId, $filiereIds) {
-                $query->where('id_module', $moduleId);
+            ->whereHas('offreFormation', function ($query) use ($examen, $anneeId, $filiereIds) {
+                $query->where('id_module', $examen->id_module);
 
                 if ($anneeId) {
                     $query->where('id_annee', $anneeId);
@@ -838,7 +815,13 @@ class RepartitionEtudiantController extends Controller
                     $adminQuery->where('id_annee', $anneeId);
                 });
             })
-            ->where('type_inscription', '!=', 'Capitalisation');
+            ->where('type_inscription', '!=', 'Capitalisation')
+            ->orderBy('id_inscription_pedagogique')
+            ->get([
+                'id_inscription_pedagogique',
+                'id_inscription_admin',
+                'id_offre',
+            ]);
     }
 
     private function referenceOffre(Examen $examen, ?int $preferredFiliereId = null)

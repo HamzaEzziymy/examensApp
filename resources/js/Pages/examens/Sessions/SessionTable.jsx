@@ -24,6 +24,7 @@ const normalizeText = (value) => {
 export default function SessionTable({ sessions, annees, typesSession }) {
     const [modalOpen, setModalOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
+    const [selectedFiliere, setSelectedFiliere] = useState('all');
 
     const { data, setData, put, delete: destroy, errors, processing, reset } = useForm({
         id_session_examen: null,
@@ -105,15 +106,30 @@ export default function SessionTable({ sessions, annees, typesSession }) {
         });
     };
 
+    const filiereOptions = useMemo(() => {
+        const options = new Map();
+
+        sessions.forEach((session) => {
+            const key = String(session.filiere?.id_filiere ?? 'commune');
+            const label = session.filiere?.nom_filiere ?? 'Commune';
+
+            if (!options.has(key)) {
+                options.set(key, label);
+            }
+        });
+
+        return Array.from(options.entries()).map(([value, label]) => ({
+            value,
+            label,
+        }));
+    }, [sessions]);
+
     const filteredSessions = useMemo(() => {
         const query = normalizeText(searchTerm.trim());
 
-        if (!query) {
-            return sessions;
-        }
-
         return sessions.filter((session) => {
             const filiereLabel = session.filiere?.nom_filiere ?? 'Commune';
+            const filiereValue = String(session.filiere?.id_filiere ?? 'commune');
             const searchableValues = [
                 session.nom_session,
                 session.type_session,
@@ -124,11 +140,15 @@ export default function SessionTable({ sessions, annees, typesSession }) {
                 session.annee_universitaire?.annee_univ,
             ];
 
-            return searchableValues.some((value) => normalizeText(value).includes(query));
-        });
-    }, [sessions, searchTerm]);
+            const matchesFiliere = selectedFiliere === 'all' || filiereValue === selectedFiliere;
+            const matchesSearch =
+                !query || searchableValues.some((value) => normalizeText(value).includes(query));
 
-    const searchActive = searchTerm.trim().length > 0;
+            return matchesFiliere && matchesSearch;
+        });
+    }, [searchTerm, selectedFiliere, sessions]);
+
+    const searchActive = searchTerm.trim().length > 0 || selectedFiliere !== 'all';
 
     return (
         <div className="rounded-xl bg-white p-6 shadow dark:bg-gray-800">
@@ -145,18 +165,38 @@ export default function SessionTable({ sessions, annees, typesSession }) {
                         )}
                     </span>
                 </div>
-                <div className="w-full md:w-64">
-                    <label htmlFor="session-search" className="sr-only">
-                        Rechercher une session
-                    </label>
-                    <input
-                        id="session-search"
-                        type="search"
-                        value={searchTerm}
-                        onChange={(event) => setSearchTerm(event.target.value)}
-                        placeholder="Rechercher (nom, filiere, type...)"
-                        className="w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-700"
-                    />
+                <div className="flex w-full flex-col gap-3 md:w-auto md:flex-row">
+                    <div className="w-full md:w-48">
+                        <label htmlFor="session-filiere-filter" className="sr-only">
+                            Filtrer par filiere
+                        </label>
+                        <select
+                            id="session-filiere-filter"
+                            value={selectedFiliere}
+                            onChange={(event) => setSelectedFiliere(event.target.value)}
+                            className="w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-700"
+                        >
+                            <option value="all">Toutes les filieres</option>
+                            {filiereOptions.map((option) => (
+                                <option key={option.value} value={option.value}>
+                                    {option.label}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+                    <div className="w-full md:w-64">
+                        <label htmlFor="session-search" className="sr-only">
+                            Rechercher une session
+                        </label>
+                        <input
+                            id="session-search"
+                            type="search"
+                            value={searchTerm}
+                            onChange={(event) => setSearchTerm(event.target.value)}
+                            placeholder="Rechercher (nom, filiere, type...)"
+                            className="w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-700"
+                        />
+                    </div>
                 </div>
             </div>
 

@@ -552,32 +552,17 @@ class ExamenController extends Controller
             ?: AnneeUniversitaire::where('est_active', true)->latest('date_debut')->value('id_annee');
         $resolvedFiliereIds = $this->resolvedModuleFiliereIds($moduleId, $activeYearId, $filiereId);
 
-        $registrations = $this->registrationsForModuleQuery($moduleId, $activeYearId, $resolvedFiliereIds)
-            ->orderBy('id_inscription_pedagogique')
-            ->get(['id_inscription_pedagogique']);
-
-        if ($registrations->isNotEmpty() || $resolvedFiliereIds === []) {
-            return $registrations;
-        }
-
-        return $this->registrationsForModuleQuery($moduleId, $activeYearId, [])
-            ->orderBy('id_inscription_pedagogique')
-            ->get(['id_inscription_pedagogique']);
-    }
-
-    private function registrationsForModuleQuery(int $moduleId, ?int $activeYearId, array $filiereIds)
-    {
         return InscriptionPedagogique::query()
-            ->whereHas('offreFormation', function ($query) use ($moduleId, $activeYearId, $filiereIds) {
+            ->whereHas('offreFormation', function ($query) use ($moduleId, $activeYearId, $resolvedFiliereIds) {
                 $query->where('id_module', $moduleId);
 
                 if ($activeYearId) {
                     $query->where('id_annee', $activeYearId);
                 }
 
-                if ($filiereIds !== []) {
-                    $query->whereHas('section', function ($sectionQuery) use ($filiereIds) {
-                        $sectionQuery->whereIn('id_filiere', $filiereIds);
+                if ($resolvedFiliereIds !== []) {
+                    $query->whereHas('section', function ($sectionQuery) use ($resolvedFiliereIds) {
+                        $sectionQuery->whereIn('id_filiere', $resolvedFiliereIds);
                     });
                 }
             })
@@ -586,7 +571,9 @@ class ExamenController extends Controller
                     $adminQuery->where('id_annee', $activeYearId);
                 });
             })
-            ->where('type_inscription', '!=', 'Capitalisation');
+            ->where('type_inscription', '!=', 'Capitalisation')
+            ->orderBy('id_inscription_pedagogique')
+            ->get(['id_inscription_pedagogique']);
     }
 
     private function filiereCode(Examen $examen): int
