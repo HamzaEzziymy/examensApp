@@ -1,7 +1,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, useForm, Link, usePage } from '@inertiajs/react';
 import { useState } from 'react';
-import { Users, Edit3, Trash2, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Users, Edit3, Trash2, Search, ChevronLeft, ChevronRight, CheckCircle, Clock, AlertCircle, FileText } from 'lucide-react';
 import InputError from '@/Components/InputError';
 
 export default function CorrectorsIndex({ correcteurs = {}, examens = [], enseignants = [], elements = [] }) {
@@ -96,6 +96,15 @@ export default function CorrectorsIndex({ correcteurs = {}, examens = [], enseig
             return enseignantName.includes(query) || moduleName.includes(query) || correcteur.statut.toLowerCase().includes(query);
         });
 
+    // Calculate statistics
+    const stats = {
+        total: filteredCorrecteurs.length,
+        termine: filteredCorrecteurs.filter(c => c.statut === 'Termine').length,
+        enCours: filteredCorrecteurs.filter(c => c.statut === 'En cours').length,
+        attribue: filteredCorrecteurs.filter(c => c.statut === 'Attribue').length,
+        totalCopies: filteredCorrecteurs.reduce((sum, c) => sum + (parseInt(c.nombre_copies) || 0), 0),
+    };
+
     const startEdit = (correcteur) => {
         setEditingId(correcteur.id_correcteur);
         form.setData({
@@ -169,20 +178,88 @@ export default function CorrectorsIndex({ correcteurs = {}, examens = [], enseig
     };
 
     return (
-        <AuthenticatedLayout>
+        <AuthenticatedLayout
+            header={<h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100">Gestion des correcteurs</h2>}
+        >
             <Head title="Gestion des correcteurs" />
 
             <div className="space-y-6">
                 {/* Header */}
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
-                            <Users size={32} className="text-indigo-600" />
-                            Gestion des correcteurs
-                        </h1>
-                        <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
-                            Attribuez et gérez les correcteurs pour les examens
-                        </p>
+                <div>
+                    <div className="flex items-center justify-between mb-6">
+                        <div>
+                            <h1 className="text-3xl font-bold text-gray-900 dark:text-white flex items-center gap-3">
+                                <Users size={32} className="text-indigo-600" />
+                                Gestion des correcteurs
+                            </h1>
+                            <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                                Attribuez et gérez les correcteurs pour les examens
+                            </p>
+                        </div>
+                    </div>
+
+                    {/* Statistics Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                        {/* Total Correcteurs */}
+                        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Total Correcteurs</p>
+                                    <p className="text-3xl font-bold text-gray-900 dark:text-white mt-2">{stats.total}</p>
+                                </div>
+                                <div className="bg-indigo-100 dark:bg-indigo-900/30 p-3 rounded-lg">
+                                    <Users size={24} className="text-indigo-600 dark:text-indigo-400" />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Terminé */}
+                        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Terminé</p>
+                                    <p className="text-3xl font-bold text-green-600 dark:text-green-400 mt-2">{stats.termine}</p>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                        {stats.total > 0 ? Math.round((stats.termine / stats.total) * 100) : 0}% complété
+                                    </p>
+                                </div>
+                                <div className="bg-green-100 dark:bg-green-900/30 p-3 rounded-lg">
+                                    <CheckCircle size={24} className="text-green-600 dark:text-green-400" />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* En cours */}
+                        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm font-medium text-gray-600 dark:text-gray-400">En cours</p>
+                                    <p className="text-3xl font-bold text-blue-600 dark:text-blue-400 mt-2">{stats.enCours}</p>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                        {stats.total > 0 ? Math.round((stats.enCours / stats.total) * 100) : 0}% en cours
+                                    </p>
+                                </div>
+                                <div className="bg-blue-100 dark:bg-blue-900/30 p-3 rounded-lg">
+                                    <Clock size={24} className="text-blue-600 dark:text-blue-400" />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Attribué */}
+                        <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Attribué</p>
+                                    <p className="text-3xl font-bold text-yellow-600 dark:text-yellow-400 mt-2">{stats.attribue}</p>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                        {stats.totalCopies} copies au total
+                                    </p>
+                                </div>
+                                <div className="bg-yellow-100 dark:bg-yellow-900/30 p-3 rounded-lg">
+                                    <FileText size={24} className="text-yellow-600 dark:text-yellow-400" />
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 

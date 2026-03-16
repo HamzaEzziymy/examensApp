@@ -84,6 +84,11 @@ class Examen extends Model
         return $this->hasMany(Correcteur::class, 'id_examen', 'id_examen');
     }
 
+    public function notes(): HasMany
+    {
+        return $this->hasMany(Note::class, 'id_examen', 'id_examen');
+    }
+
     public function pvExamens(): HasMany
     {
         return $this->hasMany(PvExamen::class, 'id_examen', 'id_examen');

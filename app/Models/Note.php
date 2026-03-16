@@ -16,6 +16,7 @@ class Note extends Model
     protected $fillable = [
         'id_anonymat',
         'id_correcteur',
+        'id_examen',
         'note',
         'date_saisie',
         'commentaire',
@@ -28,5 +29,10 @@ class Note extends Model
     public function correcteur(): BelongsTo
     {
         return $this->belongsTo(Correcteur::class, 'id_correcteur', 'id_correcteur');
+    }
+
+    public function examen(): BelongsTo
+    {
+        return $this->belongsTo(Examen::class, 'id_examen', 'id_examen');
     }
 }
