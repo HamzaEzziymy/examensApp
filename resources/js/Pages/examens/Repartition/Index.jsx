@@ -89,12 +89,13 @@ const defaultFormState = (examenId) => ({
 });
 
 const resolveExamMeta = (examen) => {
-    if (examen.semestre_id || examen.niveau_id) {
+    if (examen.semestre_id || examen.niveau_id || examen.filiere_nom) {
         return {
             semestreId: examen.semestre_id,
             semestreNom: examen.semestre_nom,
             niveauId: examen.niveau_id,
             niveauNom: examen.niveau_nom,
+            filiereNom: examen.filiere_nom,
         };
     }
 
@@ -115,6 +116,7 @@ const resolveExamMeta = (examen) => {
         semestreNom: semestre?.nom_semestre,
         niveauId: niveau?.id_niveau,
         niveauNom: niveau?.nom_niveau,
+        filiereNom: matchedOffre?.section?.filiere?.nom_filiere,
     };
 };
 
@@ -500,8 +502,8 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
 
             const moduleLabel = formatModuleLabel(selectedExamen.module);
             const sessionLabel = formatSessionLabel(selectedExamen.session_examen);
-            const { semestreNom, niveauNom } = resolveExamMeta(selectedExamen);
-            const filiereName = selectedExamen.session_examen?.filiere?.nom_filiere;
+            const { semestreNom, niveauNom, filiereNom } = resolveExamMeta(selectedExamen);
+            const filiereName = filiereNom;
             const headerLine = [niveauNom, semestreNom, filiereName ? `Filiere ${filiereName}` : null]
                 .filter(Boolean)
                 .join(' - ');

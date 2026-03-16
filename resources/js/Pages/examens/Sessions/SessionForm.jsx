@@ -2,9 +2,8 @@ import { useForm } from '@inertiajs/react';
 import InputError from '@/Components/InputError';
 import Swal from 'sweetalert2';
 
-export default function SessionForm({ filieres, annees, typesSession }) {
+export default function SessionForm({ annees, typesSession }) {
     const { data, setData, post, processing, errors, reset } = useForm({
-        id_filiere: '',
         id_annee: '',
         nom_session: '',
         type_session: typesSession[0],
@@ -21,7 +20,7 @@ export default function SessionForm({ filieres, annees, typesSession }) {
                 reset();
                 Swal.fire({
                     icon: 'success',
-                    title: 'Session ajoutée',
+                    title: 'Session ajoutee',
                     timer: 1600,
                     showConfirmButton: false,
                 });
@@ -83,44 +82,23 @@ export default function SessionForm({ filieres, annees, typesSession }) {
                     </div>
                 </div>
 
-                <div className="grid gap-4 sm:grid-cols-2">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">
-                            Année universitaire
-                        </label>
-                        <select
-                            value={data.id_annee}
-                            onChange={(e) => setData('id_annee', e.target.value)}
-                            className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-gray-100"
-                        >
-                            <option value="">Sélectionner</option>
-                            {annees.map((annee) => (
-                                <option key={annee.id_annee} value={annee.id_annee}>
-                                    {annee.annee_univ}
-                                </option>
-                            ))}
-                        </select>
-                        <InputError message={errors.id_annee} className="mt-1" />
-                    </div>
-
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">
-                            Filière (optionnel)
-                        </label>
-                        <select
-                            value={data.id_filiere}
-                            onChange={(e) => setData('id_filiere', e.target.value)}
-                            className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-gray-100"
-                        >
-                            <option value="">Toutes les filières</option>
-                            {filieres.map((filiere) => (
-                                <option key={filiere.id_filiere} value={filiere.id_filiere}>
-                                    {filiere.nom_filiere}
-                                </option>
-                            ))}
-                        </select>
-                        <InputError message={errors.id_filiere} className="mt-1" />
-                    </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">
+                        Annee universitaire
+                    </label>
+                    <select
+                        value={data.id_annee}
+                        onChange={(e) => setData('id_annee', e.target.value)}
+                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-gray-100"
+                    >
+                        <option value="">Selectionner</option>
+                        {annees.map((annee) => (
+                            <option key={annee.id_annee} value={annee.id_annee}>
+                                {annee.annee_univ}
+                            </option>
+                        ))}
+                    </select>
+                    <InputError message={errors.id_annee} className="mt-1" />
                 </div>
 
                 <div className="grid gap-4 sm:grid-cols-2">
@@ -158,7 +136,7 @@ export default function SessionForm({ filieres, annees, typesSession }) {
                         disabled={processing}
                         className="inline-flex items-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70"
                     >
-                        {processing ? 'Enregistrement...' : 'Créer la session'}
+                        {processing ? 'Enregistrement...' : 'Creer la session'}
                     </button>
                 </div>
             </form>

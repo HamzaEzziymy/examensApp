@@ -33,12 +33,25 @@ class RepartitionEtudiantController extends Controller
                 'module.offresFormation.semestre:id_semestre,nom_semestre,id_niveau',
                 'module.offresFormation.semestre.niveau:id_niveau,nom_niveau',
                 'module.offresFormation.section:id_section,id_filiere',
+                'module.offresFormation.section.filiere:id_filiere,nom_filiere',
             ])
             ->withCount('repartitions');
 
         if ($selectedFiliere && $selectedFiliere !== 'all') {
-            $examensQuery->whereHas('sessionExamen', function ($query) use ($selectedFiliere) {
-                $query->where('id_filiere', $selectedFiliere);
+            $examensQuery->where(function ($query) use ($selectedFiliere) {
+                $query
+                    ->whereHas('sessionExamen', function ($sessionQuery) use ($selectedFiliere) {
+                        $sessionQuery->where('id_filiere', $selectedFiliere);
+                    })
+                    ->orWhere(function ($sharedQuery) use ($selectedFiliere) {
+                        $sharedQuery
+                            ->whereHas('sessionExamen', function ($sessionQuery) {
+                                $sessionQuery->whereNull('id_filiere');
+                            })
+                            ->whereHas('module.offresFormation.section', function ($moduleQuery) use ($selectedFiliere) {
+                                $moduleQuery->where('id_filiere', $selectedFiliere);
+                            });
+                    });
             });
         }
 
@@ -61,18 +74,23 @@ class RepartitionEtudiantController extends Controller
                 'statut',
             ]);
 
-        $examens->each(function ($examen) {
+        $examens->each(function ($examen) use ($selectedFiliere) {
             $session = $examen->sessionExamen;
             $offres = collect($examen->module?->offresFormation ?? []);
-            $offre = $offres->first(function ($item) use ($session) {
-                $matchFiliere = $session?->id_filiere
-                    ? $item->section?->id_filiere == $session->id_filiere
+            $preferredFiliereId = $session?->id_filiere ?: (($selectedFiliere && $selectedFiliere !== 'all') ? (int) $selectedFiliere : null);
+            $offre = $offres->first(function ($item) use ($session, $preferredFiliereId) {
+                $matchFiliere = $preferredFiliereId
+                    ? $item->section?->id_filiere == $preferredFiliereId
                     : true;
                 $matchAnnee = $session?->id_annee
                     ? $item->id_annee == $session->id_annee
                     : true;
 
                 return $matchFiliere && $matchAnnee;
+            }) ?? $offres->first(function ($item) use ($session) {
+                return $session?->id_annee
+                    ? $item->id_annee == $session->id_annee
+                    : true;
             }) ?? $offres->first();
 
             $semestre = $offre?->semestre;
@@ -82,6 +100,7 @@ class RepartitionEtudiantController extends Controller
             $examen->setAttribute('semestre_nom', $semestre?->nom_semestre);
             $examen->setAttribute('niveau_id', $niveau?->id_niveau);
             $examen->setAttribute('niveau_nom', $niveau?->nom_niveau);
+            $examen->setAttribute('filiere_nom', $offre?->section?->filiere?->nom_filiere);
         });
 
         $selectedExamen = $examens->firstWhere('id_examen', $selectedExamenId) ?? $examens->first();
@@ -746,7 +765,7 @@ class RepartitionEtudiantController extends Controller
 
     private function niveauFiliereLabel(Examen $examen): string
     {
-        $offre = $examen->module->offresFormation->first();
+        $offre = $this->referenceOffre($examen);
         $niveauName = $offre?->semestre?->niveau?->nom_niveau;
         $filiereName = $offre?->section?->filiere?->nom_filiere;
 
@@ -761,29 +780,39 @@ class RepartitionEtudiantController extends Controller
     {
         $examen->loadMissing([
             'sessionExamen:id_session_examen,id_filiere,id_annee',
-            'module.offresFormation:id_offre,id_module',
+            'module.offresFormation:id_offre,id_module,id_annee,id_section',
         ]);
 
         $anneeId = $examen->sessionExamen?->id_annee
             ?: AnneeUniversitaireModel::where('est_active', true)->latest('date_debut')->value('id_annee');
-        $filiereId = $examen->sessionExamen?->id_filiere;
+        $preferredFiliereId = $examen->sessionExamen?->id_filiere ?: $this->currentUserFiliereId();
+        $filiereIds = $this->resolvedModuleFiliereIds(
+            (int) $examen->id_module,
+            $anneeId,
+            $preferredFiliereId
+        );
 
         return InscriptionPedagogique::with([
                 'inscriptionAdministrative:id_inscription_admin,id_etudiant',
                 'inscriptionAdministrative.etudiant:id_etudiant,nom,prenom,cne',
                 'offreFormation.module:id_module,nom_module,code_module',
             ])
-            ->whereHas('offreFormation', function ($query) use ($examen) {
+            ->whereHas('offreFormation', function ($query) use ($examen, $anneeId, $filiereIds) {
                 $query->where('id_module', $examen->id_module);
+
+                if ($anneeId) {
+                    $query->where('id_annee', $anneeId);
+                }
+
+                if ($filiereIds !== []) {
+                    $query->whereHas('section', function ($sectionQuery) use ($filiereIds) {
+                        $sectionQuery->whereIn('id_filiere', $filiereIds);
+                    });
+                }
             })
             ->when($anneeId, function ($query) use ($anneeId) {
                 $query->whereHas('inscriptionAdministrative', function ($adminQuery) use ($anneeId) {
                     $adminQuery->where('id_annee', $anneeId);
-                });
-            })
-            ->when($filiereId, function ($query) use ($filiereId) {
-                $query->whereHas('inscriptionAdministrative.section.filiere', function ($filiereQuery) use ($filiereId) {
-                    $filiereQuery->where('id_filiere', $filiereId);
                 });
             })
             ->where('type_inscription', '!=', 'Capitalisation')
@@ -793,6 +822,78 @@ class RepartitionEtudiantController extends Controller
                 'id_inscription_admin',
                 'id_offre',
             ]);
+    }
+
+    private function referenceOffre(Examen $examen, ?int $preferredFiliereId = null)
+    {
+        $examen->loadMissing([
+            'sessionExamen:id_session_examen,id_filiere,id_annee',
+            'module.offresFormation:id_offre,id_module,id_semestre,id_section,id_annee',
+            'module.offresFormation.section:id_section,id_filiere',
+            'module.offresFormation.section.filiere:id_filiere,nom_filiere',
+            'module.offresFormation.semestre:id_semestre,nom_semestre,id_niveau',
+            'module.offresFormation.semestre.niveau:id_niveau,nom_niveau',
+        ]);
+
+        $session = $examen->sessionExamen;
+        $effectiveFiliereId = $session?->id_filiere ?: $preferredFiliereId ?: $this->currentUserFiliereId();
+        $offres = collect($examen->module?->offresFormation ?? []);
+
+        return $offres->first(function ($offre) use ($session, $effectiveFiliereId) {
+            $matchFiliere = $effectiveFiliereId
+                ? $offre->section?->id_filiere == $effectiveFiliereId
+                : true;
+            $matchAnnee = $session?->id_annee
+                ? $offre->id_annee == $session->id_annee
+                : true;
+
+            return $matchFiliere && $matchAnnee;
+        }) ?? $offres->first(function ($offre) use ($session) {
+            return $session?->id_annee
+                ? $offre->id_annee == $session->id_annee
+                : true;
+        }) ?? $offres->first();
+    }
+
+    private function resolvedModuleFiliereIds(int $moduleId, ?int $anneeId = null, ?int $preferredFiliereId = null): array
+    {
+        if ($preferredFiliereId) {
+            return [(int) $preferredFiliereId];
+        }
+
+        $module = \App\Models\Module::with([
+            'offresFormation' => function ($query) use ($anneeId) {
+                if ($anneeId) {
+                    $query->where('id_annee', $anneeId);
+                }
+            },
+            'offresFormation.section:id_section,id_filiere',
+        ])->find($moduleId, ['id_module']);
+
+        if (! $module) {
+            return [];
+        }
+
+        $filiereIds = $module->offresFormation
+            ->pluck('section.id_filiere')
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($filiereIds->count() === 1) {
+            return [(int) $filiereIds->first()];
+        }
+
+        return [];
+    }
+
+    private function currentUserFiliereId(): ?int
+    {
+        $filiereId = auth()->user()?->userFiliereAnnees()->first()?->id_filiere;
+
+        return $filiereId && $filiereId !== 'all'
+            ? (int) $filiereId
+            : null;
     }
 
     private function buildSalleGroupsWithCollectiveOrder(Examen $examen, Collection $repartitions, Collection $salles): ?Collection
