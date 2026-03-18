@@ -26,6 +26,7 @@
         .student-name { font-size: 11px; line-height: 1.2; font-family: Arial, Helvetica, sans-serif; font-weight: bold; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .student-cne { font-size: 9px; color: #444; line-height: 1.1; font-weight: bold; flex: 0 0 auto; }
         .cap { background: #d9d9d9; font-weight: bold; }
+        .section-row td { background: #cfe2f3 !important; font-weight: bold; text-align: center; }
     </style>
 </head>
 <body>
@@ -46,6 +47,15 @@
     @endphp
 
     @foreach($groups as $groupIndex => $group)
+        @php
+            $groupRows = collect($group['rows'] ?? []);
+            $normalRows = $groupRows
+                ->reject(fn ($student) => !empty($student['is_credit']))
+                ->values();
+            $creditRows = $groupRows
+                ->filter(fn ($student) => !empty($student['is_credit']))
+                ->values();
+        @endphp
         <div class="container" style="{{ $groupIndex > 0 ? 'page-break-before: always;' : '' }}">
             <img src="{{ public_path('/logo.png') }}" alt="Logo" style="top: 10px; left: 20px; width: 100%; height: 55px;">
             <div class="date-service" style="margin-top: 6px; width: 100%; display: flex; justify-content: space-between;">
@@ -101,7 +111,7 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach($group['rows'] as $index => $student)
+                    @foreach($normalRows as $index => $student)
                         <tr>
                             <td class="text-center ">{{ $student['global_index'] ?? ($index + 1) }}</td>
                             <td>
@@ -148,6 +158,58 @@
                             @endforeach
                         </tr>
                     @endforeach
+                    @if($creditRows->isNotEmpty())
+                        <tr class="section-row">
+                            <td colspan="{{ 2 + $modules->count() }}">Etudiants en credit</td>
+                        </tr>
+                        @foreach($creditRows as $index => $student)
+                            <tr>
+                                <td class="text-center ">{{ $student['global_index'] ?? ($normalRows->count() + $index + 1) }}</td>
+                                <td>
+                                    @php
+                                        $studentNom = trim($student['nom'] ?? '');
+                                        $studentPrenom = trim($student['prenom'] ?? '');
+                                        $fullName = trim($studentNom . ' ' . $studentPrenom);
+                                        $displayPrenom = $studentPrenom;
+                                        $maxNameLength = 28;
+
+                                        if ($studentPrenom !== '' && strlen($fullName) > $maxNameLength) {
+                                            $prenomParts = preg_split('/\s+/', $studentPrenom, -1, PREG_SPLIT_NO_EMPTY);
+                                            if (count($prenomParts) >= 3) {
+                                                $first = array_shift($prenomParts);
+                                                $last = array_pop($prenomParts);
+                                                $middle = implode(' ', array_map(fn ($part) => substr($part, 0, 1).'.', $prenomParts));
+                                                $displayPrenom = trim($first.' '.($middle ? $middle.' ' : '').$last);
+                                            } elseif (count($prenomParts) === 2) {
+                                                $displayPrenom = $prenomParts[0].' '.substr($prenomParts[1], 0, 1).'.';
+                                            }
+                                        }
+
+                                        $displayName = trim($studentNom . ' ' . $displayPrenom);
+                                    @endphp
+                                    <div class="student-cell">
+                                        <span class="student-name">{{ $displayName }}</span>
+                                        @if(!empty($student['cne']))
+                                            <span class="student-cne">({{ $student['cne'] }})</span>
+                                        @endif
+                                    </div>
+                                </td>
+                                @foreach($modules as $module)
+                                    @php
+                                        $status = $student['modules'][$module['id_examen']] ?? 'none';
+                                        $cellClass = $status === 'pass' ? '' : 'cap';
+                                    @endphp
+                                    <td class="text-center {{ $cellClass }}">
+                                        @if($status === 'cap')
+                                            CAP
+                                        @elseif($status === 'none')
+                                           X
+                                        @endif
+                                    </td>
+                                @endforeach
+                            </tr>
+                        @endforeach
+                    @endif
                 </tbody>
             </table>
 

@@ -4,6 +4,7 @@ use App\Http\Controllers\FaculteController;
 use App\Http\Controllers\OffreFormationController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\DocumentController;
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\SectionController;
 use App\Http\Controllers\SelectFiliereAnneeController;
 use App\Models\Section;
@@ -68,9 +69,9 @@ Route::get('/', function () {
 });
 
 //dashboard route
-Route::get('/dashboard', function () {
-    return Inertia::render('Dashboard');
-})->middleware(['auth', 'verified'])->name('dashboard');
+Route::get('/dashboard', DashboardController::class)
+    ->middleware(['auth', 'verified'])
+    ->name('dashboard');
 
 //profile routes
 Route::middleware('auth')->group(function () {

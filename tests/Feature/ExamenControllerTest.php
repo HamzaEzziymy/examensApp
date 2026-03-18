@@ -11,6 +11,7 @@ use App\Models\InscriptionPedagogique;
 use App\Models\Module;
 use App\Models\Niveau;
 use App\Models\OffreFormation;
+use App\Models\RepartitionEtudiant;
 use App\Models\Salle;
 use App\Models\Section;
 use App\Models\Semestre;
@@ -163,5 +164,120 @@ class ExamenControllerTest extends TestCase
             'id_examen' => $examen->id_examen,
             'id_inscription_pedagogique' => $inscriptionPedagogique->id_inscription_pedagogique,
         ]);
+    }
+
+    public function test_store_places_credit_registrations_in_the_last_selected_salle(): void
+    {
+        $user = User::factory()->create();
+        $annee = AnneeUniversitaire::factory()->active()->create();
+        $filiere = Filiere::factory()->create(['nom_filiere' => 'Medecine']);
+        $section = Section::factory()->create(['id_filiere' => $filiere->id_filiere]);
+        $niveau = Niveau::factory()->create();
+        $semestre = Semestre::factory()->create(['id_niveau' => $niveau->id_niveau]);
+        $module = Module::factory()->create();
+        $premiereSalle = Salle::factory()->create([
+            'code_salle' => 'A101',
+            'capacite' => 40,
+            'capacite_examens' => 40,
+        ]);
+        $derniereSalle = Salle::factory()->create([
+            'code_salle' => 'B202',
+            'capacite' => 40,
+            'capacite_examens' => 40,
+        ]);
+
+        UserFiliereAnnee::create([
+            'user_id' => $user->id,
+            'id_filiere' => $filiere->id_filiere,
+            'id_annee' => $annee->id_annee,
+        ]);
+
+        $offre = OffreFormation::create([
+            'id_module' => $module->id_module,
+            'id_semestre' => $semestre->id_semestre,
+            'id_section' => $section->id_section,
+            'id_annee' => $annee->id_annee,
+            'id_coordinateur' => null,
+            'nom_affiche' => 'Offre module credit',
+        ]);
+
+        $session = SessionExamen::create([
+            'id_filiere' => null,
+            'id_annee' => $annee->id_annee,
+            'nom_session' => 'Session credit commune',
+            'type_session' => 'Normale',
+            'date_session_examen' => '2026-06-15',
+            'quadrimestre' => 2,
+        ]);
+
+        $inscriptions = collect([
+            ['nom' => 'Alpha', 'prenom' => 'Normal', 'type' => 'Normal'],
+            ['nom' => 'Beta', 'prenom' => 'Normal', 'type' => 'Normal'],
+            ['nom' => 'Gamma', 'prenom' => 'Credit', 'type' => 'Credit'],
+        ])->map(function (array $payload) use ($section, $annee, $niveau, $offre) {
+            $etudiant = Etudiant::factory()->create([
+                'id_section' => $section->id_section,
+                'nom' => $payload['nom'],
+                'prenom' => $payload['prenom'],
+            ]);
+
+            $inscriptionAdministrative = InscriptionAdministrative::create([
+                'id_etudiant' => $etudiant->id_etudiant,
+                'id_annee' => $annee->id_annee,
+                'id_niveau' => $niveau->id_niveau,
+                'id_section' => null,
+                'date_inscription' => '2026-01-15',
+                'statut' => 'Active',
+                'type_inscription' => 'nouveau',
+            ]);
+
+            return InscriptionPedagogique::create([
+                'id_inscription_admin' => $inscriptionAdministrative->id_inscription_admin,
+                'id_offre' => $offre->id_offre,
+                'type_inscription' => $payload['type'],
+                'credits_acquis' => 0,
+            ]);
+        });
+
+        $response = $this
+            ->actingAs($user)
+            ->post(route('examens.examens.store'), [
+                'id_session_examen' => $session->id_session_examen,
+                'id_module' => $module->id_module,
+                'salles' => [$premiereSalle->id_salle, $derniereSalle->id_salle],
+                'date_examen' => '2026-06-20',
+                'date_debut' => '2026-06-20 08:00:00',
+                'date_fin' => '2026-06-20 10:00:00',
+                'statut' => 'Planifiee',
+                'description' => 'Examen avec credits',
+            ]);
+
+        $response
+            ->assertRedirect(route('examens.examens.index'))
+            ->assertSessionHasNoErrors();
+
+        $examen = Examen::query()->latest('id_examen')->first();
+        $this->assertNotNull($examen);
+
+        $repartitions = RepartitionEtudiant::query()
+            ->where('id_examen', $examen->id_examen)
+            ->get()
+            ->keyBy('id_inscription_pedagogique');
+
+        $this->assertCount(3, $repartitions);
+
+        $creditInscription = $inscriptions->firstWhere('type_inscription', 'Credit');
+        $normalInscriptions = $inscriptions->where('type_inscription', 'Normal')->values();
+
+        foreach ($normalInscriptions as $inscription) {
+            $code = str_pad((string) $repartitions[$inscription->id_inscription_pedagogique]->code_grille, 7, '0', STR_PAD_LEFT);
+            $this->assertSame('1', $code[3]);
+        }
+
+        $creditRepartition = $repartitions[$creditInscription->id_inscription_pedagogique];
+        $creditCode = str_pad((string) $creditRepartition->code_grille, 7, '0', STR_PAD_LEFT);
+
+        $this->assertSame('2', $creditCode[3]);
+        $this->assertStringStartsWith(substr($derniereSalle->code_salle, 0, 4), (string) $creditRepartition->numero_place);
     }
 }

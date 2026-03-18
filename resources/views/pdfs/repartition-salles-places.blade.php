@@ -21,11 +21,14 @@
         .student-name { font-size: 11px; }
         .student-cne { font-size: 9px; color: #444; margin-left: 6px; }
         .footer { display: flex; justify-content: space-between; font-size: 10px; margin-top: 6px; }
+        .section-row td { background: #cfe2f3 !important; font-weight: bold; text-align: center; }
     </style>
 </head>
 <body>
     @php
         $rows = collect($rows ?? []);
+        $normalRows = $rows->reject(fn ($row) => !empty($row['is_credit']))->values();
+        $creditRows = $rows->filter(fn ($row) => !empty($row['is_credit']))->values();
         $sallesCount = $rows->pluck('salle')->unique()->count();
         $sessionName = $examen->sessionExamen->nom_session ?? '-';
     @endphp
@@ -62,7 +65,7 @@
                 </tr>
             </thead>
             <tbody>
-                @foreach($rows as $index => $row)
+                @foreach($normalRows as $index => $row)
                     <tr>
                         <td class="center">{{ $index + 1 }}</td>
                         <td>
@@ -75,6 +78,24 @@
                         <td class="center">{{ $row['numero_place'] ?? '-' }}</td>
                     </tr>
                 @endforeach
+                @if($creditRows->isNotEmpty())
+                    <tr class="section-row">
+                        <td colspan="4">Etudiants en credit</td>
+                    </tr>
+                    @foreach($creditRows as $creditIndex => $row)
+                        <tr>
+                            <td class="center">{{ $normalRows->count() + $creditIndex + 1 }}</td>
+                            <td>
+                                <span class="student-name">{{ trim(($row['nom'] ?? '') . ' ' . ($row['prenom'] ?? '')) }}</span>
+                                @if(!empty($row['cne']))
+                                    <span class="student-cne">({{ $row['cne'] }})</span>
+                                @endif
+                            </td>
+                            <td class="center">{{ $row['salle'] ?? '-' }}</td>
+                            <td class="center">{{ $row['numero_place'] ?? '-' }}</td>
+                        </tr>
+                    @endforeach
+                @endif
             </tbody>
         </table>
 
