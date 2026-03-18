@@ -7,6 +7,7 @@ use App\Models\Examen;
 use App\Models\InscriptionPedagogique;
 use App\Models\RepartitionEtudiant;
 use App\Models\Salle;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\Rule;
@@ -333,37 +334,26 @@ class RepartitionEtudiantController extends Controller
     {
         $examen->load([
             'module:id_module,nom_module,code_module',
-            'sessionExamen:id_session_examen,nom_session',
+            'sessionExamen:id_session_examen,nom_session,id_filiere,id_annee',
             'salle:id_salle,code_salle,nom_salle,capacite_examens,capacite',
             'salles:id_salle,code_salle,nom_salle,capacite_examens,capacite',
             'module.offresFormation.section.filiere',
             'module.offresFormation.semestre.niveau',
         ]);
 
-        $referenceOffre = $examen->module->offresFormation
-            ->first(fn ($offre) => $offre->semestre !== null)
-            ?? $examen->module->offresFormation->first();
-
-        $targetSemestreId = $referenceOffre?->id_semestre;
-        $targetNiveauId = $referenceOffre?->semestre?->id_niveau;
+        $collectiveFilters = $this->collectiveOffreFilters($examen);
 
         $examensQuery = Examen::with([
                 'module:id_module,nom_module,code_module',
-                'module.offresFormation:id_offre,id_module,id_semestre,id_section',
+                'module.offresFormation:id_offre,id_module,id_semestre,id_section,id_annee',
+                'module.offresFormation.section:id_section,id_filiere',
                 'module.offresFormation.semestre:id_semestre,nom_semestre,id_niveau',
             ])
             ->where('id_session_examen', $examen->id_session_examen);
 
-        if ($targetSemestreId || $targetNiveauId) {
-            $examensQuery->whereHas('module.offresFormation', function ($query) use ($targetSemestreId, $targetNiveauId) {
-                if ($targetSemestreId) {
-                    $query->where('id_semestre', $targetSemestreId);
-                }
-                if ($targetNiveauId) {
-                    $query->whereHas('semestre', function ($semestreQuery) use ($targetNiveauId) {
-                        $semestreQuery->where('id_niveau', $targetNiveauId);
-                    });
-                }
+        if ($this->hasCollectiveOffreFilters($collectiveFilters)) {
+            $examensQuery->whereHas('module.offresFormation', function (Builder $query) use ($collectiveFilters) {
+                $this->applyCollectiveOffreFilters($query, $collectiveFilters);
             });
         }
 
@@ -378,10 +368,8 @@ class RepartitionEtudiantController extends Controller
 
         $modules = $examens
             ->sortBy(fn ($exam) => $exam->date_examen)
-            ->map(function ($exam) use ($targetSemestreId) {
-                $offre = $targetSemestreId
-                    ? $exam->module->offresFormation->firstWhere('id_semestre', $targetSemestreId)
-                    : $exam->module->offresFormation->first();
+            ->map(function ($exam) use ($collectiveFilters) {
+                $offre = $this->matchingCollectiveOffre($exam, $collectiveFilters);
 
                 return [
                     'id_examen' => $exam->id_examen,
@@ -429,21 +417,16 @@ class RepartitionEtudiantController extends Controller
         if ($studentIds->isNotEmpty() && $moduleIds->isNotEmpty()) {
             $capIps = InscriptionPedagogique::with([
                     'inscriptionAdministrative:id_inscription_admin,id_etudiant',
-                    'offreFormation:id_offre,id_module,id_semestre',
+                    'offreFormation:id_offre,id_module,id_semestre,id_section,id_annee',
+                    'offreFormation.section:id_section,id_filiere',
+                    'offreFormation.semestre:id_semestre,id_niveau',
                 ])
                 ->whereHas('inscriptionAdministrative', function ($query) use ($studentIds) {
                     $query->whereIn('id_etudiant', $studentIds);
                 })
-                ->whereHas('offreFormation', function ($query) use ($moduleIds, $targetSemestreId, $targetNiveauId) {
+                ->whereHas('offreFormation', function (Builder $query) use ($moduleIds, $collectiveFilters) {
                     $query->whereIn('id_module', $moduleIds);
-                    if ($targetSemestreId) {
-                        $query->where('id_semestre', $targetSemestreId);
-                    }
-                    if ($targetNiveauId) {
-                        $query->whereHas('semestre', function ($semestreQuery) use ($targetNiveauId) {
-                            $semestreQuery->where('id_niveau', $targetNiveauId);
-                        });
-                    }
+                    $this->applyCollectiveOffreFilters($query, $collectiveFilters);
                 })
                 ->get([
                     'id_inscription_pedagogique',
@@ -797,7 +780,7 @@ class RepartitionEtudiantController extends Controller
 
     private function referenceOffre(Examen $examen, ?int $preferredFiliereId = null)
     {
-        $examen->loadMissing([
+        $examen->load([
             'sessionExamen:id_session_examen,id_filiere,id_annee',
             'module.offresFormation:id_offre,id_module,id_semestre,id_section,id_annee',
             'module.offresFormation.section:id_section,id_filiere',
@@ -823,6 +806,110 @@ class RepartitionEtudiantController extends Controller
             return $session?->id_annee
                 ? $offre->id_annee == $session->id_annee
                 : true;
+        }) ?? $offres->first();
+    }
+
+    private function collectiveOffreFilters(Examen $examen): array
+    {
+        $examen->load([
+            'sessionExamen:id_session_examen,nom_session,id_filiere,id_annee',
+            'module.offresFormation:id_offre,id_module,id_semestre,id_section,id_annee',
+            'module.offresFormation.section:id_section,id_filiere',
+            'module.offresFormation.section.filiere:id_filiere,nom_filiere',
+            'module.offresFormation.semestre:id_semestre,nom_semestre,id_niveau',
+            'module.offresFormation.semestre.niveau:id_niveau,nom_niveau',
+        ]);
+
+        $referenceOffre = $this->referenceOffre($examen);
+
+        return [
+            'annee_id' => $examen->sessionExamen?->id_annee ? (int) $examen->sessionExamen->id_annee : null,
+            'semestre_id' => $referenceOffre?->id_semestre ? (int) $referenceOffre->id_semestre : null,
+            'niveau_id' => $referenceOffre?->semestre?->id_niveau ? (int) $referenceOffre->semestre->id_niveau : null,
+            'filiere_id' => $referenceOffre?->section?->id_filiere
+                ? (int) $referenceOffre->section->id_filiere
+                : ($examen->sessionExamen?->id_filiere ? (int) $examen->sessionExamen->id_filiere : $this->currentUserFiliereId()),
+        ];
+    }
+
+    private function hasCollectiveOffreFilters(array $filters): bool
+    {
+        return collect([
+            $filters['annee_id'] ?? null,
+            $filters['semestre_id'] ?? null,
+            $filters['niveau_id'] ?? null,
+            $filters['filiere_id'] ?? null,
+        ])->filter()->isNotEmpty();
+    }
+
+    private function applyCollectiveOffreFilters(Builder $query, array $filters): Builder
+    {
+        $anneeId = $filters['annee_id'] ?? null;
+        $semestreId = $filters['semestre_id'] ?? null;
+        $niveauId = $filters['niveau_id'] ?? null;
+        $filiereId = $filters['filiere_id'] ?? null;
+
+        if ($anneeId) {
+            $query->where('id_annee', $anneeId);
+        }
+
+        if ($semestreId) {
+            $query->where('id_semestre', $semestreId);
+        }
+
+        if ($niveauId) {
+            $query->whereHas('semestre', function (Builder $semestreQuery) use ($niveauId) {
+                $semestreQuery->where('id_niveau', $niveauId);
+            });
+        }
+
+        if ($filiereId) {
+            $query->whereHas('section', function (Builder $sectionQuery) use ($filiereId) {
+                $sectionQuery->where('id_filiere', $filiereId);
+            });
+        }
+
+        return $query;
+    }
+
+    private function matchingCollectiveOffre(Examen $examen, array $filters)
+    {
+        $offres = collect($examen->module?->offresFormation ?? []);
+        $anneeId = $filters['annee_id'] ?? null;
+        $semestreId = $filters['semestre_id'] ?? null;
+        $niveauId = $filters['niveau_id'] ?? null;
+        $filiereId = $filters['filiere_id'] ?? null;
+
+        return $offres->first(function ($offre) use ($anneeId, $semestreId, $niveauId, $filiereId) {
+            if ($anneeId && (int) $offre->id_annee !== (int) $anneeId) {
+                return false;
+            }
+
+            if ($semestreId && (int) $offre->id_semestre !== (int) $semestreId) {
+                return false;
+            }
+
+            if ($niveauId && (int) $offre->semestre?->id_niveau !== (int) $niveauId) {
+                return false;
+            }
+
+            if ($filiereId && (int) $offre->section?->id_filiere !== (int) $filiereId) {
+                return false;
+            }
+
+            return true;
+        }) ?? $offres->first(function ($offre) use ($anneeId, $filiereId) {
+            if ($anneeId && (int) $offre->id_annee !== (int) $anneeId) {
+                return false;
+            }
+
+            if ($filiereId && (int) $offre->section?->id_filiere !== (int) $filiereId) {
+                return false;
+            }
+
+            return true;
+        }) ?? $offres->first(function ($offre) use ($anneeId) {
+            return ! $anneeId || (int) $offre->id_annee === (int) $anneeId;
         }) ?? $offres->first();
     }
 
@@ -921,32 +1008,19 @@ class RepartitionEtudiantController extends Controller
             return null;
         }
 
-        $examen->loadMissing('module.offresFormation.semestre.niveau', 'module.offresFormation.section');
-
-        $referenceOffre = $examen->module->offresFormation
-            ->first(fn ($offre) => $offre->semestre !== null)
-            ?? $examen->module->offresFormation->first();
-
-        $targetSemestreId = $referenceOffre?->id_semestre;
-        $targetNiveauId = $referenceOffre?->semestre?->id_niveau;
+        $collectiveFilters = $this->collectiveOffreFilters($examen);
 
         $examensQuery = Examen::with([
                 'module:id_module',
-                'module.offresFormation:id_offre,id_module,id_semestre,id_section',
+                'module.offresFormation:id_offre,id_module,id_semestre,id_section,id_annee',
+                'module.offresFormation.section:id_section,id_filiere',
                 'module.offresFormation.semestre:id_semestre,id_niveau',
             ])
             ->where('id_session_examen', $examen->id_session_examen);
 
-        if ($targetSemestreId || $targetNiveauId) {
-            $examensQuery->whereHas('module.offresFormation', function ($query) use ($targetSemestreId, $targetNiveauId) {
-                if ($targetSemestreId) {
-                    $query->where('id_semestre', $targetSemestreId);
-                }
-                if ($targetNiveauId) {
-                    $query->whereHas('semestre', function ($semestreQuery) use ($targetNiveauId) {
-                        $semestreQuery->where('id_niveau', $targetNiveauId);
-                    });
-                }
+        if ($this->hasCollectiveOffreFilters($collectiveFilters)) {
+            $examensQuery->whereHas('module.offresFormation', function (Builder $query) use ($collectiveFilters) {
+                $this->applyCollectiveOffreFilters($query, $collectiveFilters);
             });
         }
 
