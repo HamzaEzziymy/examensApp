@@ -14,6 +14,7 @@ class Anonymat extends Model
     protected $table = 'anonymat';
     protected $primaryKey = 'id_anonymat';
     protected $guarded = [];
+    protected $appends = ['etudiant'];
     protected $fillable = [
         'id_examen',
         'id_inscription_pedagogique',
@@ -27,6 +28,12 @@ class Anonymat extends Model
     public function inscriptionPedagogique(): BelongsTo
     {
         return $this->belongsTo(InscriptionPedagogique::class, 'id_inscription_pedagogique', 'id_inscription_pedagogique');
+    }
+
+    // Accessor to get etudiant through inscription pedagogique
+    public function getEtudiantAttribute()
+    {
+        return $this->inscriptionPedagogique?->etudiant;
     }
 
     public function absences(): HasMany

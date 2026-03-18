@@ -17,18 +17,37 @@ class CorrecteurController extends Controller
      */
     public function index()
     {
-        $correcteurs = Correcteur::with(['enseignant', 'examen.module.elements', 'examen.module.offresFormation.section', 'element'])
+        // Paginate correcteurs with relationships
+        $correcteurs = Correcteur::with([
+                'enseignant',
+                'examen.module.offresFormation.section',
+                'examen.sessionExamen',
+                'element'
+            ])
+            ->latest('created_at')
             ->paginate(10);
         
-        $examens = Examen::with(['module.elements', 'module.offresFormation.section'])->get();
-        $enseignants = Enseignant::all();
-        $elements = ElementModule::all();
+        // Load examens with relationships
+        $examens = Examen::with(['module.offresFormation.section', 'module.elements', 'sessionExamen'])
+            ->latest('date_examen')
+            ->limit(200)
+            ->get();
+        
+        // Load sessions for filter
+        $sessions = \App\Models\SessionExamen::select('id_session_examen', 'nom_session', 'id_annee', 'id_filiere')
+            ->with(['anneeUniversitaire:id_annee,annee_univ', 'filiere:id_filiere,nom_filiere'])
+            ->orderBy('nom_session')
+            ->get();
+        
+        $enseignants = Enseignant::select('id_enseignant', 'nom', 'prenom', 'email')->get();
+        $elements = ElementModule::select('id_element', 'id_module', 'code_element', 'nom_element')->get();
 
         return Inertia::render('correction/Correcteurs/Index', [
             'correcteurs' => $correcteurs,
             'examens' => $examens,
             'enseignants' => $enseignants,
             'elements' => $elements,
+            'sessions' => $sessions,
         ]);
     }
 

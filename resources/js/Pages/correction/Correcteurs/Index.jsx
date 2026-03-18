@@ -4,15 +4,15 @@ import { useState } from 'react';
 import { Users, Edit3, Trash2, Search, ChevronLeft, ChevronRight, CheckCircle, Clock, AlertCircle, FileText } from 'lucide-react';
 import InputError from '@/Components/InputError';
 
-export default function CorrectorsIndex({ correcteurs = {}, examens = [], enseignants = [], elements = [] }) {
+export default function CorrectorsIndex({ correcteurs = {}, examens = [], enseignants = [], elements = [], sessions = [] }) {
     const { auth } = usePage().props;
     
     // Get user's selected année and filière from Years_Sectors_Selecters
     const userSelectedAnnee = auth.user_filiere_annee?.id_annee || 'all';
     const userSelectedFiliere = auth.user_filiere_annee?.id_filiere || 'all';
     
-    console.log(correcteurs)
     const [searchTerm, setSearchTerm] = useState('');
+    const [sessionFilter, setSessionFilter] = useState('all');
     const [editingId, setEditingId] = useState(null);
     const [examenSearch, setExamenSearch] = useState('');
     const [enseignantSearch, setEnseignantSearch] = useState('');
@@ -43,22 +43,33 @@ export default function CorrectorsIndex({ correcteurs = {}, examens = [], enseig
         ? elements.filter(el => el.id_module === selectedModuleId)
         : [];
 
-    // Filter examens based on user's selected filière
-    const examensForSelectedFiliere = userSelectedFiliere !== 'all'
-        ? examens.filter(examen => {
-            // Check if the exam's module belongs to an offre in the selected filière
-            const hasMatchingOffre = examen.module?.offres_formation?.some(offre => offre.section?.id_filiere == userSelectedFiliere);
-            return hasMatchingOffre;
-        })
-        : examens;
-    
-    console.log('User selected filière:', userSelectedFiliere);
-    console.log('Total examens:', examens.length);
-    console.log('Filtered examens:', examensForSelectedFiliere.length);
+    // Filter examens based on user's selected filière and année
+    const examensForSelectedFiliereAndAnnee = examens.filter(examen => {
+        // Filter by filière
+        if (userSelectedFiliere !== 'all') {
+            const hasMatchingOffre = examen.module?.offres_formation?.some(
+                offre => offre.section?.id_filiere == userSelectedFiliere
+            );
+            if (!hasMatchingOffre) return false;
+        }
+        
+        // Filter by année
+        if (userSelectedAnnee !== 'all') {
+            const sessionAnnee = examen.session_examen?.id_annee;
+            if (sessionAnnee != userSelectedAnnee) return false;
+        }
+        
+        // Filter by session
+        if (sessionFilter !== 'all') {
+            if (examen.id_session_examen != sessionFilter) return false;
+        }
+        
+        return true;
+    });
 
-    const filteredExamens = examensForSelectedFiliere.filter((examen) => {
+    const filteredExamens = examensForSelectedFiliereAndAnnee.filter((examen) => {
         const query = examenSearch.toLowerCase();
-        const text = `${examen.module?.code_module} ${examen.module?.nom_module}`.toLowerCase();
+        const text = `${examen.module?.code_module || ''} ${examen.module?.nom_module || ''}`.toLowerCase();
         return text.includes(query);
     });
 
@@ -74,16 +85,28 @@ export default function CorrectorsIndex({ correcteurs = {}, examens = [], enseig
         return text.includes(query);
     });
 
-    // Filter correcteurs by selected filière first, then by search term
+    // Filter correcteurs by selected filière, année, and session, then by search term
     const filteredCorrecteurs = data
         .filter((correcteur) => {
-            // If a specific filière is selected, only show correcteurs for that filière
+            // Filter by filière
             if (userSelectedFiliere !== 'all') {
                 const hasMatchingOffre = correcteur.examen?.module?.offres_formation?.some(
                     offre => offre.section?.id_filiere == userSelectedFiliere
                 );
-                return hasMatchingOffre;
+                if (!hasMatchingOffre) return false;
             }
+            
+            // Filter by année
+            if (userSelectedAnnee !== 'all') {
+                const sessionAnnee = correcteur.examen?.session_examen?.id_annee;
+                if (sessionAnnee != userSelectedAnnee) return false;
+            }
+            
+            // Filter by session
+            if (sessionFilter !== 'all') {
+                if (correcteur.examen?.id_session_examen != sessionFilter) return false;
+            }
+            
             return true;
         })
         .filter((correcteur) => {
@@ -500,7 +523,8 @@ export default function CorrectorsIndex({ correcteurs = {}, examens = [], enseig
 
                     {/* List Section */}
                     <div className="lg:col-span-2 rounded-xl bg-white p-6 shadow dark:bg-gray-800">
-                        <div className="mb-4">
+                        <div className="mb-4 space-y-3">
+                            {/* Search Box */}
                             <div className="relative">
                                 <Search size={18} className="absolute left-3 top-3 text-gray-400" />
                                 <input
@@ -510,6 +534,25 @@ export default function CorrectorsIndex({ correcteurs = {}, examens = [], enseig
                                     onChange={(e) => setSearchTerm(e.target.value)}
                                     className="w-full rounded-lg border border-gray-300 bg-white pl-10 pr-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                                 />
+                            </div>
+                            
+                            {/* Session Filter */}
+                            <div className="flex items-center gap-2">
+                                <label className="text-sm font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">
+                                    Session:
+                                </label>
+                                <select
+                                    value={sessionFilter}
+                                    onChange={(e) => setSessionFilter(e.target.value)}
+                                    className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                                >
+                                    <option value="all">Toutes les sessions</option>
+                                    {sessions.map((session) => (
+                                        <option key={session.id_session_examen} value={session.id_session_examen}>
+                                            {session.nom_session} - {session.annee_universitaire?.annee_univ || ''} - {session.filiere?.nom_filiere || ''}
+                                        </option>
+                                    ))}
+                                </select>
                             </div>
                         </div>
 

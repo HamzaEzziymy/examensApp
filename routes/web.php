@@ -226,6 +226,9 @@ Route::prefix('correction')->name('correction.')->group(function () {
         'resultats-modules' => ResultatModuleController::class,
     ]);
     Route::post('notes/import', [NoteController::class, 'import'])->name('notes.import');
+    Route::get('notes/anonymats/by-exam', [NoteController::class, 'getAnonymats'])->name('notes.anonymats');
+    Route::get('notes/correcteurs/by-exam', [NoteController::class, 'getCorrecteurs'])->name('notes.correcteurs');
+    Route::post('notes/students-by-cne', [NoteController::class, 'getStudentsByCne'])->name('notes.students-by-cne');
 });
 
 /* =========================

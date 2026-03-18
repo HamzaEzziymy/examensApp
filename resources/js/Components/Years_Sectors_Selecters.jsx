@@ -10,7 +10,7 @@ export default function YearsSectorsSelecters() {
     const userFiliere = auth.user_filiere_annee?.id_filiere || 'all';
 
     // Use Inertia's useForm hook
-    const { data, setData, put, processing, isDirty, reset, setDefaults } = useForm({
+    const { data, setData, put, processing, isDirty, setDefaults } = useForm({
         id: auth.user_filiere_annee?.id || '',
         user_id: auth.user?.id || '',
         id_filiere: userFiliere,
@@ -63,7 +63,7 @@ export default function YearsSectorsSelecters() {
             onSuccess: () => {
                 toast.success("Selection updated successfully!");
             },
-            onError: (errors) => {
+            onError: () => {
                 toast.error('error')
             },
         });
