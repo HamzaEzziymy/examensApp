@@ -31,9 +31,10 @@ class GradingSeeder extends Seeder
 
             foreach ($anonymats as $anon) {
                 Note::factory()->create([
-                    'id_anonymat'   => $anon->id_anonymat,
-                    'id_correcteur' => $correcteur->id_correcteur,
-                    'note'          => fake()->randomFloat(2, 0, 20),
+                    'id_anonymat' => $anon->id_anonymat,
+                    'id_examen' => $exam->id_examen,
+                    'id_enseignant' => $correcteur->id_enseignant,
+                    'note' => fake()->randomFloat(2, 0, 20),
                 ]);
             }
         }

@@ -41,6 +41,6 @@ class Correcteur extends Model
 
     public function notes(): HasMany
     {
-        return $this->hasMany(Note::class, 'id_correcteur', 'id_correcteur');
+        return $this->hasMany(Note::class, 'id_examen', 'id_examen');
     }
 }

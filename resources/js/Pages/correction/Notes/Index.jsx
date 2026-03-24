@@ -323,7 +323,7 @@ export default function NotesIndex({ notes = {}, examens = [], enseignants = [] 
     const downloadTemplate = () => {
         const template = importType === 'cne' 
             ? [{ cne: 'R123456789', note: '15.5' }]
-            : [{ anonymat: 'ANON001', note: '15.5' }];
+            : [{ anonymat: '1001', note: '15.5' }];
 
         const ws = XLSX.utils.json_to_sheet(template);
         const wb = XLSX.utils.book_new();

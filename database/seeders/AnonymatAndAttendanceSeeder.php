@@ -99,7 +99,7 @@ class AnonymatAndAttendanceSeeder extends Seeder
                 $salleCode = $index + 1;
 
                 foreach ($slice as $ip) {
-                    $codeAnonymat = sprintf('ANON-%d-%03d', $exam->id_examen, $seq);
+                    $codeAnonymat = (string) $seq;
                     $grilleCode  = (int) sprintf('%d%d%d%d%03d', $filiereCode, $niveauCode, $sessionCode, $salleCode, $seat);
 
                     $anonRows[] = [

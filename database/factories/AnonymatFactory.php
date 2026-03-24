@@ -16,7 +16,7 @@ class AnonymatFactory extends Factory
         return [
             'id_examen'                 => Examen::factory(),
             'id_inscription_pedagogique'=> InscriptionPedagogique::factory(),
-            'code_anonymat'             => strtoupper($this->faker->bothify('ANON-####')),
+            'code_anonymat'             => (string) $this->faker->numberBetween(1, 9999),
         ];
     }
 }

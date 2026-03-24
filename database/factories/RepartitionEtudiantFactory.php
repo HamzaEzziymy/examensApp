@@ -17,7 +17,7 @@ class RepartitionEtudiantFactory extends Factory
             'id_examen'                 => Examen::factory(),
             'id_inscription_pedagogique'=> InscriptionPedagogique::factory(),
             'code_grille'               => $this->faker->numberBetween(1, 3),
-            'code_anonymat'             => $this->faker->optional()->bothify('ANON-####'),
+            'code_anonymat'             => $this->faker->optional()->passthrough((string) $this->faker->numberBetween(1, 9999)),
             'numero_place'              => $this->faker->optional()->bothify('P-###'),
             'present'                   => $this->faker->boolean(80),
             'heure_arrivee'             => $this->faker->optional()->time('H:i:s'),
