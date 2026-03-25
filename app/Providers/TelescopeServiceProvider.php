@@ -16,6 +16,10 @@ class TelescopeServiceProvider extends TelescopeApplicationServiceProvider
     {
         // Telescope::night();
 
+        if ($this->app->runningInConsole() && ! config('telescope.console_enabled', true)) {
+            config(['telescope.enabled' => false]);
+        }
+
         $this->hideSensitiveRequestDetails();
 
         $isLocal = $this->app->environment('local');

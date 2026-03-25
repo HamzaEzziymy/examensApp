@@ -26,83 +26,90 @@
 </head>
 <body>
     @php
-        $rows = collect($rows ?? []);
-        $normalRows = $rows->reject(fn ($row) => !empty($row['is_credit']))->values();
-        $creditRows = $rows->filter(fn ($row) => !empty($row['is_credit']))->values();
-        $sallesCount = $rows->pluck('salle')->unique()->count();
-        $sessionName = $examen->sessionExamen->nom_session ?? '-';
+        $groups = collect($groups ?? [[
+            'salle' => $examen->salle,
+            'rows' => collect($rows ?? []),
+            'total' => collect($rows ?? [])->count(),
+            'salle_index' => 1,
+        ]]);
+        $sallesCount = $groups->count();
+        $sessionLabel = $sessionLabel ?? ($examen->sessionExamen->nom_session ?? '-');
     @endphp
 
-    <div class="page">
-        <div class="masthead">
-            <img src="{{ public_path('/logo.png') }}" alt="Logo">
-        </div>
+    @foreach($groups as $groupIndex => $group)
+        @php
+            $groupRows = collect($group['rows'] ?? []);
+            $normalRows = $groupRows->reject(fn ($row) => !empty($row['is_credit']))->values();
+            $creditRows = $groupRows->filter(fn ($row) => !empty($row['is_credit']))->values();
+        @endphp
+        <div class="page" style="{{ $groupIndex > 0 ? 'page-break-before: always;' : '' }}">
+            <div class="masthead">
+                <img src="{{ public_path('/logo.png') }}" alt="Logo">
+            </div>
 
-        <h1>REPARTITION PAR SALLE ET PLACE</h1>
+            <h1>REPARTITION PAR SALLE ET PLACE</h1>
 
-        <table class="meta">
-            <tr>
-                <td class="label">Session</td>
-                <td class="value">{{ $sessionName }}</td>
-                <td class="label">Date</td>
-                <td class="value">{{ optional($examen->date_examen)->format('d/m/Y') ?? '-' }}</td>
-            </tr>
-            <tr>
-                <td class="label">Niveau / Filiere</td>
-                <td class="value">{{ $niveauFiliere ?: '-' }}</td>
-                <td class="label">Salles</td>
-                <td class="value">{{ $sallesCount }}</td>
-            </tr>
-        </table>
-
-        <table class="list">
-            <thead>
+            <table class="meta">
                 <tr>
-                    <th style="width: 8%;">No</th>
-                    <th style="width: 47%;">Nom et Prenom</th>
-                    <th style="width: 25%;">Salle</th>
-                    <th style="width: 20%;">Place</th>
+                    <td class="label">Session</td>
+                    <td class="value">{{ $sessionLabel }}</td>
+                    <td class="label">Date</td>
+                    <td class="value">{{ optional($examen->date_examen)->format('d/m/Y') ?? '-' }}</td>
                 </tr>
-            </thead>
-            <tbody>
-                @foreach($normalRows as $index => $row)
+                <tr>
+                    <td class="label">Niveau / Filiere</td>
+                    <td class="value">{{ $niveauFiliere ?: '-' }}</td>
+                    <td class="label">Salle</td>
+                    <td class="value">{{ $group['salle']->nom_salle ?? ('Salle '.$group['salle_index']) }}</td>
+                </tr>
+            </table>
+
+            <table class="list">
+                <thead>
                     <tr>
-                        <td class="center">{{ $index + 1 }}</td>
-                        <td>
-                            <span class="student-name">{{ trim(($row['nom'] ?? '') . ' ' . ($row['prenom'] ?? '')) }}</span>
-                            @if(!empty($row['cne']))
-                                <span class="student-cne">({{ $row['cne'] }})</span>
-                            @endif
-                        </td>
-                        <td class="center">{{ $row['salle'] ?? '-' }}</td>
-                        <td class="center">{{ $row['numero_place'] ?? '-' }}</td>
+                        <th style="width: 10%;">No</th>
+                        <th style="width: 65%;">Nom et Prenom</th>
+                        <th style="width: 25%;">Place</th>
                     </tr>
-                @endforeach
-                @if($creditRows->isNotEmpty())
-                    <tr class="section-row">
-                        <td colspan="4">Etudiants en credit</td>
-                    </tr>
-                    @foreach($creditRows as $creditIndex => $row)
+                </thead>
+                <tbody>
+                    @foreach($normalRows as $index => $row)
                         <tr>
-                            <td class="center">{{ $normalRows->count() + $creditIndex + 1 }}</td>
+                            <td class="center">{{ $index + 1 }}</td>
                             <td>
                                 <span class="student-name">{{ trim(($row['nom'] ?? '') . ' ' . ($row['prenom'] ?? '')) }}</span>
                                 @if(!empty($row['cne']))
                                     <span class="student-cne">({{ $row['cne'] }})</span>
                                 @endif
                             </td>
-                            <td class="center">{{ $row['salle'] ?? '-' }}</td>
                             <td class="center">{{ $row['numero_place'] ?? '-' }}</td>
                         </tr>
                     @endforeach
-                @endif
-            </tbody>
-        </table>
+                    @if($creditRows->isNotEmpty())
+                        <tr class="section-row">
+                            <td colspan="3">Etudiants en credit</td>
+                        </tr>
+                        @foreach($creditRows as $creditIndex => $row)
+                            <tr>
+                                <td class="center">{{ $normalRows->count() + $creditIndex + 1 }}</td>
+                                <td>
+                                    <span class="student-name">{{ trim(($row['nom'] ?? '') . ' ' . ($row['prenom'] ?? '')) }}</span>
+                                    @if(!empty($row['cne']))
+                                        <span class="student-cne">({{ $row['cne'] }})</span>
+                                    @endif
+                                </td>
+                                <td class="center">{{ $row['numero_place'] ?? '-' }}</td>
+                            </tr>
+                        @endforeach
+                    @endif
+                </tbody>
+            </table>
 
-        <div class="footer">
-            <div>Fes ; Le {{ $generatedAt->format('d/m/Y') }}</div>
-            <div>Genere le {{ $generatedAt->format('d/m/Y H:i') }}</div>
+            <div class="footer">
+                <div>Fes ; Le {{ $generatedAt->format('d/m/Y') }}</div>
+                <div>Genere le {{ $generatedAt->format('d/m/Y H:i') }}</div>
+            </div>
         </div>
-    </div>
+    @endforeach
 </body>
 </html>

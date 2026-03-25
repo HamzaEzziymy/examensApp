@@ -550,7 +550,7 @@ class DashboardController extends Controller
         return Note::query()
             ->where(function (Builder $query) use ($filiereId, $anneeId) {
                 $query
-                    ->whereHas('correcteur.examen', function (Builder $examenQuery) use ($filiereId, $anneeId) {
+                    ->whereHas('examen', function (Builder $examenQuery) use ($filiereId, $anneeId) {
                         $this->scopeExamens($examenQuery, $filiereId, $anneeId);
                     })
                     ->orWhereHas('anonymat.examen', function (Builder $examenQuery) use ($filiereId, $anneeId) {

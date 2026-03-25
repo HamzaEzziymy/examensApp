@@ -212,6 +212,7 @@ class RepartitionEtudiantController extends Controller
                 'nullable',
                 'string',
                 'max:20',
+                'regex:/^\d+$/',
                 $this->uniquePerExam('code_anonymat', $examenId, $ignoreId),
             ],
             'numero_place' => [
@@ -262,7 +263,7 @@ class RepartitionEtudiantController extends Controller
 
         $examen->load([
             'module:id_module,nom_module,code_module',
-            'sessionExamen:id_session_examen,nom_session',
+            'sessionExamen:id_session_examen,nom_session,type_session',
             'salle:id_salle,code_salle,nom_salle',
             'salles:id_salle,code_salle,nom_salle,capacite_examens,capacite',
             'module.offresFormation.section.filiere',
@@ -314,6 +315,7 @@ class RepartitionEtudiantController extends Controller
             'columns'        => $columns,
             'presenceFilled' => $presenceFilled,
             'salleGroups'    => $salleGroups,
+            'sessionLabel'   => $this->sessionLabel($examen),
         ];
 
         $footerSalleLabel = $salles->pluck('nom_salle')->filter()->unique()->implode(' | ');
@@ -652,7 +654,7 @@ class RepartitionEtudiantController extends Controller
 
         $examen->load([
             'module:id_module,nom_module,code_module',
-            'sessionExamen:id_session_examen,nom_session',
+            'sessionExamen:id_session_examen,nom_session,type_session',
             'salles:id_salle,nom_salle,code_salle,capacite_examens,capacite',
             'salle:id_salle,nom_salle,code_salle,capacite_examens,capacite',
             'module.offresFormation.section.filiere',
@@ -664,39 +666,72 @@ class RepartitionEtudiantController extends Controller
             $salles = collect([$examen->salle]);
         }
 
-        $rows = $repartitions
-            ->map(function ($rep) use ($salles) {
-                $salleIndex = $this->salleIndexFromGrille($rep->code_grille);
-                $salle = $salles[$salleIndex - 1] ?? null;
+        $orderedSalleGroups = $this->buildSalleGroupsWithCollectiveOrder($examen, $repartitions, $salles);
+        if ($orderedSalleGroups && $orderedSalleGroups->isNotEmpty()) {
+            $salleGroups = $orderedSalleGroups
+                ->map(function ($group) use ($salles) {
+                    $groupRows = collect($group['rows'] ?? [])->map(function ($rep) use ($salles) {
+                        $salleIndex = $this->salleIndexFromGrille($rep->code_grille);
+                        $salle = $salles[$salleIndex - 1] ?? null;
 
-                return [
-                    'cne'          => $rep->inscriptionPedagogique->inscriptionAdministrative->etudiant->cne ?? '',
-                    'nom'          => $rep->inscriptionPedagogique->inscriptionAdministrative->etudiant->nom ?? '',
-                    'prenom'       => $rep->inscriptionPedagogique->inscriptionAdministrative->etudiant->prenom ?? '',
-                    'is_credit'    => strtolower((string) ($rep->inscriptionPedagogique->type_inscription ?? '')) === 'credit',
-                    'salle'        => $salle->nom_salle ?? ('Salle '.$salleIndex),
-                    'code_salle'   => $salle->code_salle ?? null,
-                    'numero_place' => $rep->numero_place,
-                    'code_grille'  => $rep->code_grille,
-                    'salle_index'  => $salleIndex,
-                ];
-            })
-            ->sortBy(function ($row) {
-                return sprintf(
-                    '%03d-%05s-%s-%s',
-                    $row['salle_index'] ?? 0,
-                    $row['numero_place'] ?? '',
-                    $row['nom'] ?? '',
-                    $row['prenom'] ?? ''
-                );
-            })
-            ->values();
+                        return [
+                            'cne'          => $rep->inscriptionPedagogique->inscriptionAdministrative->etudiant->cne ?? '',
+                            'nom'          => $rep->inscriptionPedagogique->inscriptionAdministrative->etudiant->nom ?? '',
+                            'prenom'       => $rep->inscriptionPedagogique->inscriptionAdministrative->etudiant->prenom ?? '',
+                            'is_credit'    => strtolower((string) ($rep->inscriptionPedagogique->type_inscription ?? '')) === 'credit',
+                            'salle'        => $salle->nom_salle ?? ('Salle '.$salleIndex),
+                            'code_salle'   => $salle->code_salle ?? null,
+                            'numero_place' => $rep->numero_place,
+                            'code_grille'  => $rep->code_grille,
+                            'salle_index'  => $salleIndex,
+                        ];
+                    })->values();
+
+                    return [
+                        'salle' => $group['salle'] ?? null,
+                        'rows' => $groupRows,
+                        'total' => $groupRows->count(),
+                        'salle_index' => (int) ($group['salle_index'] ?? 1),
+                    ];
+                })
+                ->values();
+        } else {
+            $salleGroups = $repartitions
+                ->groupBy(fn ($rep) => $this->salleIndexFromGrille($rep->code_grille))
+                ->sortKeys()
+                ->map(function ($groupRows, $salleIndex) use ($salles) {
+                    $salle = $salles[$salleIndex - 1] ?? null;
+                    $rows = $groupRows->map(function ($rep) use ($salle, $salleIndex) {
+                        return [
+                            'cne'          => $rep->inscriptionPedagogique->inscriptionAdministrative->etudiant->cne ?? '',
+                            'nom'          => $rep->inscriptionPedagogique->inscriptionAdministrative->etudiant->nom ?? '',
+                            'prenom'       => $rep->inscriptionPedagogique->inscriptionAdministrative->etudiant->prenom ?? '',
+                            'is_credit'    => strtolower((string) ($rep->inscriptionPedagogique->type_inscription ?? '')) === 'credit',
+                            'salle'        => $salle->nom_salle ?? ('Salle '.$salleIndex),
+                            'code_salle'   => $salle->code_salle ?? null,
+                            'numero_place' => $rep->numero_place,
+                            'code_grille'  => $rep->code_grille,
+                            'salle_index'  => (int) $salleIndex,
+                        ];
+                    })->values();
+
+                    return [
+                        'salle' => $salle,
+                        'rows' => $rows,
+                        'total' => $rows->count(),
+                        'salle_index' => (int) $salleIndex,
+                    ];
+                })
+                ->values();
+        }
 
         $payload = [
             'examen'       => $examen,
-            'rows'         => $rows,
+            'rows'         => $salleGroups->flatMap(fn ($group) => $group['rows'] ?? collect())->values(),
+            'groups'       => $salleGroups,
             'generatedAt'  => now(),
             'niveauFiliere'=> $this->niveauFiliereLabel($examen),
+            'sessionLabel' => $this->sessionLabel($examen),
         ];
 
         $footerSalleLabel = $salles->pluck('nom_salle')->filter()->unique()->implode(' | ');
@@ -728,6 +763,40 @@ class RepartitionEtudiantController extends Controller
             ($niveauName && $filiereName ? ' - ' : '') .
             ($filiereName ?? '')
         );
+    }
+
+    private function sessionLabel(Examen $examen): string
+    {
+        $session = $examen->sessionExamen;
+        $sessionId = $examen->getAttribute('id_session_examen');
+
+        if (
+            (! $session || (
+                trim((string) ($session->nom_session ?? '')) === '' &&
+                trim((string) ($session->type_session ?? '')) === ''
+            )) &&
+            $sessionId
+        ) {
+            $session = \App\Models\SessionExamen::query()
+                ->find($sessionId, ['id_session_examen', 'nom_session', 'type_session']);
+        }
+
+        $name = trim((string) ($session?->nom_session ?? ''));
+        $type = trim((string) ($session?->type_session ?? ''));
+
+        if ($name === '' && $type === '') {
+            return '-';
+        }
+
+        if ($name === '') {
+            return $type;
+        }
+
+        if ($type === '' || str_contains(strtolower($name), strtolower($type))) {
+            return $name;
+        }
+
+        return sprintf('%s (%s)', $name, $type);
     }
 
     private function eligibleInscriptionsForExam(Examen $examen)

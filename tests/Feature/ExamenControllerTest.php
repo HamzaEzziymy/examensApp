@@ -3,6 +3,7 @@
 namespace Tests\Feature;
 
 use App\Models\AnneeUniversitaire;
+use App\Models\Anonymat;
 use App\Models\Etudiant;
 use App\Models\Examen;
 use App\Models\Filiere;
@@ -166,6 +167,115 @@ class ExamenControllerTest extends TestCase
         ]);
     }
 
+    public function test_store_can_plan_all_filtered_modules_with_a_separate_repartition_for_each_exam(): void
+    {
+        [
+            'user' => $user,
+            'annee' => $annee,
+            'section' => $section,
+            'niveau' => $niveau,
+            'semestre' => $semestre,
+            'module' => $firstModule,
+            'salle' => $salle,
+            'offre' => $firstOffre,
+            'session' => $session,
+        ] = $this->createSharedSessionPlanningContext();
+
+        $secondModule = Module::factory()->create();
+        $secondOffre = OffreFormation::create([
+            'id_module' => $secondModule->id_module,
+            'id_semestre' => $semestre->id_semestre,
+            'id_section' => $section->id_section,
+            'id_annee' => $annee->id_annee,
+            'id_coordinateur' => null,
+            'nom_affiche' => 'Deuxieme offre module commune',
+        ]);
+
+        $otherSemestre = Semestre::factory()->create(['id_niveau' => $niveau->id_niveau]);
+        $outsideModule = Module::factory()->create();
+        OffreFormation::create([
+            'id_module' => $outsideModule->id_module,
+            'id_semestre' => $otherSemestre->id_semestre,
+            'id_section' => $section->id_section,
+            'id_annee' => $annee->id_annee,
+            'id_coordinateur' => null,
+            'nom_affiche' => 'Offre hors semestre',
+        ]);
+
+        $firstRegistration = $this->createPedagogicalRegistration($section, $annee, $niveau, $firstOffre, 'Alpha', 'A');
+        $secondRegistration = $this->createPedagogicalRegistration($section, $annee, $niveau, $secondOffre, 'Beta', 'B');
+        $thirdRegistration = $this->createPedagogicalRegistration($section, $annee, $niveau, $firstOffre, 'Gamma', 'C');
+
+        $response = $this
+            ->actingAs($user)
+            ->post(route('examens.examens.store'), [
+                'id_session_examen' => $session->id_session_examen,
+                'plan_all_filtered_modules' => true,
+                'salles' => [$salle->id_salle],
+                'module_plannings' => [
+                    [
+                        'id_module' => $firstModule->id_module,
+                        'date_examen' => '2026-06-20',
+                        'date_debut' => '2026-06-20 08:00:00',
+                        'date_fin' => '2026-06-20 10:00:00',
+                    ],
+                    [
+                        'id_module' => $secondModule->id_module,
+                        'date_examen' => '2026-06-21',
+                        'date_debut' => '2026-06-21 14:00:00',
+                        'date_fin' => '2026-06-21 16:00:00',
+                    ],
+                ],
+                'statut' => 'Planifiee',
+                'description' => 'Planification groupee',
+            ]);
+
+        $response
+            ->assertRedirect(route('examens.examens.index'))
+            ->assertSessionHasNoErrors();
+
+        $plannedExamens = Examen::query()
+            ->where('id_session_examen', $session->id_session_examen)
+            ->whereIn('id_module', [$firstModule->id_module, $secondModule->id_module])
+            ->get()
+            ->keyBy('id_module');
+
+        $this->assertCount(2, $plannedExamens);
+        $this->assertDatabaseMissing('examens', [
+            'id_session_examen' => $session->id_session_examen,
+            'id_module' => $outsideModule->id_module,
+        ]);
+
+        $firstExam = $plannedExamens->get($firstModule->id_module);
+        $secondExam = $plannedExamens->get($secondModule->id_module);
+
+        $this->assertNotNull($firstExam);
+        $this->assertNotNull($secondExam);
+        $this->assertSame('2026-06-20', $firstExam->date_examen->format('Y-m-d'));
+        $this->assertSame('2026-06-21', $secondExam->date_examen->format('Y-m-d'));
+
+        $this->assertSame(
+            [
+                $firstRegistration->id_inscription_pedagogique,
+                $thirdRegistration->id_inscription_pedagogique,
+            ],
+            RepartitionEtudiant::query()
+                ->where('id_examen', $firstExam->id_examen)
+                ->orderBy('id_inscription_pedagogique')
+                ->pluck('id_inscription_pedagogique')
+                ->all()
+        );
+
+        $this->assertSame(
+            [$secondRegistration->id_inscription_pedagogique],
+            RepartitionEtudiant::query()
+                ->where('id_examen', $secondExam->id_examen)
+                ->orderBy('id_inscription_pedagogique')
+                ->pluck('id_inscription_pedagogique')
+                ->all()
+        );
+    }
+
     public function test_store_places_credit_registrations_in_the_last_selected_salle(): void
     {
         $user = User::factory()->create();
@@ -279,5 +389,189 @@ class ExamenControllerTest extends TestCase
 
         $this->assertSame('2', $creditCode[3]);
         $this->assertStringStartsWith(substr($derniereSalle->code_salle, 0, 4), (string) $creditRepartition->numero_place);
+    }
+
+    public function test_store_uses_the_requested_anonymat_range_for_generated_codes(): void
+    {
+        [
+            'user' => $user,
+            'annee' => $annee,
+            'section' => $section,
+            'niveau' => $niveau,
+            'offre' => $offre,
+            'module' => $module,
+            'salle' => $salle,
+            'session' => $session,
+        ] = $this->createSharedSessionPlanningContext();
+
+        foreach ([
+            ['nom' => 'Alpha', 'prenom' => 'A'],
+            ['nom' => 'Beta', 'prenom' => 'B'],
+            ['nom' => 'Gamma', 'prenom' => 'C'],
+            ['nom' => 'Delta', 'prenom' => 'D'],
+        ] as $payload) {
+            $this->createPedagogicalRegistration(
+                $section,
+                $annee,
+                $niveau,
+                $offre,
+                $payload['nom'],
+                $payload['prenom']
+            );
+        }
+
+        $response = $this
+            ->actingAs($user)
+            ->post(route('examens.examens.store'), [
+                'id_session_examen' => $session->id_session_examen,
+                'id_module' => $module->id_module,
+                'salles' => [$salle->id_salle],
+                'anonymat_start' => 101,
+                'anonymat_end' => 103,
+                'date_examen' => '2026-06-20',
+                'date_debut' => '2026-06-20 08:00:00',
+                'date_fin' => '2026-06-20 10:00:00',
+                'statut' => 'Planifiee',
+                'description' => 'Examen avec plage d\'anonymats',
+            ]);
+
+        $response
+            ->assertRedirect(route('examens.examens.index'))
+            ->assertSessionHasNoErrors();
+
+        $examen = Examen::query()->latest('id_examen')->first();
+
+        $this->assertNotNull($examen);
+        $this->assertSame(101, $examen->anonymat_start);
+        $this->assertSame(103, $examen->anonymat_end);
+        $this->assertSame(3, RepartitionEtudiant::where('id_examen', $examen->id_examen)->count());
+
+        $expectedCodes = [
+            '101',
+            '102',
+            '103',
+        ];
+
+        $this->assertSame(
+            $expectedCodes,
+            Anonymat::query()
+                ->where('id_examen', $examen->id_examen)
+                ->orderBy('id_anonymat')
+                ->pluck('code_anonymat')
+                ->all()
+        );
+    }
+
+    public function test_store_rejects_an_anonymat_range_that_exceeds_available_registrations(): void
+    {
+        [
+            'user' => $user,
+            'annee' => $annee,
+            'section' => $section,
+            'niveau' => $niveau,
+            'offre' => $offre,
+            'module' => $module,
+            'salle' => $salle,
+            'session' => $session,
+        ] = $this->createSharedSessionPlanningContext();
+
+        $this->createPedagogicalRegistration($section, $annee, $niveau, $offre, 'Alpha', 'A');
+        $this->createPedagogicalRegistration($section, $annee, $niveau, $offre, 'Beta', 'B');
+
+        $response = $this
+            ->from(route('examens.examens.index'))
+            ->actingAs($user)
+            ->post(route('examens.examens.store'), [
+                'id_session_examen' => $session->id_session_examen,
+                'id_module' => $module->id_module,
+                'salles' => [$salle->id_salle],
+                'anonymat_start' => 1,
+                'anonymat_end' => 5,
+                'date_examen' => '2026-06-20',
+                'date_debut' => '2026-06-20 08:00:00',
+                'date_fin' => '2026-06-20 10:00:00',
+                'statut' => 'Planifiee',
+                'description' => 'Plage invalide',
+            ]);
+
+        $response
+            ->assertRedirect(route('examens.examens.index'))
+            ->assertSessionHasErrors(['anonymat_end']);
+
+        $this->assertDatabaseCount('examens', 0);
+    }
+
+    private function createSharedSessionPlanningContext(): array
+    {
+        $user = User::factory()->create();
+        $annee = AnneeUniversitaire::factory()->active()->create();
+        $filiere = Filiere::factory()->create(['nom_filiere' => 'Medecine']);
+        $section = Section::factory()->create(['id_filiere' => $filiere->id_filiere]);
+        $niveau = Niveau::factory()->create();
+        $semestre = Semestre::factory()->create(['id_niveau' => $niveau->id_niveau]);
+        $module = Module::factory()->create();
+        $salle = Salle::factory()->create([
+            'capacite' => 60,
+            'capacite_examens' => 60,
+        ]);
+
+        UserFiliereAnnee::create([
+            'user_id' => $user->id,
+            'id_filiere' => $filiere->id_filiere,
+            'id_annee' => $annee->id_annee,
+        ]);
+
+        $offre = OffreFormation::create([
+            'id_module' => $module->id_module,
+            'id_semestre' => $semestre->id_semestre,
+            'id_section' => $section->id_section,
+            'id_annee' => $annee->id_annee,
+            'id_coordinateur' => null,
+            'nom_affiche' => 'Offre module commune',
+        ]);
+
+        $session = SessionExamen::create([
+            'id_filiere' => null,
+            'id_annee' => $annee->id_annee,
+            'nom_session' => 'Session Normale Commune',
+            'type_session' => 'Normale',
+            'date_session_examen' => '2026-06-10',
+            'quadrimestre' => 2,
+        ]);
+
+        return compact('user', 'annee', 'filiere', 'section', 'niveau', 'semestre', 'module', 'salle', 'offre', 'session');
+    }
+
+    private function createPedagogicalRegistration(
+        Section $section,
+        AnneeUniversitaire $annee,
+        Niveau $niveau,
+        OffreFormation $offre,
+        string $nom,
+        string $prenom,
+        string $typeInscription = 'Normal'
+    ): InscriptionPedagogique {
+        $etudiant = Etudiant::factory()->create([
+            'id_section' => $section->id_section,
+            'nom' => $nom,
+            'prenom' => $prenom,
+        ]);
+
+        $inscriptionAdministrative = InscriptionAdministrative::create([
+            'id_etudiant' => $etudiant->id_etudiant,
+            'id_annee' => $annee->id_annee,
+            'id_niveau' => $niveau->id_niveau,
+            'id_section' => null,
+            'date_inscription' => '2026-01-15',
+            'statut' => 'Active',
+            'type_inscription' => 'nouveau',
+        ]);
+
+        return InscriptionPedagogique::create([
+            'id_inscription_admin' => $inscriptionAdministrative->id_inscription_admin,
+            'id_offre' => $offre->id_offre,
+            'type_inscription' => $typeInscription,
+            'credits_acquis' => 0,
+        ]);
     }
 }

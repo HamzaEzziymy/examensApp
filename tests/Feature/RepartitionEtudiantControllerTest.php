@@ -168,6 +168,149 @@ class RepartitionEtudiantControllerTest extends TestCase
         $this->assertSame(1, collect($pdf->viewData['groups'])->sum('total'));
     }
 
+    public function test_salles_places_export_uses_the_same_order_as_the_main_repartition_pdf(): void
+    {
+        $annee = AnneeUniversitaire::factory()->active()->create();
+        $filiere = Filiere::factory()->create(['nom_filiere' => 'Medecine']);
+        $section = Section::factory()->create([
+            'id_filiere' => $filiere->id_filiere,
+            'nom_section' => 'Section Medecine',
+        ]);
+        $niveau = Niveau::factory()->create(['nom_niveau' => 'Licence 1']);
+        $semestre = Semestre::factory()->create([
+            'id_niveau' => $niveau->id_niveau,
+            'nom_semestre' => 'S1',
+        ]);
+        $module = Module::factory()->create([
+            'code_module' => 'MED-S1-001',
+            'nom_module' => 'Anatomie Generale',
+        ]);
+        $salle = Salle::factory()->create([
+            'code_salle' => 'A101',
+            'nom_salle' => 'Salle A101',
+            'capacite' => 40,
+            'capacite_examens' => 40,
+        ]);
+
+        $offre = OffreFormation::create([
+            'id_module' => $module->id_module,
+            'id_semestre' => $semestre->id_semestre,
+            'id_section' => $section->id_section,
+            'id_annee' => $annee->id_annee,
+            'id_coordinateur' => null,
+            'nom_affiche' => 'Anatomie Generale',
+        ]);
+
+        $session = SessionExamen::create([
+            'id_filiere' => null,
+            'id_annee' => $annee->id_annee,
+            'nom_session' => 'Session Commune',
+            'type_session' => 'Normale',
+            'date_session_examen' => '2026-06-01',
+            'quadrimestre' => 2,
+        ]);
+
+        $exam = $this->createExam($session, $module, $salle, '2026-06-10');
+
+        $zuluRegistration = $this->createPedagogicalRegistration($annee, $niveau, $section, $offre, 'Zulu', 'Charlie');
+        $alphaRegistration = $this->createPedagogicalRegistration($annee, $niveau, $section, $offre, 'Alpha', 'Bravo');
+        $betaRegistration = $this->createPedagogicalRegistration($annee, $niveau, $section, $offre, 'Beta', 'Alpha');
+
+        $this->createRepartition($exam, $zuluRegistration, '0001001', 'A101-003');
+        $this->createRepartition($exam, $alphaRegistration, '0001002', 'A101-001');
+        $this->createRepartition($exam, $betaRegistration, '0001003', 'A101-002');
+
+        $controller = app(RepartitionEtudiantController::class);
+        $request = Request::create(
+            route('surveillance.repartition-etudiants.export-salles-places', $exam),
+            'GET'
+        );
+
+        $pdf = $controller->exportSallesPlaces($request, $exam->fresh());
+
+        $this->assertInstanceOf(PdfBuilder::class, $pdf);
+        $this->assertSame('pdfs.repartition-salles-places', $pdf->viewName);
+        $this->assertSame('Session Commune (Normale)', $pdf->viewData['sessionLabel']);
+        $this->assertSame(
+            ['Alpha', 'Beta', 'Zulu'],
+            collect($pdf->viewData['rows'])->pluck('nom')->all()
+        );
+        $this->assertCount(1, $pdf->viewData['groups']);
+    }
+
+    public function test_salles_places_export_splits_each_salle_into_its_own_group(): void
+    {
+        $annee = AnneeUniversitaire::factory()->active()->create();
+        $filiere = Filiere::factory()->create(['nom_filiere' => 'Medecine']);
+        $section = Section::factory()->create([
+            'id_filiere' => $filiere->id_filiere,
+            'nom_section' => 'Section Medecine',
+        ]);
+        $niveau = Niveau::factory()->create(['nom_niveau' => 'Licence 1']);
+        $semestre = Semestre::factory()->create([
+            'id_niveau' => $niveau->id_niveau,
+            'nom_semestre' => 'S1',
+        ]);
+        $module = Module::factory()->create([
+            'code_module' => 'MED-S1-001',
+            'nom_module' => 'Anatomie Generale',
+        ]);
+        $salleA = Salle::factory()->create([
+            'code_salle' => 'A101',
+            'nom_salle' => 'Salle A101',
+            'capacite' => 40,
+            'capacite_examens' => 40,
+        ]);
+        $salleB = Salle::factory()->create([
+            'code_salle' => 'B202',
+            'nom_salle' => 'Salle B202',
+            'capacite' => 40,
+            'capacite_examens' => 40,
+        ]);
+
+        $offre = OffreFormation::create([
+            'id_module' => $module->id_module,
+            'id_semestre' => $semestre->id_semestre,
+            'id_section' => $section->id_section,
+            'id_annee' => $annee->id_annee,
+            'id_coordinateur' => null,
+            'nom_affiche' => 'Anatomie Generale',
+        ]);
+
+        $session = SessionExamen::create([
+            'id_filiere' => null,
+            'id_annee' => $annee->id_annee,
+            'nom_session' => 'Session Commune',
+            'type_session' => 'Normale',
+            'date_session_examen' => '2026-06-01',
+            'quadrimestre' => 2,
+        ]);
+
+        $exam = $this->createExam($session, $module, $salleA, '2026-06-10');
+        $exam->salles()->sync([$salleA->id_salle, $salleB->id_salle]);
+
+        $alphaRegistration = $this->createPedagogicalRegistration($annee, $niveau, $section, $offre, 'Alpha', 'Bravo');
+        $betaRegistration = $this->createPedagogicalRegistration($annee, $niveau, $section, $offre, 'Beta', 'Alpha');
+
+        $this->createRepartition($exam, $alphaRegistration, '0001001', 'A101-001');
+        $this->createRepartition($exam, $betaRegistration, '0002001', 'B202-001');
+
+        $controller = app(RepartitionEtudiantController::class);
+        $request = Request::create(
+            route('surveillance.repartition-etudiants.export-salles-places', $exam),
+            'GET'
+        );
+
+        $pdf = $controller->exportSallesPlaces($request, $exam->fresh());
+
+        $this->assertInstanceOf(PdfBuilder::class, $pdf);
+        $this->assertCount(2, $pdf->viewData['groups']);
+        $this->assertSame(
+            ['Salle A101', 'Salle B202'],
+            collect($pdf->viewData['groups'])->map(fn ($group) => $group['salle']?->nom_salle)->all()
+        );
+    }
+
     private function createExam(SessionExamen $session, Module $module, Salle $salle, string $date): Examen
     {
         return Examen::create([

@@ -39,6 +39,7 @@
         $showAnonymat = in_array('anonymat', $columns);
         $showPresence = in_array('presence', $columns);
         $presenceFilled = $presenceFilled ?? true;
+        $sessionLabel = $sessionLabel ?? ($examen->sessionExamen->nom_session ?? '-');
         $columnCount = 1 + ($showCne ? 1 : 0) + ($showEtudiant ? 1 : 0) + ($showGrille ? 1 : 0) + ($showPlace ? 1 : 0) + ($showAnonymat ? 1 : 0) + ($showPresence ? 1 : 0);
         $groups = $salleGroups ?? collect([[
             'salle' => $examen->salle,
@@ -63,7 +64,7 @@
         <div class="container" style="{{ $groupIndex > 0 ? 'page-break-before: always;' : '' }}">
             <img src="{{ public_path('/logo.png') }}" alt="Logo" style="top: 10px; left: 20px; width: 100%; height: 55px;">
             <div class="date-service" style="margin-top: 6px; width: 100%; display: flex; justify-content: space-between;">
-                <div class="header">{{ $examen->sessionExamen->nom_session ?? '-' }}</div>
+                <div class="header">{{ $sessionLabel }}</div>
                 <div class="date">Fes le : {{ $generatedAt->format('d/m/Y') }}</div>
             </div>
 
@@ -72,16 +73,16 @@
 
             <table class="info-table">
                 <tr>
-                    <td class="label">Module</td>
-                    <td class="value">{{ $examen->module->nom_module ?? '-' }}</td>
+                    <td class="label">Session</td>
+                    <td class="value">{{ $sessionLabel }}</td>
                     <td class="label">Salle</td>
                     <td class="value">{{ $group['salle']->nom_salle ?? ('nb place'.$group['salle_index']) }}</td>
                 </tr>
                 <tr>
+                    <td class="label">Module</td>
+                    <td class="value">{{ $examen->module->nom_module ?? '-' }}</td>
                     <td class="label">Date</td>
                     <td class="value">{{ optional($examen->date_examen)->format('d/m/Y') ?? '-' }}</td>
-                    <!-- <td class="label">Horaire</td> --><td></td>
-                    <td></td><!-- <td class="value">{{ optional($examen->date_debut)->format('H:i') ?? '-' }} - {{ optional($examen->date_fin)->format('H:i') ?? '-' }}</td> -->
                 </tr>
             </table>
 

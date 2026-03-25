@@ -25,6 +25,20 @@ const toInputDateTime = (value) => {
     )}`;
 };
 
+const formatSessionLabel = (session) => {
+    const parts = [session.nom_session];
+
+    if (session.type_session) {
+        parts.push(session.type_session);
+    }
+
+    parts.push(
+        session.date_session_examen ? new Date(session.date_session_examen).toLocaleDateString() : 'Date a confirmer',
+    );
+
+    return parts.join(' - ');
+};
+
 const statusTone = {
     Planifiee: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-200',
     'En cours': 'bg-amber-50 text-amber-600 dark:bg-amber-900/40 dark:text-amber-200',
@@ -58,6 +72,8 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
         id_salle: '',
         salles: [],
         repartition_salles: [],
+        anonymat_start: '',
+        anonymat_end: '',
         date_examen: '',
         date_debut: '',
         date_fin: '',
@@ -85,6 +101,16 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
         () => salles.filter((salle) => data.salles.includes(String(salle.id_salle))),
         [salles, data.salles],
     );
+    const plannedAnonymatCount = useMemo(() => {
+        const start = Number.parseInt(data.anonymat_start, 10);
+        const end = Number.parseInt(data.anonymat_end, 10);
+
+        if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end < start) {
+            return null;
+        }
+
+        return (end - start) + 1;
+    }, [data.anonymat_end, data.anonymat_start]);
 
     useEffect(() => {
         const exists = filteredModules.some((mod) => String(mod.id_module) === String(data.id_module));
@@ -120,6 +146,27 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
         }));
     }, [allocations, data.salles, transform]);
 
+    const autoDistributeSelectedSalles = () => {
+        if (!selectedSalles.length) return;
+
+        const totalStudents =
+            plannedAnonymatCount ??
+            selectedSalles.reduce((sum, salle) => sum + (salle.capacite_examens ?? salle.capacite ?? 0), 0);
+        let remaining = totalStudents;
+        const next = {};
+
+        selectedSalles.forEach((salle, index) => {
+            const roomsLeft = selectedSalles.length - index;
+            const capacity = salle.capacite_examens ?? salle.capacite ?? remaining;
+            const target = Math.ceil(remaining / Math.max(1, roomsLeft));
+            const take = Math.min(capacity > 0 ? capacity : remaining, target, remaining);
+            next[String(salle.id_salle)] = remaining > 0 ? take : '';
+            remaining -= take;
+        });
+
+        setAllocations(next);
+    };
+
     const openModal = (examen) => {
         const moduleData = modules.find((m) => String(m.id_module) === String(examen.id_module));
         const firstSem = moduleData?.semestres?.[0];
@@ -132,6 +179,8 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
             id_module: examen.id_module ?? '',
             id_salle: examen.id_salle ?? '',
             salles: (examen.salles || []).map((s) => String(s.id_salle)),
+            anonymat_start: examen.anonymat_start ?? '',
+            anonymat_end: examen.anonymat_end ?? '',
             date_examen: toInputDate(examen.date_examen),
             date_debut: toInputDateTime(examen.date_debut),
             date_fin: toInputDateTime(examen.date_fin),
@@ -371,7 +420,7 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
                                         <option value="">Sélectionner</option>
                                         {sessions.map((session) => (
                                             <option key={session.id_session_examen} value={session.id_session_examen}>
-                                                {session.nom_session}
+                                                {formatSessionLabel(session)}
                                             </option>
                                         ))}
                                     </select>
@@ -392,6 +441,43 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
                                         ))}
                                     </select>
                                     <InputError message={errors.id_module} className="mt-1" />
+                                </div>
+                            </div>
+
+                            <div className="grid gap-4 sm:grid-cols-2">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-100">Anonymat debut</label>
+                                    <input
+                                        type="number"
+                                        min="1"
+                                        value={data.anonymat_start}
+                                        onChange={(e) => setData('anonymat_start', e.target.value)}
+                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
+                                        placeholder="Ex: 101"
+                                    />
+                                    <InputError message={errors.anonymat_start} className="mt-1" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-100">Anonymat fin</label>
+                                    <input
+                                        type="number"
+                                        min={data.anonymat_start || '1'}
+                                        value={data.anonymat_end}
+                                        onChange={(e) => setData('anonymat_end', e.target.value)}
+                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
+                                        placeholder="Ex: 200"
+                                    />
+                                    <InputError message={errors.anonymat_end} className="mt-1" />
+                                </div>
+                                <div className="sm:col-span-2">
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                                        Laissez vide pour commencer a 1. Si vous renseignez une plage, seuls les anonymats compris entre ces deux valeurs seront generes.
+                                    </p>
+                                    {plannedAnonymatCount !== null && (
+                                        <p className="mt-1 text-xs font-medium text-indigo-600 dark:text-indigo-300">
+                                            {plannedAnonymatCount} anonymats seront generes pour cette planification.
+                                        </p>
+                                    )}
                                 </div>
                             </div>
 
@@ -450,26 +536,7 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
                                     <div className="flex gap-2">
                                         <button
                                             type="button"
-                                            onClick={() => {
-                                                if (!selectedSalles.length) return;
-                                                const totalStudents = selectedSalles.reduce(
-                                                    (sum, salle) => sum + (salle.capacite_examens ?? salle.capacite ?? 0),
-                                                    0,
-                                                );
-                                                let remaining = totalStudents;
-                                                const next = {};
-
-                                                selectedSalles.forEach((salle, index) => {
-                                                    const roomsLeft = selectedSalles.length - index;
-                                                    const capacity = salle.capacite_examens ?? salle.capacite ?? remaining;
-                                                    const target = Math.ceil(remaining / Math.max(1, roomsLeft));
-                                                    const take = Math.min(capacity > 0 ? capacity : remaining, target, remaining);
-                                                    next[String(salle.id_salle)] = remaining > 0 ? take : '';
-                                                    remaining -= take;
-                                                });
-
-                                                setAllocations(next);
-                                            }}
+                                            onClick={autoDistributeSelectedSalles}
                                             disabled={!selectedSalles.length}
                                             className="rounded-lg border border-indigo-200 px-3 py-1.5 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-indigo-500/40 dark:text-indigo-100 dark:hover:bg-indigo-900/40"
                                         >

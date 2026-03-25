@@ -12,6 +12,7 @@ use App\Models\Salle;
 use App\Models\SessionExamen;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
 
@@ -74,6 +75,8 @@ class ExamenController extends Controller
                 'id_session_examen',
                 'id_module',
                 'id_salle',
+                'anonymat_start',
+                'anonymat_end',
                 'date_examen',
                 'date_debut',
                 'date_fin',
@@ -169,8 +172,23 @@ class ExamenController extends Controller
     public function store(Request $request)
     {
         $validated = $this->validateExamen($request);
+        $planAllFilteredModules = (bool) ($validated['plan_all_filtered_modules'] ?? false);
         $manualSplit = collect($validated['repartition_salles'] ?? []);
+        $modulePlannings = $this->normalizedBulkModulePlannings($validated);
         unset($validated['repartition_salles']);
+        $moduleIds = $this->resolvePlanningModuleIds($validated);
+
+        if ($moduleIds->isEmpty()) {
+            return back()
+                ->withErrors([
+                    $planAllFilteredModules
+                        ? 'module_ids'
+                        : 'id_module' => $planAllFilteredModules
+                            ? 'Choisissez un niveau et un semestre contenant des modules a planifier.'
+                            : 'Veuillez selectionner un module.',
+                ])
+                ->withInput();
+        }
 
         $session = SessionExamen::find((int) $validated['id_session_examen'], ['id_session_examen', 'id_annee', 'id_filiere']);
         $preferredFiliereId = $session?->id_filiere ?: $this->currentUserFiliereId();
@@ -192,51 +210,126 @@ class ExamenController extends Controller
             return back()->with('error', 'Veuillez selectionner au moins une salle.');
         }
 
-        // Validate capacity vs expected students
-        $registrations = $this->registrationsForModule(
-            (int) $validated['id_module'],
-            $session?->id_annee,
-            $preferredFiliereId
-        );
-        if ($registrations->isEmpty()) {
-            return back()
-                ->withErrors([
-                    'id_module' => 'Aucun etudiant inscrit pour ce module dans l\'annee academique de la session choisie. Creez les inscriptions pedagogiques avant de planifier cet examen.',
-                ])
-                ->withInput();
-        }
-        $studentCount = $registrations->count();
-        $manualSplit = $this->normalizeManualSplit($manualSplit, $allSalleIds);
-        $manualTotal = (int) $manualSplit->sum('nombre');
-        $expectedCount = $manualTotal > 0 ? $manualTotal : $studentCount;
+        $manualSplit = $planAllFilteredModules
+            ? collect()
+            : $this->normalizeManualSplit($manualSplit, $allSalleIds);
         $salleModels = $this->orderedSalles($allSalleIds);
         $totalCapacity = $salleModels->sum(function ($salle) {
             return $salle->capacite_examens ?? $salle->capacite ?? 0;
         });
 
-        if ($capacityError = $this->validateManualCapacities($manualSplit, $salleModels)) {
+        if (! $planAllFilteredModules && ($capacityError = $this->validateManualCapacities($manualSplit, $salleModels))) {
             return back()->withErrors(['repartition_salles' => $capacityError])->withInput();
         }
 
-        if ($creditAllocationError = $this->validateCreditAllocation($registrations, $salleModels, $manualSplit, $expectedCount)) {
-            return back()->withErrors(['salles' => $creditAllocationError])->withInput();
+        $moduleCatalog = Module::query()
+            ->whereIn('id_module', $moduleIds)
+            ->get(['id_module', 'code_module', 'nom_module'])
+            ->keyBy('id_module');
+
+        $plans = [];
+        foreach ($moduleIds as $moduleId) {
+            $moduleValidated = $validated;
+            $moduleValidated['id_module'] = $moduleId;
+
+            if ($planAllFilteredModules) {
+                $modulePlanning = $modulePlannings->get($moduleId, []);
+                $moduleValidated['anonymat_start'] = null;
+                $moduleValidated['anonymat_end'] = null;
+                $moduleValidated['date_examen'] = $modulePlanning['date_examen'] ?? null;
+                $moduleValidated['date_debut'] = $modulePlanning['date_debut'] ?? null;
+                $moduleValidated['date_fin'] = $modulePlanning['date_fin'] ?? null;
+            }
+
+            $registrations = $this->registrationsForModule(
+                $moduleId,
+                $session?->id_annee,
+                $preferredFiliereId
+            );
+
+            if ($registrations->isEmpty()) {
+                return back()
+                    ->withErrors([
+                        $planAllFilteredModules
+                            ? 'module_ids'
+                            : 'id_module' => $this->planningModuleMessage(
+                                $moduleCatalog->get($moduleId),
+                                $moduleId,
+                                'Aucun etudiant inscrit pour ce module dans l\'annee academique de la session choisie. Creez les inscriptions pedagogiques avant de planifier cet examen.',
+                                $planAllFilteredModules
+                            ),
+                    ])
+                    ->withInput();
+            }
+
+            $studentCount = $registrations->count();
+            [$expectedCount, $rangeErrors] = $planAllFilteredModules
+                ? [$studentCount, null]
+                : $this->resolveExpectedCount($moduleValidated, $studentCount, (int) $manualSplit->sum('nombre'));
+
+            if ($rangeErrors) {
+                return back()->withErrors($rangeErrors)->withInput();
+            }
+
+            if ($creditAllocationError = $this->validateCreditAllocation($registrations, $salleModels, $manualSplit, $expectedCount)) {
+                return back()
+                    ->withErrors([
+                        'salles' => $this->planningModuleMessage(
+                            $moduleCatalog->get($moduleId),
+                            $moduleId,
+                            $creditAllocationError,
+                            $planAllFilteredModules
+                        ),
+                    ])
+                    ->withInput();
+            }
+
+            if ($expectedCount > $totalCapacity) {
+                return back()
+                    ->withErrors([
+                        'salles' => $this->planningModuleMessage(
+                            $moduleCatalog->get($moduleId),
+                            $moduleId,
+                            'Capacite des salles insuffisante pour les etudiants a repartir. Ajoutez une salle ou ajustez la repartition.',
+                            $planAllFilteredModules
+                        ),
+                    ])
+                    ->withInput();
+            }
+
+            $plans[] = [
+                'validated' => $moduleValidated,
+                'registrations' => $registrations,
+                'expectedCount' => $expectedCount,
+                'manualSplit' => $manualSplit,
+            ];
         }
 
-        if ($expectedCount > $totalCapacity) {
-            return back()
-                ->withErrors(['salles' => 'Capacite des salles insuffisante pour les etudiants a repartir. Ajoutez une salle ou ajustez la repartition.'])
-                ->withInput();
-        }
+        $createdCount = 0;
+        DB::transaction(function () use ($plans, $allSalleIds, $salleModels, &$createdCount) {
+            foreach ($plans as $plan) {
+                $attributes = $plan['validated'];
+                unset($attributes['plan_all_filtered_modules'], $attributes['module_ids'], $attributes['module_plannings']);
 
-        $examen = Examen::create($validated);
-        $examen->salles()->sync($allSalleIds);
-        $examen->load('salles:id_salle,code_salle,capacite_examens,capacite');
+                $examen = Examen::create($attributes);
+                $examen->salles()->sync($allSalleIds);
+                $examen->load('salles:id_salle,code_salle,capacite_examens,capacite');
 
-        $this->generateInitialRepartition($examen, $registrations, $expectedCount, $manualSplit, $salleModels);
+                $this->generateInitialRepartition(
+                    $examen,
+                    $plan['registrations'],
+                    $plan['expectedCount'],
+                    $plan['manualSplit'],
+                    $salleModels
+                );
+
+                $createdCount++;
+            }
+        });
 
         return redirect()
             ->route('examens.examens.index')
-            ->with('success', 'Examen planifi?.');
+            ->with('success', $createdCount > 1 ? sprintf('%d examens planifies.', $createdCount) : 'Examen planifie.');
     }
 
     public function show(Examen $examen)
@@ -254,6 +347,11 @@ class ExamenController extends Controller
         $validated = $this->validateExamen($request);
         $manualSplit = collect($validated['repartition_salles'] ?? []);
         unset($validated['repartition_salles']);
+        unset($validated['plan_all_filtered_modules'], $validated['module_ids'], $validated['module_plannings']);
+
+        if (! ($validated['id_module'] ?? null)) {
+            return back()->withErrors(['id_module' => 'Veuillez selectionner un module.'])->withInput();
+        }
 
         $session = SessionExamen::find((int) $validated['id_session_examen'], ['id_session_examen', 'id_annee', 'id_filiere']);
         $preferredFiliereId = $session?->id_filiere ?: $this->currentUserFiliereId();
@@ -290,8 +388,10 @@ class ExamenController extends Controller
         }
         $studentCount = $registrations->count();
         $manualSplit = $this->normalizeManualSplit($manualSplit, $allSalleIds);
-        $manualTotal = (int) $manualSplit->sum('nombre');
-        $expectedCount = $manualTotal > 0 ? $manualTotal : $studentCount;
+        [$expectedCount, $rangeErrors] = $this->resolveExpectedCount($validated, $studentCount, (int) $manualSplit->sum('nombre'));
+        if ($rangeErrors) {
+            return back()->withErrors($rangeErrors)->withInput();
+        }
         $salleModels = $this->orderedSalles($allSalleIds);
         $totalCapacity = $salleModels->sum(function ($salle) {
             return $salle->capacite_examens ?? $salle->capacite ?? 0;
@@ -347,23 +447,97 @@ class ExamenController extends Controller
                 ->filter()
                 ->values()
                 ->all(),
+            'module_plannings' => collect($request->input('module_plannings', []))
+                ->map(function ($planning) {
+                    if (! is_array($planning)) {
+                        return null;
+                    }
+
+                    return [
+                        'id_module' => $planning['id_module'] ?? $planning['module_id'] ?? null,
+                        'date_examen' => $planning['date_examen'] ?? null,
+                        'date_debut' => $planning['date_debut'] ?? null,
+                        'date_fin' => $planning['date_fin'] ?? null,
+                    ];
+                })
+                ->filter()
+                ->values()
+                ->all(),
         ]);
 
-        return $request->validate([
+        $planAllFilteredModules = $request->boolean('plan_all_filtered_modules');
+
+        $validator = validator($request->all(), [
             'id_session_examen' => ['required', 'exists:sessions_examen,id_session_examen'],
-            'id_module'         => ['required', 'exists:modules,id_module'],
+            'id_module'         => [Rule::requiredIf(! $planAllFilteredModules), 'nullable', 'exists:modules,id_module'],
+            'plan_all_filtered_modules' => ['sometimes', 'boolean'],
+            'module_ids'        => ['nullable', 'array'],
+            'module_ids.*'      => ['nullable', 'exists:modules,id_module'],
+            'module_plannings'  => ['nullable', 'array'],
+            'module_plannings.*.id_module' => ['nullable', 'exists:modules,id_module'],
+            'module_plannings.*.date_examen' => ['nullable', 'date'],
+            'module_plannings.*.date_debut' => ['nullable', 'date'],
+            'module_plannings.*.date_fin' => ['nullable', 'date'],
             'id_salle'          => ['nullable', 'exists:salles,id_salle'],
             'salles'            => ['nullable', 'array'],
             'salles.*'          => ['nullable', 'exists:salles,id_salle'],
             'repartition_salles'            => ['nullable', 'array'],
             'repartition_salles.*.id_salle' => ['required_with:repartition_salles.*.nombre', 'exists:salles,id_salle'],
             'repartition_salles.*.nombre'   => ['nullable', 'integer', 'min:1'],
-            'date_examen'       => ['required', 'date'],
-            'date_debut'        => ['required', 'date'],
-            'date_fin'          => ['required', 'date', 'after:date_debut'],
+            'anonymat_start'    => ['nullable', 'integer', 'min:1', 'required_with:anonymat_end'],
+            'anonymat_end'      => ['nullable', 'integer', 'min:1', 'gte:anonymat_start', 'required_with:anonymat_start'],
+            'date_examen'       => [Rule::requiredIf(! $planAllFilteredModules), 'nullable', 'date'],
+            'date_debut'        => [Rule::requiredIf(! $planAllFilteredModules), 'nullable', 'date'],
+            'date_fin'          => [Rule::requiredIf(! $planAllFilteredModules), 'nullable', 'date', 'after:date_debut'],
             'statut'            => ['required', Rule::in(Examen::STATUTS)],
             'description'       => ['nullable', 'string'],
         ]);
+
+        $validator->after(function ($validator) use ($planAllFilteredModules, $request) {
+            if (! $planAllFilteredModules) {
+                return;
+            }
+
+            $plannings = collect($request->input('module_plannings', []));
+            if ($plannings->isEmpty()) {
+                $validator->errors()->add('module_plannings', 'Renseignez les dates de chaque module a planifier.');
+                return;
+            }
+
+            $seenModules = [];
+            foreach ($plannings as $index => $planning) {
+                $moduleId = (int) ($planning['id_module'] ?? 0);
+                $dateExamen = $planning['date_examen'] ?? null;
+                $dateDebut = $planning['date_debut'] ?? null;
+                $dateFin = $planning['date_fin'] ?? null;
+
+                if (! $moduleId) {
+                    $validator->errors()->add("module_plannings.$index.id_module", 'Module invalide.');
+                } elseif (isset($seenModules[$moduleId])) {
+                    $validator->errors()->add("module_plannings.$index.id_module", 'Ce module est present plusieurs fois.');
+                }
+
+                $seenModules[$moduleId] = true;
+
+                if (! $dateExamen) {
+                    $validator->errors()->add("module_plannings.$index.date_examen", 'La date de l\'examen est obligatoire.');
+                }
+
+                if (! $dateDebut) {
+                    $validator->errors()->add("module_plannings.$index.date_debut", 'L\'heure de debut est obligatoire.');
+                }
+
+                if (! $dateFin) {
+                    $validator->errors()->add("module_plannings.$index.date_fin", 'L\'heure de fin est obligatoire.');
+                }
+
+                if ($dateDebut && $dateFin && strtotime((string) $dateFin) <= strtotime((string) $dateDebut)) {
+                    $validator->errors()->add("module_plannings.$index.date_fin", 'L\'heure de fin doit etre apres l\'heure de debut.');
+                }
+            }
+        });
+
+        return $validator->validate();
     }
 
     private function generateInitialRepartition(
@@ -378,6 +552,10 @@ class ExamenController extends Controller
             (int) $examen->id_module,
             $examen->sessionExamen?->id_annee,
             $this->preferredExamFiliereId($examen)
+        );
+        $limitCount ??= $this->anonymatRangeCount(
+            $examen->anonymat_start ? (int) $examen->anonymat_start : null,
+            $examen->anonymat_end ? (int) $examen->anonymat_end : null
         );
         $registrations = $this->orderRegistrationsForRepartition(collect($registrations));
         if ($registrations->isEmpty()) {
@@ -404,7 +582,7 @@ class ExamenController extends Controller
         }
 
         $now = now();
-        $seq = 1;
+        $seq = $examen->anonymat_start ? (int) $examen->anonymat_start : 1;
         $anonRows = [];
         $repartitionRows = [];
 
@@ -543,7 +721,7 @@ class ExamenController extends Controller
                 : ($index + 1);
 
             foreach ($slice as $ip) {
-                $codeAnonymat = sprintf('ANON-%d-%03d', $examen->id_examen, $seq);
+                $codeAnonymat = (string) $seq;
                 $grilleCode = (int) sprintf(
                     '%d%d%d%d%03d',
                     $filiereCode,
@@ -584,6 +762,112 @@ class ExamenController extends Controller
         if ($repartitionRows) {
             RepartitionEtudiant::insert($repartitionRows);
         }
+    }
+
+    private function resolveExpectedCount(array $validated, int $studentCount, int $manualTotal = 0): array
+    {
+        $anonymatStart = isset($validated['anonymat_start']) ? (int) $validated['anonymat_start'] : null;
+        $anonymatEnd = isset($validated['anonymat_end']) ? (int) $validated['anonymat_end'] : null;
+        $rangeCount = $this->anonymatRangeCount($anonymatStart, $anonymatEnd);
+
+        if ($rangeCount === null) {
+            return [$manualTotal > 0 ? $manualTotal : $studentCount, null];
+        }
+
+        if ($rangeCount > $studentCount) {
+            return [
+                null,
+                [
+                    'anonymat_end' => sprintf(
+                        'La plage d\'anonymats demandee couvre %d etudiants, mais seulement %d inscriptions sont disponibles pour ce module.',
+                        $rangeCount,
+                        $studentCount
+                    ),
+                ],
+            ];
+        }
+
+        if ($manualTotal > 0 && $manualTotal !== $rangeCount) {
+            return [
+                null,
+                [
+                    'repartition_salles' => sprintf(
+                        'La repartition manuelle doit couvrir exactement %d anonymats pour correspondre a la plage %d-%d.',
+                        $rangeCount,
+                        $anonymatStart,
+                        $anonymatEnd
+                    ),
+                ],
+            ];
+        }
+
+        return [$rangeCount, null];
+    }
+
+    private function resolvePlanningModuleIds(array $validated): Collection
+    {
+        if (! empty($validated['plan_all_filtered_modules'])) {
+            $moduleIds = collect($validated['module_plannings'] ?? [])
+                ->pluck('id_module')
+                ->filter();
+
+            if ($moduleIds->isEmpty()) {
+                $moduleIds = collect($validated['module_ids'] ?? []);
+            }
+
+            return $moduleIds
+                ->filter()
+                ->map(fn ($id) => (int) $id)
+                ->unique()
+                ->values();
+        }
+
+        return collect([$validated['id_module'] ?? null])
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+    }
+
+    private function normalizedBulkModulePlannings(array $validated): Collection
+    {
+        return collect($validated['module_plannings'] ?? [])
+            ->map(function ($planning) {
+                if (! is_array($planning) || empty($planning['id_module'])) {
+                    return null;
+                }
+
+                return [
+                    'id_module' => (int) $planning['id_module'],
+                    'date_examen' => $planning['date_examen'] ?? null,
+                    'date_debut' => $planning['date_debut'] ?? null,
+                    'date_fin' => $planning['date_fin'] ?? null,
+                ];
+            })
+            ->filter()
+            ->keyBy('id_module');
+    }
+
+    private function planningModuleMessage(?Module $module, int $moduleId, string $message, bool $prefixModule = false): string
+    {
+        if (! $prefixModule) {
+            return $message;
+        }
+
+        $label = $module
+            ? trim(($module->code_module ? $module->code_module.' - ' : '').($module->nom_module ?? ''))
+            : 'Module '.$moduleId;
+
+        return sprintf('%s: %s', $label, $message);
+    }
+
+    private function anonymatRangeCount(?int $anonymatStart, ?int $anonymatEnd): ?int
+    {
+        if ($anonymatStart === null || $anonymatEnd === null) {
+            return null;
+        }
+
+        return ($anonymatEnd - $anonymatStart) + 1;
     }
 
     private function normalizeManualSplit(Collection $manualSplit, Collection $allowedSalleIds): Collection

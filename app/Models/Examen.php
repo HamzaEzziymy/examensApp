@@ -21,6 +21,8 @@ class Examen extends Model
         'id_session_examen',
         'id_module',
         'id_salle',
+        'anonymat_start',
+        'anonymat_end',
         'date_examen',
         'date_debut',
         'date_fin',
@@ -28,6 +30,8 @@ class Examen extends Model
         'description',
     ];
     protected $casts = [
+        'anonymat_start' => 'integer',
+        'anonymat_end'   => 'integer',
         'date_examen' => 'date',
         'date_debut'  => 'datetime',
         'date_fin'    => 'datetime',
