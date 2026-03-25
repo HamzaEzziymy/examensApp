@@ -1,7 +1,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head, useForm, Link, usePage } from '@inertiajs/react';
 import { useState } from 'react';
-import { Users, Edit3, Trash2, Search, ChevronLeft, ChevronRight, CheckCircle, Clock, AlertCircle, FileText } from 'lucide-react';
+import { Users, Edit3, Trash2, Search, ChevronLeft, ChevronRight, CheckCircle, Clock, FileText } from 'lucide-react';
 import InputError from '@/Components/InputError';
 
 export default function CorrectorsIndex({ correcteurs = {}, examens = [], enseignants = [], elements = [], sessions = [] }) {

@@ -37,12 +37,4 @@ class Correcteur extends Model
     {
         return $this->belongsTo(ElementModule::class, 'id_element', 'id_element');
     }
-<<<<<<< HEAD
-=======
-
-    public function notes(): HasMany
-    {
-        return $this->hasMany(Note::class, 'id_examen', 'id_examen');
-    }
->>>>>>> 7acd31734ed3535860e911b345d76df2f5164380
 }
