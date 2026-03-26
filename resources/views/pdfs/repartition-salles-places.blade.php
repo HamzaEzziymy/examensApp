@@ -41,6 +41,19 @@
             $groupRows = collect($group['rows'] ?? []);
             $normalRows = $groupRows->reject(fn ($row) => !empty($row['is_credit']))->values();
             $creditRows = $groupRows->filter(fn ($row) => !empty($row['is_credit']))->values();
+            $formatPlace = function ($place) {
+                $value = trim((string) ($place ?? ''));
+                if ($value === '') {
+                    return '-';
+                }
+
+                if (str_contains($value, '-')) {
+                    $parts = explode('-', $value);
+                    return trim((string) end($parts)) ?: '-';
+                }
+
+                return $value;
+            };
         @endphp
         <div class="page" style="{{ $groupIndex > 0 ? 'page-break-before: always;' : '' }}">
             <div class="masthead">
@@ -67,38 +80,32 @@
             <table class="list">
                 <thead>
                     <tr>
-                        <th style="width: 10%;">No</th>
-                        <th style="width: 65%;">Nom et Prenom</th>
+                        <th style="width: 20%;">CNE</th>
+                        <th style="width: 55%;">Nom et Prenom</th>
                         <th style="width: 25%;">Place</th>
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach($normalRows as $index => $row)
+                    @foreach($normalRows as $row)
                         <tr>
-                            <td class="center">{{ $index + 1 }}</td>
+                            <td class="center">{{ $row['cne'] ?? '-' }}</td>
                             <td>
                                 <span class="student-name">{{ trim(($row['nom'] ?? '') . ' ' . ($row['prenom'] ?? '')) }}</span>
-                                @if(!empty($row['cne']))
-                                    <span class="student-cne">({{ $row['cne'] }})</span>
-                                @endif
                             </td>
-                            <td class="center">{{ $row['numero_place'] ?? '-' }}</td>
+                            <td class="center">{{ $formatPlace($row['numero_place'] ?? null) }}</td>
                         </tr>
                     @endforeach
                     @if($creditRows->isNotEmpty())
                         <tr class="section-row">
                             <td colspan="3">Etudiants en credit</td>
                         </tr>
-                        @foreach($creditRows as $creditIndex => $row)
+                        @foreach($creditRows as $row)
                             <tr>
-                                <td class="center">{{ $normalRows->count() + $creditIndex + 1 }}</td>
+                                <td class="center">{{ $row['cne'] ?? '-' }}</td>
                                 <td>
                                     <span class="student-name">{{ trim(($row['nom'] ?? '') . ' ' . ($row['prenom'] ?? '')) }}</span>
-                                    @if(!empty($row['cne']))
-                                        <span class="student-cne">({{ $row['cne'] }})</span>
-                                    @endif
                                 </td>
-                                <td class="center">{{ $row['numero_place'] ?? '-' }}</td>
+                                <td class="center">{{ $formatPlace($row['numero_place'] ?? null) }}</td>
                             </tr>
                         @endforeach
                     @endif

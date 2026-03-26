@@ -547,14 +547,14 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         await downloadPdfPerSalle(baseUrl, new URLSearchParams(), 'presence-collective');
     };
 
-    const handleSallesPlacesExport = () => {
+    const handleSallesPlacesExport = async () => {
         if (!selectedExamenId) {
             Swal.fire({ icon: 'info', title: 'Choisissez un examen' });
             return;
         }
 
-        const url = route('surveillance.repartition-etudiants.export-salles-places', selectedExamenId);
-        window.open(url, '_blank');
+        const baseUrl = route('surveillance.repartition-etudiants.export-salles-places', selectedExamenId);
+        await downloadPdfPerSalle(baseUrl, new URLSearchParams(), 'repartition-salles-places');
     };
 
     const handleExcelTemplates = async () => {

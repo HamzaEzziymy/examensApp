@@ -690,84 +690,73 @@ class RepartitionEtudiantController extends Controller
             $salles = collect([$examen->salle]);
         }
 
-        $orderedSalleGroups = $this->buildSalleGroupsWithCollectiveOrder($examen, $repartitions, $salles);
-        if ($orderedSalleGroups && $orderedSalleGroups->isNotEmpty()) {
-            $salleGroups = $orderedSalleGroups
-                ->map(function ($group) use ($salles) {
-                    $groupRows = collect($group['rows'] ?? [])->map(function ($rep) use ($salles) {
-                        $salleIndex = $this->salleIndexFromGrille($rep->code_grille);
-                        $salle = $salles[$salleIndex - 1] ?? null;
-
-                        return [
-                            'cne'          => $rep->inscriptionPedagogique->inscriptionAdministrative->etudiant->cne ?? '',
-                            'nom'          => $rep->inscriptionPedagogique->inscriptionAdministrative->etudiant->nom ?? '',
-                            'prenom'       => $rep->inscriptionPedagogique->inscriptionAdministrative->etudiant->prenom ?? '',
-                            'is_credit'    => strtolower((string) ($rep->inscriptionPedagogique->type_inscription ?? '')) === 'credit',
-                            'salle'        => $salle->nom_salle ?? ('Salle '.$salleIndex),
-                            'code_salle'   => $salle->code_salle ?? null,
-                            'numero_place' => $rep->numero_place,
-                            'code_grille'  => $rep->code_grille,
-                            'salle_index'  => $salleIndex,
-                        ];
-                    })->values();
-
+        // The room plan must reflect the persisted seat assignment exactly as stored
+        // in repartition_etudiants, not the collective ordering used for other exports.
+        $salleGroups = $repartitions
+            ->groupBy(fn ($rep) => $this->salleIndexFromGrille($rep->code_grille))
+            ->sortKeys()
+            ->map(function ($groupRows, $salleIndex) use ($salles) {
+                $salle = $salles[$salleIndex - 1] ?? null;
+                $rows = $groupRows->map(function ($rep) use ($salle, $salleIndex) {
                     return [
-                        'salle' => $group['salle'] ?? null,
-                        'rows' => $groupRows,
-                        'total' => $groupRows->count(),
-                        'salle_index' => (int) ($group['salle_index'] ?? 1),
+                        'cne'          => $rep->inscriptionPedagogique->inscriptionAdministrative->etudiant->cne ?? '',
+                        'nom'          => $rep->inscriptionPedagogique->inscriptionAdministrative->etudiant->nom ?? '',
+                        'prenom'       => $rep->inscriptionPedagogique->inscriptionAdministrative->etudiant->prenom ?? '',
+                        'is_credit'    => strtolower((string) ($rep->inscriptionPedagogique->type_inscription ?? '')) === 'credit',
+                        'salle'        => $salle->nom_salle ?? ('Salle '.$salleIndex),
+                        'code_salle'   => $salle->code_salle ?? null,
+                        'numero_place' => $rep->numero_place,
+                        'code_grille'  => $rep->code_grille,
+                        'salle_index'  => (int) $salleIndex,
                     ];
-                })
-                ->values();
-        } else {
-            $salleGroups = $repartitions
-                ->groupBy(fn ($rep) => $this->salleIndexFromGrille($rep->code_grille))
-                ->sortKeys()
-                ->map(function ($groupRows, $salleIndex) use ($salles) {
-                    $salle = $salles[$salleIndex - 1] ?? null;
-                    $rows = $groupRows->map(function ($rep) use ($salle, $salleIndex) {
-                        return [
-                            'cne'          => $rep->inscriptionPedagogique->inscriptionAdministrative->etudiant->cne ?? '',
-                            'nom'          => $rep->inscriptionPedagogique->inscriptionAdministrative->etudiant->nom ?? '',
-                            'prenom'       => $rep->inscriptionPedagogique->inscriptionAdministrative->etudiant->prenom ?? '',
-                            'is_credit'    => strtolower((string) ($rep->inscriptionPedagogique->type_inscription ?? '')) === 'credit',
-                            'salle'        => $salle->nom_salle ?? ('Salle '.$salleIndex),
-                            'code_salle'   => $salle->code_salle ?? null,
-                            'numero_place' => $rep->numero_place,
-                            'code_grille'  => $rep->code_grille,
-                            'salle_index'  => (int) $salleIndex,
-                        ];
-                    })->values();
+                })->values();
 
-                    return [
-                        'salle' => $salle,
-                        'rows' => $rows,
-                        'total' => $rows->count(),
-                        'salle_index' => (int) $salleIndex,
-                    ];
-                })
-                ->values();
-        }
-
-        $payload = [
-            'examen'       => $examen,
-            'rows'         => $salleGroups->flatMap(fn ($group) => $group['rows'] ?? collect())->values(),
-            'groups'       => $salleGroups,
-            'generatedAt'  => now(),
-            'niveauFiliere'=> $this->niveauFiliereLabel($examen),
-            'sessionLabel' => $this->sessionLabel($examen),
-        ];
+                return [
+                    'salle' => $salle,
+                    'rows' => $rows,
+                    'total' => $rows->count(),
+                    'salle_index' => (int) $salleIndex,
+                ];
+            })
+            ->values();
 
         $footerSalleLabel = $salles->pluck('nom_salle')->filter()->unique()->implode(' | ');
         if (empty($footerSalleLabel) && $examen->salle) {
             $footerSalleLabel = $examen->salle->nom_salle;
         }
 
+        $exportGroups = $salleGroups;
         $filename = sprintf(
             'repartition-salles-places-%s-%s.pdf',
             $examen->module->code_module ?? 'examen',
             $examen->id_examen
         );
+
+        $requestedSalleIndex = $request->integer('salle_index');
+        if ($requestedSalleIndex) {
+            $targetGroup = $salleGroups->firstWhere('salle_index', $requestedSalleIndex);
+            if (! $targetGroup) {
+                return back()->with('error', 'Aucune repartition pour cette salle.');
+            }
+
+            $exportGroups = collect([$targetGroup]);
+            $footerSalleLabel = $targetGroup['salle']->nom_salle ?? ('Salle '.$targetGroup['salle_index']);
+            $filename = sprintf(
+                'repartition-salles-places-%s-%s-salle-%s.pdf',
+                $examen->module->code_module ?? 'examen',
+                $examen->id_examen,
+                $targetGroup['salle_index']
+            );
+        }
+
+        $payload = [
+            'examen'       => $examen,
+            'rows'         => $exportGroups->flatMap(fn ($group) => $group['rows'] ?? collect())->values(),
+            'groups'       => $exportGroups,
+            'generatedAt'  => now(),
+            'niveauFiliere'=> $this->niveauFiliereLabel($examen),
+            'sessionLabel' => $this->sessionLabel($examen),
+        ];
 
         return Pdf::view('pdfs.repartition-salles-places', $payload)
             ->format('a4')
