@@ -5,7 +5,6 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Correcteur extends Model
 {
@@ -37,10 +36,5 @@ class Correcteur extends Model
     public function element(): BelongsTo
     {
         return $this->belongsTo(ElementModule::class, 'id_element', 'id_element');
-    }
-
-    public function notes(): HasMany
-    {
-        return $this->hasMany(Note::class, 'id_examen', 'id_examen');
     }
 }

@@ -148,7 +148,7 @@ export default function Display({
     // Filter available modules based on what's already used
     const getAvailableModules = () => {
         // Get all module IDs that are already used in existing offres
-        const usedModuleIds = initialOffres.map(offre => offre.id_module);
+        const usedModuleIds = offres.map(offre => offre.id_module);
         
         let availableModules = [];
         
