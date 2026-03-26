@@ -351,9 +351,10 @@ export default function ExamensCalendar({ examens, sessions, modules, salles, st
             />
 
             {editorOpen && (
-                <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
-                    <div className="w-full max-w-3xl rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-800">
-                        <div className="mb-4 flex items-center justify-between">
+                <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40">
+                    <div className="flex min-h-full items-start justify-center p-3 sm:p-4 lg:p-6">
+                    <div className="my-3 flex w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-gray-800 sm:my-6 sm:max-h-[calc(100vh-3rem)]">
+                        <div className="mb-0 flex items-center justify-between border-b border-gray-200 px-4 py-4 dark:border-gray-700 sm:px-6">
                             <div>
                                 <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Details / modification</h3>
                                 {selectedExam && (
@@ -371,8 +372,9 @@ export default function ExamensCalendar({ examens, sessions, modules, salles, st
                             </button>
                         </div>
 
+                        <div className="overflow-y-auto px-4 pb-4 sm:px-6 sm:pb-6">
                         {selectedExam && (
-                            <div className="mb-4 grid gap-4 rounded-lg bg-gray-50 p-4 text-sm text-gray-700 dark:bg-gray-700/40 dark:text-gray-200 lg:grid-cols-3">
+                            <div className="mb-4 mt-4 grid gap-4 rounded-lg bg-gray-50 p-4 text-sm text-gray-700 dark:bg-gray-700/40 dark:text-gray-200 sm:grid-cols-2 xl:grid-cols-3">
                                 <div>
                                     <p className="font-semibold">Session</p>
                                     <p>{selectedExam.session_examen?.nom_session ?? '-'}</p>
@@ -388,7 +390,7 @@ export default function ExamensCalendar({ examens, sessions, modules, salles, st
                             </div>
                         )}
 
-                        <form onSubmit={handleSubmit} className="grid gap-4 lg:grid-cols-2">
+                        <form onSubmit={handleSubmit} className="grid min-w-0 gap-4 lg:grid-cols-2">
                             <div>
                                 <label className="text-sm font-medium text-gray-700 dark:text-gray-200">Session</label>
                                 <select
@@ -410,7 +412,7 @@ export default function ExamensCalendar({ examens, sessions, modules, salles, st
                                 <select
                                     value={data.id_module}
                                     onChange={(event) => setData('id_module', event.target.value)}
-                                    className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
+                                    className="mt-1 min-h-[8rem] w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
                                 >
                                     <option value="">Selectionner</option>
                                     {modules.map((module) => (
@@ -516,7 +518,7 @@ export default function ExamensCalendar({ examens, sessions, modules, salles, st
                                 <InputError message={errors.repartition_salles} className="mt-2" />
                             </div>
 
-                            <div className="lg:col-span-2 grid gap-4 sm:grid-cols-3">
+                            <div className="grid gap-4 sm:grid-cols-2 lg:col-span-2 xl:grid-cols-3">
                                 <div>
                                     <label className="text-sm font-medium text-gray-700 dark:text-gray-200">Date</label>
                                     <input
@@ -562,32 +564,34 @@ export default function ExamensCalendar({ examens, sessions, modules, salles, st
                                 <InputError message={errors.description} className="mt-1" />
                             </div>
 
-                            <div className="lg:col-span-2 flex items-center justify-between gap-3">
+                            <div className="flex flex-col gap-3 lg:col-span-2 sm:flex-row sm:items-center sm:justify-between">
                                 <button
                                     type="button"
                                     onClick={handleDelete}
-                                    className="rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50 dark:border-red-500/40 dark:text-red-200 dark:hover:bg-red-500/10"
+                                    className="w-full rounded-lg border border-red-200 px-4 py-2 text-sm font-semibold text-red-700 transition hover:bg-red-50 dark:border-red-500/40 dark:text-red-200 dark:hover:bg-red-500/10 sm:w-auto"
                                 >
                                     Supprimer
                                 </button>
-                                <div className="flex items-center gap-3">
+                                <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center">
                                     <button
                                         type="button"
                                         onClick={closeEditor}
-                                        className="rounded-lg px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+                                        className="w-full rounded-lg px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700 sm:w-auto"
                                     >
                                         Annuler
                                     </button>
                                     <button
                                         type="submit"
                                         disabled={processing}
-                                        className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70"
+                                        className="w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto"
                                     >
                                         Mettre a jour
                                     </button>
                                 </div>
                             </div>
                         </form>
+                        </div>
+                    </div>
                     </div>
                 </div>
             )}

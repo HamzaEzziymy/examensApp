@@ -247,7 +247,7 @@ export default function PlanifierForm({
     };
 
     const formBody = (
-        <form onSubmit={submit} className="mt-4 space-y-4">
+        <form onSubmit={submit} className="mt-4 min-w-0 space-y-4">
             <div className="grid gap-4 sm:grid-cols-2">
                 <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Session</label>
@@ -270,7 +270,7 @@ export default function PlanifierForm({
                     )}
                     <InputError message={errors.id_session_examen} className="mt-1" />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Niveau</label>
                         <select
@@ -420,7 +420,7 @@ export default function PlanifierForm({
                     multiple
                     value={data.salles}
                     onChange={(e) => setData('salles', Array.from(e.target.selectedOptions).map((opt) => opt.value))}
-                    className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
+                    className="mt-1 min-h-[8rem] w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
                 >
                     {salles.map((salle) => (
                         <option key={salle.id_salle} value={String(salle.id_salle)}>
@@ -459,7 +459,7 @@ export default function PlanifierForm({
                                     <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">
                                         {module ? formatModuleLabel(module) : `Module ${planning.id_module}`}
                                     </div>
-                                    <div className="mt-3 grid gap-3 lg:grid-cols-3">
+                                    <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                                         <div>
                                             <label className="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
                                                 Date
@@ -568,7 +568,7 @@ export default function PlanifierForm({
             )}
 
             {!isBulkPlanning && (
-                <div className="grid gap-4 sm:grid-cols-3">
+                <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Date</label>
                         <input
@@ -630,12 +630,12 @@ export default function PlanifierForm({
                 <InputError message={errors.description} className="mt-1" />
             </div>
 
-            <div className="flex justify-end gap-3">
+            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                 {onCancel && (
                     <button
                         type="button"
                         onClick={onCancel}
-                        className="rounded-lg px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+                        className="w-full rounded-lg px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700 sm:w-auto"
                     >
                         Annuler
                     </button>
@@ -643,7 +643,7 @@ export default function PlanifierForm({
                 <button
                     type="submit"
                     disabled={processing}
-                    className="inline-flex items-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70"
+                    className="inline-flex w-full items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto"
                 >
                     Programmer
                 </button>
@@ -663,7 +663,7 @@ export default function PlanifierForm({
     }
 
     return (
-        <div className="rounded-xl bg-white p-6 shadow dark:bg-gray-800">
+        <div className="rounded-xl bg-white p-4 shadow dark:bg-gray-800 sm:p-6">
             {!hideTitle && <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Planifier un examen</h2>}
             {formBody}
         </div>

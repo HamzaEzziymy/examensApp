@@ -2,9 +2,10 @@
 import { Head, router, useForm } from '@inertiajs/react';
 import ExamHeader from '../Header';
 import { useEffect, useMemo, useState } from 'react';
+import Dropdown from '@/Components/Dropdown';
 import InputError from '@/Components/InputError';
 import Swal from 'sweetalert2';
-import { CheckCircle2, Edit3, FileSpreadsheet, Trash2, XCircle } from 'lucide-react';
+import { CheckCircle2, ChevronDown, Edit3, FileSpreadsheet, Trash2, XCircle } from 'lucide-react';
 import XlsxPopulate from 'xlsx-populate/browser/xlsx-populate';
 
 const badgeClasses = (present) =>
@@ -43,6 +44,11 @@ const ensureXlsxExtension = (value) => {
 };
 
 const TEMPLATE_URL = '/templates/repartition.xlsx';
+const TEMPLATE_TABLE_PATH = 'xl/tables/table1.xml';
+const TEMPLATE_HEADER_ROW = 9;
+const TEMPLATE_START_ROW = 10;
+const TEMPLATE_REPEAT_ROW = 11;
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
 const safeSheetName = (value) => {
     const name = (value || 'Sheet').replace(/[\\/?*[\]:]/g, ' ').trim() || 'Sheet';
@@ -74,6 +80,70 @@ const downloadBlob = (blob, filename) => {
     link.click();
     link.remove();
     window.URL.revokeObjectURL(blobUrl);
+};
+
+const salleIndexFromGrille = (value) => {
+    const str = String(value ?? '').padStart(7, '0');
+    const digit = Number(str.charAt(3));
+    return Number.isNaN(digit) || digit < 1 ? 1 : digit;
+};
+
+const extractFilenameFromDisposition = (disposition, fallbackFilename) => {
+    const match = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/i.exec(disposition || '');
+    return match ? match[1].replace(/['"]/g, '') : fallbackFilename;
+};
+
+const cloneTemplateCellStyle = (sourceCell, targetCell) => {
+    if (sourceCell?._style) {
+        targetCell.style(sourceCell.workbook().styleSheet().createStyle(sourceCell._style.id()));
+        return;
+    }
+
+    if (sourceCell?._styleId !== undefined && sourceCell?._styleId !== null) {
+        targetCell._styleId = sourceCell._styleId;
+    }
+};
+
+const cloneTemplateRow = (sheet, sourceRowNumber, targetRowNumber) => {
+    const sourceRow = sheet.row(sourceRowNumber);
+    const targetRow = sheet.row(targetRowNumber);
+
+    targetRow._node.attributes = {
+        r: targetRowNumber,
+        ...Object.fromEntries(Object.entries(sourceRow._node.attributes || {}).filter(([key]) => key !== 'r')),
+    };
+
+    ['B', 'C'].forEach((column) => {
+        cloneTemplateCellStyle(sourceRow.cell(column), targetRow.cell(column));
+    });
+};
+
+const updateTemplateTableRange = async (workbook, lastDataRow) => {
+    const tableFile = workbook?._zip?.file?.(TEMPLATE_TABLE_PATH);
+
+    if (!tableFile || typeof DOMParser === 'undefined' || typeof XMLSerializer === 'undefined') {
+        return;
+    }
+
+    const parser = new DOMParser();
+    const serializer = new XMLSerializer();
+    const tableXml = await tableFile.async('string');
+    const tableDocument = parser.parseFromString(tableXml, 'application/xml');
+    const tableNode = tableDocument.documentElement;
+    const tableRange = `B${TEMPLATE_HEADER_ROW}:C${lastDataRow}`;
+
+    if (!tableNode || tableNode.nodeName === 'parsererror') {
+        return;
+    }
+
+    tableNode.setAttribute('ref', tableRange);
+
+    const autoFilterNode = tableDocument.getElementsByTagName('autoFilter')[0];
+    if (autoFilterNode) {
+        autoFilterNode.setAttribute('ref', tableRange);
+    }
+
+    workbook._zip.file(TEMPLATE_TABLE_PATH, serializer.serializeToString(tableDocument));
 };
 
 const defaultFormState = (examenId) => ({
@@ -123,6 +193,8 @@ const resolveExamMeta = (examen) => {
 export default function RepartitionIndex({ examens, repartitions, inscriptions, selectedExamenId, salles }) {
     const [editingId, setEditingId] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const [currentPage, setCurrentPage] = useState(1);
+    const [rowsPerPage, setRowsPerPage] = useState(10);
     const [selectedNiveau, setSelectedNiveau] = useState('');
     const [selectedSemestre, setSelectedSemestre] = useState('');
     const [columns, setColumns] = useState({
@@ -151,7 +223,12 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         setData(() => defaultFormState(selectedExamenId));
         setEditingId(null);
         setSearchTerm('');
+        setCurrentPage(1);
     }, [selectedExamenId]);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchTerm]);
 
     const handleExamChange = (eventOrValue) => {
         const value = typeof eventOrValue === 'string' ? eventOrValue : eventOrValue.target.value;
@@ -250,6 +327,25 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
     }, [repartitions, searchTerm]);
 
     const searchActive = searchTerm.trim().length > 0;
+    const totalFilteredRepartitions = filteredRepartitions.length;
+    const totalPages = Math.max(1, Math.ceil(totalFilteredRepartitions / rowsPerPage));
+
+    useEffect(() => {
+        setCurrentPage((page) => Math.min(page, totalPages));
+    }, [totalPages]);
+
+    const paginatedRepartitions = useMemo(() => {
+        const startIndex = (currentPage - 1) * rowsPerPage;
+        return filteredRepartitions.slice(startIndex, startIndex + rowsPerPage);
+    }, [currentPage, filteredRepartitions, rowsPerPage]);
+
+    const pageStart = totalFilteredRepartitions === 0 ? 0 : ((currentPage - 1) * rowsPerPage) + 1;
+    const pageEnd = Math.min(currentPage * rowsPerPage, totalFilteredRepartitions);
+
+    const salleIndices = useMemo(
+        () => Array.from(new Set(repartitions.map((item) => salleIndexFromGrille(item.code_grille)))).sort((a, b) => a - b),
+        [repartitions],
+    );
 
     const examensWithMeta = useMemo(
         () =>
@@ -384,7 +480,43 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         });
     };
 
-    const handleExport = () => {
+    const downloadPdfPerSalle = async (baseUrl, requestParams, fallbackPrefix) => {
+        if (salleIndices.length === 0) {
+            Swal.fire({ icon: 'info', title: 'Aucune repartition pour cet examen' });
+            return;
+        }
+
+        for (const index of salleIndices) {
+            const params = new URLSearchParams(requestParams.toString());
+            params.set('salle_index', String(index));
+            const url = `${baseUrl}?${params.toString()}`;
+
+            try {
+                const response = await fetch(url, { credentials: 'same-origin' });
+                if (!response.ok) {
+                    throw new Error(`Erreur serveur (${response.status})`);
+                }
+
+                const blob = await response.blob();
+                const filename = extractFilenameFromDisposition(
+                    response.headers.get('Content-Disposition'),
+                    `${fallbackPrefix}-salle-${index}.pdf`,
+                );
+
+                downloadBlob(blob, filename);
+                await new Promise((resolve) => setTimeout(resolve, 200));
+            } catch (error) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Echec du telechargement',
+                    text: error?.message || 'Impossible de telecharger les PDFs.',
+                });
+                break;
+            }
+        }
+    };
+
+    const handleExport = async () => {
         if (!selectedExamenId) {
             Swal.fire({ icon: 'info', title: 'Choisissez un examen' });
             return;
@@ -402,9 +534,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         const params = new URLSearchParams();
         selectedColumns.forEach((col) => params.append('columns[]', col));
         params.append('presence_filled', presenceFilled ? '1' : '0');
-        const url = params.toString() ? `${baseUrl}?${params.toString()}` : baseUrl;
-
-        window.open(url, '_blank');
+        await downloadPdfPerSalle(baseUrl, params, 'repartition');
     };
 
     const handleCollectiveExport = async () => {
@@ -413,56 +543,8 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
             return;
         }
 
-        const salleIndices = Array.from(
-            new Set(
-                repartitions.map((item) => {
-                    const str = String(item.code_grille ?? '').padStart(7, '0');
-                    const digit = Number(str.charAt(3));
-                    return Number.isNaN(digit) || digit < 1 ? 1 : digit;
-                }),
-            ),
-        ).sort((a, b) => a - b);
-
-        if (salleIndices.length === 0) {
-            Swal.fire({ icon: 'info', title: 'Aucune repartition pour cet examen' });
-            return;
-        }
-
         const baseUrl = route('surveillance.repartition-etudiants.export-collective', selectedExamenId);
-        for (const index of salleIndices) {
-            const url = `${baseUrl}?salle_index=${index}`;
-            try {
-                const response = await fetch(url, { credentials: 'same-origin' });
-                if (!response.ok) {
-                    throw new Error(`Erreur serveur (${response.status})`);
-                }
-
-                const blob = await response.blob();
-                const disposition = response.headers.get('Content-Disposition') || '';
-                const match = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/i.exec(disposition);
-                const filename = match
-                    ? match[1].replace(/['"]/g, '')
-                    : `presence-collective-salle-${index}.pdf`;
-
-                const blobUrl = window.URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = blobUrl;
-                link.download = filename;
-                document.body.appendChild(link);
-                link.click();
-                link.remove();
-                window.URL.revokeObjectURL(blobUrl);
-
-                await new Promise((resolve) => setTimeout(resolve, 200));
-            } catch (error) {
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Echec du telechargement',
-                    text: error?.message || 'Impossible de telecharger les PDFs.',
-                });
-                break;
-            }
-        }
+        await downloadPdfPerSalle(baseUrl, new URLSearchParams(), 'presence-collective');
     };
 
     const handleSallesPlacesExport = () => {
@@ -517,7 +599,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                         .join('_'),
                 ) || 'notes_module';
 
-            const fillWorkbook = async ({ sheetTitle, moduleName, moduleCode }) => {
+            const fillWorkbook = async ({ sheetTitle, moduleName, secondaryLabel }) => {
                 const workbook = await XlsxPopulate.fromDataAsync(buffer.slice(0));
                 const sheet = workbook.sheet(0);
 
@@ -526,17 +608,29 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                 sheet.cell('B3').value(sessionLabel || '');
                 sheet.cell('B4').value(headerLine || '');
                 sheet.cell('B6').value(moduleName || moduleLabel || '');
-                sheet.cell('B7').value(moduleCode || '');
+                sheet.cell('B7').value(secondaryLabel || '');
                 sheet.cell('C9').value(`NOTE SUR ${noteScale}`);
 
-                const startRow = 10;
-                const minimumRows = 103;
-                const targetRows = Math.max(anonymatList.length, minimumRows);
+                const templateEndRow = Math.max(sheet.usedRange()?.endCell().rowNumber() ?? TEMPLATE_START_ROW, TEMPLATE_START_ROW);
+                const lastDataRow = TEMPLATE_START_ROW + anonymatList.length - 1;
 
-                for (let index = 0; index < targetRows; index += 1) {
-                    const value = anonymatList[index] ?? '';
-                    sheet.cell(`B${startRow + index}`).value(value);
+                for (let rowNumber = TEMPLATE_START_ROW; rowNumber <= lastDataRow; rowNumber += 1) {
+                    if (rowNumber > templateEndRow) {
+                        cloneTemplateRow(sheet, TEMPLATE_REPEAT_ROW, rowNumber);
+                    }
+
+                    sheet.row(rowNumber).hidden(false);
+                    sheet.cell(`B${rowNumber}`).value(anonymatList[rowNumber - TEMPLATE_START_ROW] ?? '');
+                    sheet.cell(`C${rowNumber}`).value(undefined);
                 }
+
+                for (let rowNumber = lastDataRow + 1; rowNumber <= templateEndRow; rowNumber += 1) {
+                    sheet.row(rowNumber).hidden(true);
+                    sheet.cell(`B${rowNumber}`).value(undefined);
+                    sheet.cell(`C${rowNumber}`).value(undefined);
+                }
+
+                await updateTemplateTableRange(workbook, lastDataRow);
 
                 return workbook.outputAsync();
             };
@@ -545,7 +639,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
             const moduleBlob = await fillWorkbook({
                 sheetTitle: 'Module',
                 moduleName: selectedExamen.module?.nom_module,
-                moduleCode: selectedExamen.module?.code_module,
+                secondaryLabel: selectedExamen.module?.code_module,
             });
             downloadBlob(moduleBlob, moduleFilename);
 
@@ -559,8 +653,8 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
 
                 const blob = await fillWorkbook({
                     sheetTitle: elementLabel,
-                    moduleName: element?.nom_element || elementLabel,
-                    moduleCode: element?.code_element || elementLabel,
+                    moduleName: selectedExamen.module?.nom_module || moduleLabel,
+                    secondaryLabel: element?.nom_element || element?.code_element || elementLabel,
                 });
 
                 downloadBlob(blob, filename);
@@ -679,35 +773,50 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                     ))}
                                 </div>
                             )}
-                            <div className="mt-3">
-                                <button
-                                    type="button"
-                                    onClick={handleExport}
-                                    className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
-                                    disabled={!selectedExamenId}
-                                >
-                                    Exporter en PDF
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={handleCollectiveExport}
-                                    className="ml-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-60"
-                                    disabled={!selectedExamenId}
-                                >
-                                    Presence collective (PDF)
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={handleSallesPlacesExport}
-                                    className="mt-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60 md:ml-2 md:mt-0"
-                                    disabled={!selectedExamenId}
-                                >
-                                    Plan salles / places (PDF)
-                                </button>
+                            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+                                <Dropdown>
+                                    <Dropdown.Trigger>
+                                        <button
+                                            type="button"
+                                            disabled={!selectedExamenId}
+                                            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                                        >
+                                            Exports PDF
+                                            <ChevronDown size={16} />
+                                        </button>
+                                    </Dropdown.Trigger>
+                                    <Dropdown.Content
+                                        align="left"
+                                        width="48"
+                                        contentClasses="py-2 bg-white dark:bg-gray-800"
+                                    >
+                                        <button
+                                            type="button"
+                                            onClick={handleExport}
+                                            className="block w-full px-4 py-2 text-left text-sm text-gray-700 transition hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
+                                        >
+                                            Exporter la repartition
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={handleCollectiveExport}
+                                            className="block w-full px-4 py-2 text-left text-sm text-gray-700 transition hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
+                                        >
+                                            Presence collective
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={handleSallesPlacesExport}
+                                            className="block w-full px-4 py-2 text-left text-sm text-gray-700 transition hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
+                                        >
+                                            Plan salles / places
+                                        </button>
+                                    </Dropdown.Content>
+                                </Dropdown>
                                 <button
                                     type="button"
                                     onClick={handleExcelTemplates}
-                                    className="mt-2 rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60 md:ml-2 md:mt-0"
+                                    className="inline-flex w-full items-center justify-center rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                                     disabled={!selectedExamenId || repartitions.length === 0}
                                 >
                                     <span className="inline-flex items-center gap-2">
@@ -715,37 +824,37 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                         Excel correcteurs (module + elements)
                                     </span>
                                 </button>
-                                <div className="mt-3 space-y-1 text-xs text-gray-600 dark:text-gray-300">
-                                    <div className="font-semibold text-gray-700 dark:text-gray-100">Colonnes</div>
-                                    <div className="flex flex-wrap gap-3">
-                                        {[
-                                            { key: 'cne', label: 'CNE' },
-                                            { key: 'etudiant', label: 'Etudiant' },
-                                            { key: 'grille', label: 'Grille' },
-                                            { key: 'place', label: 'Place' },
-                                            { key: 'anonymat', label: 'Anonymat' },
-                                            { key: 'presence', label: 'Presence' },
-                                        ].map(({ key, label }) => (
-                                            <label key={key} className="inline-flex items-center gap-2">
-                                                <input
-                                                    type="checkbox"
-                                                    checked={columns[key]}
-                                                    onChange={() =>
-                                                        setColumns((prev) => ({ ...prev, [key]: !prev[key] }))
-                                                    }
-                                                />
-                                                <span>{label}</span>
-                                            </label>
-                                        ))}
-                                    </div>
-                                    <div className="mt-2 flex items-center gap-2">
-                                        <input
-                                            type="checkbox"
-                                            checked={presenceFilled}
-                                            onChange={() => setPresenceFilled((prev) => !prev)}
-                                        />
-                                        <span>Remplir la colonne presence</span>
-                                    </div>
+                            </div>
+                            <div className="mt-3 space-y-1 text-xs text-gray-600 dark:text-gray-300">
+                                <div className="font-semibold text-gray-700 dark:text-gray-100">Colonnes</div>
+                                <div className="flex flex-wrap gap-3">
+                                    {[
+                                        { key: 'cne', label: 'CNE' },
+                                        { key: 'etudiant', label: 'Etudiant' },
+                                        { key: 'grille', label: 'Grille' },
+                                        { key: 'place', label: 'Place' },
+                                        { key: 'anonymat', label: 'Anonymat' },
+                                        { key: 'presence', label: 'Presence' },
+                                    ].map(({ key, label }) => (
+                                        <label key={key} className="inline-flex items-center gap-2">
+                                            <input
+                                                type="checkbox"
+                                                checked={columns[key]}
+                                                onChange={() =>
+                                                    setColumns((prev) => ({ ...prev, [key]: !prev[key] }))
+                                                }
+                                            />
+                                            <span>{label}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                                <div className="mt-2 flex items-center gap-2">
+                                    <input
+                                        type="checkbox"
+                                        checked={presenceFilled}
+                                        onChange={() => setPresenceFilled((prev) => !prev)}
+                                    />
+                                    <span>Remplir la colonne presence</span>
                                 </div>
                             </div>
                         </>
@@ -757,7 +866,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
 
             <div className="grid gap-6 lg:grid-cols-3">
                 <div className="lg:col-span-1">
-                    <div className="rounded-xl border border-gray-200 bg-white/90 p-5 shadow-sm dark:border-gray-700 dark:bg-gray-900">
+                    <div className="rounded-xl border border-gray-200 bg-white/90 p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900 sm:p-5">
                         <div className="mb-4 flex items-center justify-between">
                             <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">
                                 {editingId ? 'Modifier la repartition' : 'Nouvelle repartition'}
@@ -771,7 +880,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                 </button>
                             )}
                         </div>
-                        <form onSubmit={submit} className="space-y-4">
+                        <form onSubmit={submit} className="min-w-0 space-y-4">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Etudiant</label>
                                 <select
@@ -867,10 +976,10 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                 />
                                 <InputError message={errors.observation} className="mt-1" />
                             </div>
-                            <div className="flex justify-end gap-3">
+                            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
                                 <button
                                     type="button"
-                                    className="rounded-lg px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+                                    className="w-full rounded-lg px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700 sm:w-auto"
                                     onClick={resetForm}
                                 >
                                     Reinitialiser
@@ -878,7 +987,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                 <button
                                     type="submit"
                                     disabled={processing || !selectedExamenId}
-                                    className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70"
+                                    className="w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto"
                                 >
                                     {editingId ? 'Mettre a jour' : 'Affecter'}
                                 </button>
@@ -937,7 +1046,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                                    {filteredRepartitions.map((repartition) => (
+                                    {paginatedRepartitions.map((repartition) => (
                                         <tr key={repartition.id_repartition} className="text-sm text-gray-700 dark:text-gray-200">
                                             <td className="px-4 py-3">
                                                 <div className="font-semibold">
@@ -955,7 +1064,9 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                             <td className="px-4 py-3">
                                                 <div className="font-medium">{repartition.code_anonymat ?? '-'}</div>
                                                 <div className="text-xs text-gray-500 dark:text-gray-400">
-                                                    {formatTime(repartition.heure_arrivee)} -> {formatTime(repartition.heure_sortie)}
+                                                    {formatTime(repartition.heure_arrivee)}
+                                                    {' -> '}
+                                                    {formatTime(repartition.heure_sortie)}
                                                 </div>
                                             </td>
                                             <td className="px-4 py-3">
@@ -1005,6 +1116,70 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                 </tbody>
                             </table>
                         </div>
+                        {filteredRepartitions.length > 0 && (
+                            <div className="mt-4 flex flex-col gap-3 border-t border-gray-200 pt-4 dark:border-gray-700 sm:flex-row sm:items-center sm:justify-between">
+                                <div className="flex flex-col gap-2 text-sm text-gray-600 dark:text-gray-300 sm:flex-row sm:items-center">
+                                    <div className="flex items-center gap-2">
+                                        <span>Afficher</span>
+                                        <select
+                                            value={rowsPerPage}
+                                            onChange={(event) => {
+                                                setRowsPerPage(Number(event.target.value));
+                                                setCurrentPage(1);
+                                            }}
+                                            className="rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
+                                        >
+                                            {PAGE_SIZE_OPTIONS.map((size) => (
+                                                <option key={size} value={size}>
+                                                    {size}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <span>lignes</span>
+                                    </div>
+                                    <span>
+                                        {pageStart}-{pageEnd} sur {totalFilteredRepartitions}
+                                    </span>
+                                </div>
+                                <div className="flex flex-wrap items-center justify-end gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setCurrentPage(1)}
+                                        disabled={currentPage === 1}
+                                        className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                                    >
+                                        Premier
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                                        disabled={currentPage === 1}
+                                        className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                                    >
+                                        Precedent
+                                    </button>
+                                    <span className="px-1 text-sm text-gray-600 dark:text-gray-300">
+                                        Page {currentPage} / {totalPages}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                                        disabled={currentPage === totalPages}
+                                        className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                                    >
+                                        Suivant
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setCurrentPage(totalPages)}
+                                        disabled={currentPage === totalPages}
+                                        className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-600 transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                                    >
+                                        Dernier
+                                    </button>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

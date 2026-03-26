@@ -29,10 +29,10 @@ export default function SessionForm({ annees, typesSession }) {
     };
 
     return (
-        <div className="rounded-xl bg-white p-6 shadow dark:bg-gray-800">
+        <div className="rounded-xl bg-white p-4 shadow dark:bg-gray-800 sm:p-6">
             <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Nouvelle session</h2>
 
-            <form onSubmit={handleSubmit} className="mt-4 space-y-4">
+            <form onSubmit={handleSubmit} className="mt-4 min-w-0 space-y-4">
                 <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">
                         Nom
@@ -134,7 +134,7 @@ export default function SessionForm({ annees, typesSession }) {
                     <button
                         type="submit"
                         disabled={processing}
-                        className="inline-flex items-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70"
+                        className="inline-flex w-full items-center justify-center rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto"
                     >
                         {processing ? 'Enregistrement...' : 'Creer la session'}
                     </button>

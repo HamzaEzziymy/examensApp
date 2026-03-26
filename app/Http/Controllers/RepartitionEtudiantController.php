@@ -304,26 +304,50 @@ class RepartitionEtudiantController extends Controller
                 ->values();
         }
 
-        $payload = [
-            'examen'         => $examen,
-            'repartitions'   => $repartitions,
-            'presentCount'   => $presentCount,
-            'absentCount'    => $total - $presentCount,
-            'total'          => $total,
-            'generatedAt'    => now(),
-            'niveauFiliere'  => $this->niveauFiliereLabel($examen),
-            'columns'        => $columns,
-            'presenceFilled' => $presenceFilled,
-            'salleGroups'    => $salleGroups,
-            'sessionLabel'   => $this->sessionLabel($examen),
-        ];
-
         $footerSalleLabel = $salles->pluck('nom_salle')->filter()->unique()->implode(' | ');
         if (empty($footerSalleLabel) && $examen->salle) {
             $footerSalleLabel = $examen->salle->nom_salle;
         }
 
+        $requestedSalleIndex = $request->integer('salle_index');
+        $exportRepartitions = $repartitions;
+        $exportPresentCount = $presentCount;
+        $exportTotal = $total;
+        $exportSalleGroups = $salleGroups;
         $filename = sprintf('repartition-%s-%s.pdf', $examen->module->code_module ?? 'examen', $examen->id_examen);
+
+        if ($requestedSalleIndex) {
+            $targetGroup = $salleGroups->firstWhere('salle_index', $requestedSalleIndex);
+            if (! $targetGroup) {
+                return back()->with('error', 'Aucune repartition pour cette salle.');
+            }
+
+            $exportRepartitions = collect($targetGroup['rows'] ?? [])->values();
+            $exportPresentCount = (int) ($targetGroup['present'] ?? $exportRepartitions->where('present', true)->count());
+            $exportTotal = (int) ($targetGroup['total'] ?? $exportRepartitions->count());
+            $exportSalleGroups = collect([$targetGroup]);
+            $footerSalleLabel = $targetGroup['salle']->nom_salle ?? ('Salle '.$targetGroup['salle_index']);
+            $filename = sprintf(
+                'repartition-%s-%s-salle-%s.pdf',
+                $examen->module->code_module ?? 'examen',
+                $examen->id_examen,
+                $targetGroup['salle_index']
+            );
+        }
+
+        $payload = [
+            'examen'         => $examen,
+            'repartitions'   => $exportRepartitions,
+            'presentCount'   => $exportPresentCount,
+            'absentCount'    => $exportTotal - $exportPresentCount,
+            'total'          => $exportTotal,
+            'generatedAt'    => now(),
+            'niveauFiliere'  => $this->niveauFiliereLabel($examen),
+            'columns'        => $columns,
+            'presenceFilled' => $presenceFilled,
+            'salleGroups'    => $exportSalleGroups,
+            'sessionLabel'   => $this->sessionLabel($examen),
+        ];
 
         return Pdf::view('pdfs.repartition', $payload)
             ->format('a4')

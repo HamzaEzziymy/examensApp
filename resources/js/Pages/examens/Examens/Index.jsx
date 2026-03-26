@@ -1,10 +1,10 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout';
 import { Head } from '@inertiajs/react';
+import { useState } from 'react';
 import ExamHeader from '../Header';
+import ExamensCalendar from './ExamensCalendar';
 import PlanifierForm from './PlanifierForm';
 import ExamensTable from './ExamensTable';
-import ExamensCalendar from './ExamensCalendar';
-import { useState } from 'react';
 
 export default function ExamensIndex({ examens, sessions, modules, salles, statuts, semestres, niveaux }) {
     const [view, setView] = useState('list');
@@ -81,30 +81,34 @@ export default function ExamensIndex({ examens, sessions, modules, salles, statu
             </div>
 
             {formOpen && (
-                <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
-                    <div className="w-full max-w-3xl rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-800">
-                        <div className="flex items-center justify-between">
-                            <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Planifier un examen</h3>
-                            <button
-                                type="button"
-                                onClick={() => setFormOpen(false)}
-                                className="rounded-full p-2 text-gray-500 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
-                            >
-                                ×
-                            </button>
+                <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40">
+                    <div className="flex min-h-full items-start justify-center p-3 sm:p-4 lg:p-6">
+                        <div className="my-3 flex w-full max-w-5xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-gray-800 sm:my-6 sm:max-h-[calc(100vh-3rem)]">
+                            <div className="flex items-center justify-between border-b border-gray-200 px-4 py-4 dark:border-gray-700 sm:px-6">
+                                <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Planifier un examen</h3>
+                                <button
+                                    type="button"
+                                    onClick={() => setFormOpen(false)}
+                                    className="rounded-full p-2 text-gray-500 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+                                >
+                                    ×
+                                </button>
+                            </div>
+                            <div className="overflow-y-auto px-4 pb-4 sm:px-6 sm:pb-6">
+                                <PlanifierForm
+                                    sessions={sessions}
+                                    modules={modules}
+                                    salles={salles}
+                                    statuts={statuts}
+                                    semestres={semestres}
+                                    niveaux={niveaux}
+                                    asCard={false}
+                                    hideTitle
+                                    onCancel={() => setFormOpen(false)}
+                                    onSuccess={() => setFormOpen(false)}
+                                />
+                            </div>
                         </div>
-                        <PlanifierForm
-                            sessions={sessions}
-                            modules={modules}
-                            salles={salles}
-                            statuts={statuts}
-                            semestres={semestres}
-                            niveaux={niveaux}
-                            asCard={false}
-                            hideTitle
-                            onCancel={() => setFormOpen(false)}
-                            onSuccess={() => setFormOpen(false)}
-                        />
                     </div>
                 </div>
             )}

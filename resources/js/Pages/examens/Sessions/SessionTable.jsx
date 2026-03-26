@@ -272,15 +272,17 @@ export default function SessionTable({ sessions, annees, typesSession }) {
             </div>
 
             {modalOpen && (
-                <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/40 p-4">
-                    <div className="w-full max-w-lg rounded-lg bg-white p-6 shadow-xl dark:bg-gray-800">
-                        <div className="mb-4 flex items-center justify-between">
+                <div className="fixed inset-0 z-50 overflow-y-auto bg-black/40">
+                    <div className="flex min-h-full items-start justify-center p-3 sm:p-4 lg:p-6">
+                        <div className="my-3 flex w-full max-w-2xl flex-col overflow-hidden rounded-2xl bg-white shadow-xl dark:bg-gray-800 sm:my-6 sm:max-h-[calc(100vh-3rem)]">
+                            <div className="mb-0 flex items-center justify-between border-b border-gray-200 px-4 py-4 dark:border-gray-700 sm:px-6">
                             <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Modifier la session</h3>
                             <button onClick={closeModal} className="text-gray-500 hover:text-gray-700 dark:text-gray-300">
                                 ×
                             </button>
                         </div>
-                        <form onSubmit={handleUpdate} className="space-y-4">
+                            <div className="overflow-y-auto px-4 pb-4 sm:px-6 sm:pb-6">
+                        <form onSubmit={handleUpdate} className="min-w-0 space-y-4 pt-4">
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Nom</label>
                                 <input
@@ -358,23 +360,25 @@ export default function SessionTable({ sessions, annees, typesSession }) {
                                 <InputError message={errors.description} className="mt-1" />
                             </div>
 
-                            <div className="flex items-center justify-end gap-3">
+                            <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-end">
                                 <button
                                     type="button"
                                     onClick={closeModal}
-                                    className="rounded-lg px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
+                                    className="w-full rounded-lg px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700 sm:w-auto"
                                 >
                                     Annuler
                                 </button>
                                 <button
                                     type="submit"
                                     disabled={processing}
-                                    className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-70"
+                                    className="w-full rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:opacity-70 sm:w-auto"
                                 >
                                     Modifier
                                 </button>
                             </div>
                         </form>
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}
