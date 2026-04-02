@@ -20,6 +20,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Telescope Console Recording
+    |--------------------------------------------------------------------------
+    |
+    | Console commands do not need Telescope in this project by default and
+    | disabling it avoids noisy CLI failures when storage is unavailable.
+    |
+    */
+
+    'console_enabled' => env('TELESCOPE_CONSOLE_ENABLED', false),
+
+    /*
+    |--------------------------------------------------------------------------
     | Telescope Domain
     |--------------------------------------------------------------------------
     |

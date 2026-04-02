@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Concerns\FiltersEligibleExamRegistrations;
 use App\Models\Examen;
 use App\Models\Module;
 use App\Models\AnneeUniversitaire;
 use App\Models\InscriptionPedagogique;
 use App\Models\Anonymat;
+use App\Models\ElementModule;
 use App\Models\RepartitionEtudiant;
 use App\Models\Salle;
 use App\Models\SessionExamen;
@@ -18,6 +20,8 @@ use Inertia\Inertia;
 
 class ExamenController extends Controller
 {
+    use FiltersEligibleExamRegistrations;
+
     public function index()
     {
         return Inertia::render('examens/Examens/Index', $this->indexData());
@@ -39,6 +43,7 @@ class ExamenController extends Controller
         $examensQuery = Examen::with([
                 'sessionExamen:id_session_examen,nom_session,type_session,id_filiere,id_annee',
                 'module:id_module,nom_module,code_module',
+                'element:id_element,id_module,code_element,nom_element',
                 'salle:id_salle,code_salle,nom_salle,capacite_examens',
                 'salles:id_salle,code_salle,nom_salle,capacite_examens',
             ])
@@ -74,6 +79,7 @@ class ExamenController extends Controller
                 'id_examen',
                 'id_session_examen',
                 'id_module',
+                'id_element',
                 'id_salle',
                 'anonymat_start',
                 'anonymat_end',
@@ -95,6 +101,7 @@ class ExamenController extends Controller
 
         $modulesQuery = Module::select('id_module', 'nom_module', 'code_module')
             ->with([
+                'elements:id_element,id_module,code_element,nom_element',
                 'offresFormation' => function ($query) use ($selectedFiliere, $selectedAnnee) {
                     if ($selectedFiliere && $selectedFiliere !== 'all') {
                         $query->whereHas('section', fn ($q) => $q->where('id_filiere', $selectedFiliere));
@@ -136,6 +143,14 @@ class ExamenController extends Controller
                 'id_module' => $module->id_module,
                 'nom_module' => $module->nom_module,
                 'code_module' => $module->code_module,
+                'elements' => $module->elements
+                    ->map(fn ($element) => [
+                        'id_element' => $element->id_element,
+                        'id_module' => $element->id_module,
+                        'code_element' => $element->code_element,
+                        'nom_element' => $element->nom_element,
+                    ])
+                    ->values(),
                 'semestres' => $semestres,
             ];
         });
@@ -190,7 +205,10 @@ class ExamenController extends Controller
                 ->withInput();
         }
 
-        $session = SessionExamen::find((int) $validated['id_session_examen'], ['id_session_examen', 'id_annee', 'id_filiere']);
+        $session = SessionExamen::find(
+            (int) $validated['id_session_examen'],
+            ['id_session_examen', 'id_annee', 'id_filiere', 'type_session', 'nom_session']
+        );
         $preferredFiliereId = $session?->id_filiere ?: $this->currentUserFiliereId();
         $salles = collect($request->input('salles', []))
             ->filter()
@@ -223,6 +241,7 @@ class ExamenController extends Controller
         }
 
         $moduleCatalog = Module::query()
+            ->with(['elements:id_element,id_module,code_element,nom_element'])
             ->whereIn('id_module', $moduleIds)
             ->get(['id_module', 'code_module', 'nom_module'])
             ->keyBy('id_module');
@@ -233,6 +252,7 @@ class ExamenController extends Controller
             $moduleValidated['id_module'] = $moduleId;
 
             if ($planAllFilteredModules) {
+                $moduleValidated['id_element'] = null;
                 $modulePlanning = $modulePlannings->get($moduleId, []);
                 $moduleValidated['anonymat_start'] = null;
                 $moduleValidated['anonymat_end'] = null;
@@ -244,7 +264,8 @@ class ExamenController extends Controller
             $registrations = $this->registrationsForModule(
                 $moduleId,
                 $session?->id_annee,
-                $preferredFiliereId
+                $preferredFiliereId,
+                $session
             );
 
             if ($registrations->isEmpty()) {
@@ -255,7 +276,7 @@ class ExamenController extends Controller
                             : 'id_module' => $this->planningModuleMessage(
                                 $moduleCatalog->get($moduleId),
                                 $moduleId,
-                                'Aucun etudiant inscrit pour ce module dans l\'annee academique de la session choisie. Creez les inscriptions pedagogiques avant de planifier cet examen.',
+                                $this->noEligibleRegistrationsMessage($session),
                                 $planAllFilteredModules
                             ),
                     ])
@@ -297,12 +318,24 @@ class ExamenController extends Controller
                     ->withInput();
             }
 
-            $plans[] = [
-                'validated' => $moduleValidated,
-                'registrations' => $registrations,
-                'expectedCount' => $expectedCount,
-                'manualSplit' => $manualSplit,
-            ];
+            $targets = $planAllFilteredModules
+                ? $this->bulkPlanningTargetsForModule($moduleCatalog->get($moduleId))
+                : collect([[
+                    'id_module' => $moduleId,
+                    'id_element' => $moduleValidated['id_element'] ?? null,
+                ]]);
+
+            foreach ($targets as $target) {
+                $targetValidated = $moduleValidated;
+                $targetValidated['id_element'] = $target['id_element'] ?? null;
+
+                $plans[] = [
+                    'validated' => $targetValidated,
+                    'registrations' => $registrations,
+                    'expectedCount' => $expectedCount,
+                    'manualSplit' => $manualSplit,
+                ];
+            }
         }
 
         $createdCount = 0;
@@ -353,7 +386,10 @@ class ExamenController extends Controller
             return back()->withErrors(['id_module' => 'Veuillez selectionner un module.'])->withInput();
         }
 
-        $session = SessionExamen::find((int) $validated['id_session_examen'], ['id_session_examen', 'id_annee', 'id_filiere']);
+        $session = SessionExamen::find(
+            (int) $validated['id_session_examen'],
+            ['id_session_examen', 'id_annee', 'id_filiere', 'type_session', 'nom_session']
+        );
         $preferredFiliereId = $session?->id_filiere ?: $this->currentUserFiliereId();
         $salles = collect($request->input('salles', []))
             ->filter()
@@ -377,12 +413,13 @@ class ExamenController extends Controller
         $registrations = $this->registrationsForModule(
             (int) $validated['id_module'],
             $session?->id_annee,
-            $preferredFiliereId
+            $preferredFiliereId,
+            $session
         );
         if ($registrations->isEmpty()) {
             return back()
                 ->withErrors([
-                    'id_module' => 'Aucun etudiant inscrit pour ce module dans l\'annee academique de la session choisie. Creez les inscriptions pedagogiques avant de planifier cet examen.',
+                    'id_module' => $this->noEligibleRegistrationsMessage($session),
                 ])
                 ->withInput();
         }
@@ -470,6 +507,7 @@ class ExamenController extends Controller
         $validator = validator($request->all(), [
             'id_session_examen' => ['required', 'exists:sessions_examen,id_session_examen'],
             'id_module'         => [Rule::requiredIf(! $planAllFilteredModules), 'nullable', 'exists:modules,id_module'],
+            'id_element'        => ['nullable', 'exists:elements_module,id_element'],
             'plan_all_filtered_modules' => ['sometimes', 'boolean'],
             'module_ids'        => ['nullable', 'array'],
             'module_ids.*'      => ['nullable', 'exists:modules,id_module'],
@@ -494,6 +532,20 @@ class ExamenController extends Controller
         ]);
 
         $validator->after(function ($validator) use ($planAllFilteredModules, $request) {
+            $moduleId = (int) $request->input('id_module');
+            $elementId = (int) $request->input('id_element');
+
+            if (! $planAllFilteredModules && $moduleId && $elementId) {
+                $matchesModule = ElementModule::query()
+                    ->whereKey($elementId)
+                    ->where('id_module', $moduleId)
+                    ->exists();
+
+                if (! $matchesModule) {
+                    $validator->errors()->add('id_element', 'L\'element selectionne ne correspond pas au module choisi.');
+                }
+            }
+
             if (! $planAllFilteredModules) {
                 return;
             }
@@ -551,7 +603,8 @@ class ExamenController extends Controller
         $registrations = $registrations ?? $this->registrationsForModule(
             (int) $examen->id_module,
             $examen->sessionExamen?->id_annee,
-            $this->preferredExamFiliereId($examen)
+            $this->preferredExamFiliereId($examen),
+            $examen->sessionExamen
         );
         $limitCount ??= $this->anonymatRangeCount(
             $examen->anonymat_start ? (int) $examen->anonymat_start : null,
@@ -804,6 +857,39 @@ class ExamenController extends Controller
         return [$rangeCount, null];
     }
 
+    private function bulkPlanningTargetsForModule(?Module $module): Collection
+    {
+        if (! $module) {
+            return collect();
+        }
+
+        $targets = collect([[
+            'id_module' => (int) $module->id_module,
+            'id_element' => null,
+        ]]);
+
+        $elementTargets = collect($module->elements ?? [])
+            ->reject(fn ($element) => $this->isSelfReferencingElementForModule($module, $element))
+            ->sortBy(fn ($element) => sprintf(
+                '%s|%s',
+                strtolower((string) ($element->code_element ?? '')),
+                strtolower((string) ($element->nom_element ?? ''))
+            ))
+            ->values()
+            ->map(fn ($element) => [
+                'id_module' => (int) $module->id_module,
+                'id_element' => (int) $element->id_element,
+            ]);
+
+        return $targets->concat($elementTargets)->values();
+    }
+
+    private function isSelfReferencingElementForModule(Module $module, ElementModule $element): bool
+    {
+        return trim((string) $element->code_element) === trim((string) $module->code_module)
+            && trim((string) $element->nom_element) === trim((string) $module->nom_module);
+    }
+
     private function resolvePlanningModuleIds(array $validated): Collection
     {
         if (! empty($validated['plan_all_filtered_modules'])) {
@@ -959,13 +1045,34 @@ class ExamenController extends Controller
         );
     }
 
-    private function registrationsForModule(int $moduleId, ?int $anneeId = null, ?int $filiereId = null)
+    private function registrationsForModule(
+        int $moduleId,
+        ?int $anneeId = null,
+        ?int $filiereId = null,
+        ?SessionExamen $session = null
+    )
     {
         $activeYearId = $anneeId
             ?: AnneeUniversitaire::where('est_active', true)->latest('date_debut')->value('id_annee');
         $resolvedFiliereIds = $this->resolvedModuleFiliereIds($moduleId, $activeYearId, $filiereId);
+        $isRattrapageSession = $this->isRattrapageSession($session);
 
-        return InscriptionPedagogique::query()
+        $registrations = InscriptionPedagogique::query()
+            ->when($isRattrapageSession, function ($query) use ($moduleId) {
+                $query->with(['resultatsModules' => function ($resultQuery) use ($moduleId) {
+                    $resultQuery
+                        ->select([
+                            'id_resultat_module',
+                            'id_inscription_pedagogique',
+                            'id_module',
+                            'statut',
+                            'date_validation',
+                        ])
+                        ->where('id_module', $moduleId)
+                        ->orderByDesc('date_validation')
+                        ->orderByDesc('id_resultat_module');
+                }]);
+            })
             ->whereHas('offreFormation', function ($query) use ($moduleId, $activeYearId, $resolvedFiliereIds) {
                 $query->where('id_module', $moduleId);
 
@@ -987,6 +1094,8 @@ class ExamenController extends Controller
             ->where('type_inscription', '!=', 'Capitalisation')
             ->orderBy('id_inscription_pedagogique')
             ->get(['id_inscription_pedagogique', 'type_inscription']);
+
+        return $this->filterRegistrationsForSession($registrations, $moduleId, $session);
     }
 
     private function filiereCode(Examen $examen): int
@@ -1129,10 +1238,7 @@ class ExamenController extends Controller
 
     private function sessionCode(Examen $examen): int
     {
-        $session = $examen->sessionExamen;
-        $value = strtolower($session->type_session ?? $session->nom_session ?? '');
-
-        if (str_contains($value, 'ratt')) {
+        if ($this->isRattrapageSession($examen->sessionExamen)) {
             return 2;
         }
 

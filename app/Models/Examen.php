@@ -20,6 +20,7 @@ class Examen extends Model
     protected $fillable = [
         'id_session_examen',
         'id_module',
+        'id_element',
         'id_salle',
         'anonymat_start',
         'anonymat_end',
@@ -45,6 +46,11 @@ class Examen extends Model
     public function module(): BelongsTo
     {
         return $this->belongsTo(Module::class, 'id_module', 'id_module');
+    }
+
+    public function element(): BelongsTo
+    {
+        return $this->belongsTo(ElementModule::class, 'id_element', 'id_element');
     }
 
     public function salle(): BelongsTo

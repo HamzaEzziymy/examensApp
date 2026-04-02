@@ -8,6 +8,49 @@ import * as XLSX from 'xlsx';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
+const formatExamLabel = (examen) => {
+    const moduleLabel = [examen?.module?.code_module, examen?.module?.nom_module].filter(Boolean).join(' - ');
+    const elementLabel = [examen?.element?.code_element, examen?.element?.nom_element].filter(Boolean).join(' - ');
+
+    if (elementLabel) {
+        return [moduleLabel || 'Examen', elementLabel].filter(Boolean).join(' / ');
+    }
+
+    return moduleLabel || 'Examen';
+};
+
+const getImportCellValue = (row, keys) => {
+    for (const key of keys) {
+        const value = row?.[key];
+        if (value !== undefined && value !== null && String(value).trim() !== '') {
+            return value;
+        }
+    }
+
+    return '';
+};
+
+const normalizeImportIdentifier = (value) =>
+    String(value ?? '')
+        .trim()
+        .replace(/\s+/g, '')
+        .toUpperCase();
+
+const normalizeAnonymatIdentifier = (value) => {
+    const normalized = String(value ?? '').trim().replace(/\s+/g, '');
+
+    if (!normalized) {
+        return '';
+    }
+
+    if (/^\d+$/.test(normalized)) {
+        const stripped = normalized.replace(/^0+/, '');
+        return stripped || '0';
+    }
+
+    return normalized.toUpperCase();
+};
+
 export default function NotesIndex({ notes = {}, examens = [], enseignants = [] }) {
     const { auth } = usePage().props;
     
@@ -32,6 +75,10 @@ export default function NotesIndex({ notes = {}, examens = [], enseignants = [] 
     
     // Bulk input states
     const [bulkInputRows, setBulkInputRows] = useState([]);
+    const selectedImportExamData = examens.find(examen => examen.id_examen == selectedImportExamen);
+    const availableImportElements = selectedImportExamData?.id_element
+        ? (selectedImportExamData.module?.elements || []).filter(element => element.id_element == selectedImportExamData.id_element)
+        : (selectedImportExamData?.module?.elements || []);
 
     const data = notes.data || [];
     const links = notes.links || [];
@@ -50,7 +97,7 @@ export default function NotesIndex({ notes = {}, examens = [], enseignants = [] 
             const etudiantName = note.anonymat?.etudiant 
                 ? `${note.anonymat.etudiant.nom} ${note.anonymat.etudiant.prenom}`.toLowerCase()
                 : '';
-            const moduleName = note.examen?.module?.nom_module?.toLowerCase() || '';
+            const moduleName = formatExamLabel(note.examen).toLowerCase();
             const anonymatCode = note.anonymat?.code_anonymat?.toLowerCase() || '';
             return etudiantName.includes(query) || moduleName.includes(query) || anonymatCode.includes(query);
         });
@@ -116,14 +163,19 @@ export default function NotesIndex({ notes = {}, examens = [], enseignants = [] 
                     
                     let identifier = '';
                     if (importType === 'cne') {
-                        identifier = row.cne ? row.cne.toString().trim().toUpperCase() : '';
+                        identifier = normalizeImportIdentifier(
+                            getImportCellValue(row, ['cne', 'CNE', 'Cne'])
+                        );
                         if (!identifier) rowErrors.push('CNE requis');
                     } else {
-                        identifier = row.anonymat ? row.anonymat.toString().trim() : '';
+                        identifier = normalizeAnonymatIdentifier(
+                            getImportCellValue(row, ['anonymat', 'Anonymat', 'ANONYMAT', 'code_anonymat', 'Code anonymat', 'CODE_ANONYMAT'])
+                        );
                         if (!identifier) rowErrors.push('Code anonymat requis');
                     }
 
-                    const note = row.note ? row.note.toString().trim() : '';
+                    const noteValue = getImportCellValue(row, ['note', 'Note', 'NOTE']);
+                    const note = noteValue === '' ? '' : noteValue.toString().trim();
                     if (!note) {
                         rowErrors.push('Note requise');
                     } else if (!['ABS', 'CAP'].includes(note.toUpperCase()) && isNaN(parseFloat(note))) {
@@ -206,7 +258,12 @@ export default function NotesIndex({ notes = {}, examens = [], enseignants = [] 
                 // Create a map of anonymat codes to anonymats
                 const anonymatMap = {};
                 anonymatsResponse.data.forEach(anonymat => {
-                    anonymatMap[anonymat.code_anonymat] = {
+                    const normalizedCode = normalizeAnonymatIdentifier(anonymat.code_anonymat);
+                    if (!normalizedCode) {
+                        return;
+                    }
+
+                    anonymatMap[normalizedCode] = {
                         anonymat: anonymat,
                         etudiant: anonymat.etudiant
                     };
@@ -616,10 +673,10 @@ export default function NotesIndex({ notes = {}, examens = [], enseignants = [] 
                                                 </td>
                                                 <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
                                                     <div className="font-semibold">
-                                                        {note.examen?.module?.code_module}
+                                                        {formatExamLabel(note.examen)}
                                                     </div>
                                                     <div className="text-xs text-gray-500">
-                                                        {note.examen?.module?.nom_module}
+                                                        {note.examen?.session_examen?.nom_session}
                                                     </div>
                                                 </td>
                                                 <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
@@ -794,13 +851,18 @@ export default function NotesIndex({ notes = {}, examens = [], enseignants = [] 
                                     </label>
                                     <select
                                         value={selectedImportExamen}
-                                        onChange={(e) => setSelectedImportExamen(e.target.value)}
+                                        onChange={(e) => {
+                                            const nextExamenId = e.target.value;
+                                            const examen = examens.find(item => item.id_examen == nextExamenId);
+                                            setSelectedImportExamen(nextExamenId);
+                                            setSelectedImportElement(examen?.id_element ? String(examen.id_element) : '');
+                                        }}
                                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg"
                                     >
                                         <option value="">--Sélectionner un examen--</option>
                                         {examens.map(examen => (
                                             <option key={examen.id_examen} value={examen.id_examen}>
-                                                {examen.module?.code_module} - {examen.module?.nom_module}
+                                                {formatExamLabel(examen)}
                                             </option>
                                         ))}
                                     </select>
@@ -817,7 +879,7 @@ export default function NotesIndex({ notes = {}, examens = [], enseignants = [] 
                                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg disabled:opacity-50"
                                     >
                                         <option value="">--Module complet--</option>
-                                        {selectedImportExamen && examens.find(e => e.id_examen == selectedImportExamen)?.module?.elements?.map(element => (
+                                        {availableImportElements.map(element => (
                                             <option key={element.id_element} value={element.id_element}>
                                                 {element.code_element} - {element.nom_element}
                                             </option>
@@ -1010,7 +1072,10 @@ export default function NotesIndex({ notes = {}, examens = [], enseignants = [] 
                                     <select
                                         value={selectedImportExamen}
                                         onChange={(e) => {
-                                            setSelectedImportExamen(e.target.value);
+                                            const nextExamenId = e.target.value;
+                                            const examen = examens.find(item => item.id_examen == nextExamenId);
+                                            setSelectedImportExamen(nextExamenId);
+                                            setSelectedImportElement(examen?.id_element ? String(examen.id_element) : '');
                                             setBulkInputRows([]); // Clear rows when exam changes
                                         }}
                                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg"
@@ -1018,7 +1083,7 @@ export default function NotesIndex({ notes = {}, examens = [], enseignants = [] 
                                         <option value="">--Sélectionner un examen--</option>
                                         {examens.map(examen => (
                                             <option key={examen.id_examen} value={examen.id_examen}>
-                                                {examen.module?.code_module} - {examen.module?.nom_module}
+                                                {formatExamLabel(examen)}
                                             </option>
                                         ))}
                                     </select>
@@ -1035,7 +1100,7 @@ export default function NotesIndex({ notes = {}, examens = [], enseignants = [] 
                                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg disabled:opacity-50"
                                     >
                                         <option value="">--Module complet--</option>
-                                        {selectedImportExamen && examens.find(e => e.id_examen == selectedImportExamen)?.module?.elements?.map(element => (
+                                        {availableImportElements.map(element => (
                                             <option key={element.id_element} value={element.id_element}>
                                                 {element.code_element} - {element.nom_element}
                                             </option>

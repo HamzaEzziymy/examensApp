@@ -23,6 +23,8 @@ class NoteController extends Controller
                 'anonymat.inscriptionPedagogique.inscriptionAdministrative.etudiant',
                 'examen.module.offresFormation.section',
                 'examen.module.elements',
+                'examen.element',
+                'examen.sessionExamen',
                 'element',
                 'enseignant'
             ])
@@ -30,7 +32,7 @@ class NoteController extends Controller
             ->paginate(25);
         
         // Load examens with relationships
-        $examens = Examen::with(['module.offresFormation.section', 'module.elements'])
+        $examens = Examen::with(['module.offresFormation.section', 'module.elements', 'element', 'sessionExamen'])
             ->latest('date_examen')
             ->limit(200)
             ->get();
@@ -363,14 +365,22 @@ class NoteController extends Controller
             return response()->json([]);
         }
 
-        // Get anonymats for the specific exam that match the CNEs
+        $normalizedCnes = collect($cnes)
+            ->map(fn ($cne) => $this->normalizeImportIdentifier($cne))
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($normalizedCnes->isEmpty()) {
+            return response()->json([]);
+        }
+
+        // Load anonymats for the selected exam and normalize keys in PHP.
+        // This is more tolerant to casing and spacing than an exact SQL whereIn.
         $anonymats = Anonymat::with([
                 'inscriptionPedagogique.inscriptionAdministrative.etudiant'
             ])
             ->where('id_examen', $examenId)
-            ->whereHas('inscriptionPedagogique.inscriptionAdministrative.etudiant', function ($query) use ($cnes) {
-                $query->whereIn('cne', $cnes);
-            })
             ->get();
 
         // Create a map of CNE to anonymat for easy lookup
@@ -381,7 +391,13 @@ class NoteController extends Controller
                 $anonymat->inscriptionPedagogique->inscriptionAdministrative->etudiant) {
                 
                 $etudiant = $anonymat->inscriptionPedagogique->inscriptionAdministrative->etudiant;
-                $result[$etudiant->cne] = [
+                $normalizedCne = $this->normalizeImportIdentifier($etudiant->cne);
+
+                if ($normalizedCne === '' || ! $normalizedCnes->contains($normalizedCne)) {
+                    continue;
+                }
+
+                $result[$normalizedCne] = [
                     'anonymat' => $anonymat,
                     'etudiant' => $etudiant
                 ];
@@ -389,5 +405,21 @@ class NoteController extends Controller
         }
 
         return response()->json($result);
+    }
+
+    private function normalizeImportIdentifier($value, bool $stripLeadingZeros = false): string
+    {
+        $normalized = trim((string) $value);
+        $normalized = preg_replace('/\s+/', '', $normalized);
+
+        if ($normalized === null || $normalized === '') {
+            return '';
+        }
+
+        if ($stripLeadingZeros && preg_match('/^\d+$/', $normalized)) {
+            return ltrim($normalized, '0') ?: '0';
+        }
+
+        return strtoupper($normalized);
     }
 }

@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\AnneeUniversitaire;
 use App\Models\Anonymat;
+use App\Models\ElementModule;
 use App\Models\Etudiant;
 use App\Models\Examen;
 use App\Models\Filiere;
@@ -13,6 +14,7 @@ use App\Models\Module;
 use App\Models\Niveau;
 use App\Models\OffreFormation;
 use App\Models\RepartitionEtudiant;
+use App\Models\ResultatModule;
 use App\Models\Salle;
 use App\Models\Section;
 use App\Models\Semestre;
@@ -167,6 +169,76 @@ class ExamenControllerTest extends TestCase
         ]);
     }
 
+    public function test_store_plans_rattrapage_exam_only_for_students_with_matching_result_status_aliases(): void
+    {
+        [
+            'user' => $user,
+            'annee' => $annee,
+            'section' => $section,
+            'niveau' => $niveau,
+            'offre' => $offre,
+            'module' => $module,
+            'salle' => $salle,
+            'session' => $session,
+        ] = $this->createSharedSessionPlanningContext();
+
+        $session->update([
+            'nom_session' => 'Session de Rattrapage',
+            'type_session' => 'Rattrapage',
+        ]);
+
+        $eligibleRattrapage = $this->createPedagogicalRegistration($section, $annee, $niveau, $offre, 'Alpha', 'Rattrapage');
+        $eligibleLatestRattrapage = $this->createPedagogicalRegistration($section, $annee, $niveau, $offre, 'Beta', 'LatestRattrapage');
+        $ineligibleLatestValide = $this->createPedagogicalRegistration($section, $annee, $niveau, $offre, 'Gamma', 'LatestValide');
+        $withoutResult = $this->createPedagogicalRegistration($section, $annee, $niveau, $offre, 'Delta', 'SansResultat');
+
+        $this->createModuleResult($eligibleRattrapage, $module, 'Rattrapage', '2026-06-30');
+        $this->createModuleResult($eligibleLatestRattrapage, $module, 'Valide', '2026-06-10');
+        $this->createModuleResult($eligibleLatestRattrapage, $module, 'Rattrapage', '2026-06-30');
+        $this->createModuleResult($ineligibleLatestValide, $module, 'Rattrapage', '2026-06-10');
+        $this->createModuleResult($ineligibleLatestValide, $module, 'Valide', '2026-06-30');
+
+        $response = $this
+            ->actingAs($user)
+            ->post(route('examens.examens.store'), [
+                'id_session_examen' => $session->id_session_examen,
+                'id_module' => $module->id_module,
+                'salles' => [$salle->id_salle],
+                'date_examen' => '2026-07-20',
+                'date_debut' => '2026-07-20 08:00:00',
+                'date_fin' => '2026-07-20 10:00:00',
+                'statut' => 'Planifiee',
+                'description' => 'Examen rattrapage',
+            ]);
+
+        $response
+            ->assertRedirect(route('examens.examens.index'))
+            ->assertSessionHasNoErrors();
+
+        $examen = Examen::query()->latest('id_examen')->first();
+
+        $this->assertNotNull($examen);
+        $this->assertSame(
+            [
+                $eligibleRattrapage->id_inscription_pedagogique,
+                $eligibleLatestRattrapage->id_inscription_pedagogique,
+            ],
+            RepartitionEtudiant::query()
+                ->where('id_examen', $examen->id_examen)
+                ->orderBy('id_inscription_pedagogique')
+                ->pluck('id_inscription_pedagogique')
+                ->all()
+        );
+        $this->assertDatabaseMissing('repartition_etudiants', [
+            'id_examen' => $examen->id_examen,
+            'id_inscription_pedagogique' => $ineligibleLatestValide->id_inscription_pedagogique,
+        ]);
+        $this->assertDatabaseMissing('repartition_etudiants', [
+            'id_examen' => $examen->id_examen,
+            'id_inscription_pedagogique' => $withoutResult->id_inscription_pedagogique,
+        ]);
+    }
+
     public function test_store_can_plan_all_filtered_modules_with_a_separate_repartition_for_each_exam(): void
     {
         [
@@ -274,6 +346,188 @@ class ExamenControllerTest extends TestCase
                 ->pluck('id_inscription_pedagogique')
                 ->all()
         );
+    }
+
+    public function test_store_can_plan_an_exam_for_a_module_element(): void
+    {
+        [
+            'user' => $user,
+            'annee' => $annee,
+            'section' => $section,
+            'niveau' => $niveau,
+            'offre' => $offre,
+            'module' => $module,
+            'salle' => $salle,
+            'session' => $session,
+        ] = $this->createSharedSessionPlanningContext();
+
+        $element = ElementModule::factory()->create([
+            'id_module' => $module->id_module,
+            'code_element' => 'ANA-TP',
+            'nom_element' => 'Travaux pratiques',
+        ]);
+
+        $inscriptionPedagogique = $this->createPedagogicalRegistration(
+            $section,
+            $annee,
+            $niveau,
+            $offre,
+            'Alpha',
+            'Element'
+        );
+
+        $response = $this
+            ->actingAs($user)
+            ->post(route('examens.examens.store'), [
+                'id_session_examen' => $session->id_session_examen,
+                'id_module' => $module->id_module,
+                'id_element' => $element->id_element,
+                'salles' => [$salle->id_salle],
+                'date_examen' => '2026-06-20',
+                'date_debut' => '2026-06-20 08:00:00',
+                'date_fin' => '2026-06-20 10:00:00',
+                'statut' => 'Planifiee',
+                'description' => 'Examen element',
+            ]);
+
+        $response
+            ->assertRedirect(route('examens.examens.index'))
+            ->assertSessionHasNoErrors();
+
+        $examen = Examen::query()->latest('id_examen')->first();
+
+        $this->assertNotNull($examen);
+        $this->assertDatabaseHas('examens', [
+            'id_examen' => $examen->id_examen,
+            'id_module' => $module->id_module,
+            'id_element' => $element->id_element,
+        ]);
+        $this->assertDatabaseHas('repartition_etudiants', [
+            'id_examen' => $examen->id_examen,
+            'id_inscription_pedagogique' => $inscriptionPedagogique->id_inscription_pedagogique,
+        ]);
+    }
+
+    public function test_store_bulk_planning_creates_module_and_extra_element_exams_without_duplicating_self_reference(): void
+    {
+        [
+            'user' => $user,
+            'annee' => $annee,
+            'section' => $section,
+            'niveau' => $niveau,
+            'offre' => $offre,
+            'module' => $module,
+            'salle' => $salle,
+            'session' => $session,
+        ] = $this->createSharedSessionPlanningContext();
+
+        $selfReferencingElement = ElementModule::query()
+            ->where('id_module', $module->id_module)
+            ->where('code_element', $module->code_module)
+            ->where('nom_element', $module->nom_module)
+            ->first();
+
+        $this->assertNotNull($selfReferencingElement);
+
+        $extraElement = ElementModule::factory()->create([
+            'id_module' => $module->id_module,
+            'code_element' => 'ANA-TP',
+            'nom_element' => 'Travaux pratiques',
+        ]);
+
+        $inscriptionPedagogique = $this->createPedagogicalRegistration(
+            $section,
+            $annee,
+            $niveau,
+            $offre,
+            'Alpha',
+            'Bulk'
+        );
+
+        $response = $this
+            ->actingAs($user)
+            ->post(route('examens.examens.store'), [
+                'id_session_examen' => $session->id_session_examen,
+                'plan_all_filtered_modules' => true,
+                'salles' => [$salle->id_salle],
+                'module_plannings' => [
+                    [
+                        'id_module' => $module->id_module,
+                        'date_examen' => '2026-06-20',
+                        'date_debut' => '2026-06-20 08:00:00',
+                        'date_fin' => '2026-06-20 10:00:00',
+                    ],
+                ],
+                'statut' => 'Planifiee',
+                'description' => 'Planification groupee avec elements',
+            ]);
+
+        $response
+            ->assertRedirect(route('examens.examens.index'))
+            ->assertSessionHasNoErrors();
+
+        $plannedExamens = Examen::query()
+            ->where('id_session_examen', $session->id_session_examen)
+            ->where('id_module', $module->id_module)
+            ->orderBy('id_examen')
+            ->get();
+
+        $this->assertCount(2, $plannedExamens);
+
+        $moduleExam = $plannedExamens->first(fn (Examen $examen) => $examen->id_element === null);
+        $elementExam = $plannedExamens->first(fn (Examen $examen) => (int) $examen->id_element === $extraElement->id_element);
+
+        $this->assertNotNull($moduleExam);
+        $this->assertNotNull($elementExam);
+        $this->assertDatabaseMissing('examens', [
+            'id_session_examen' => $session->id_session_examen,
+            'id_module' => $module->id_module,
+            'id_element' => $selfReferencingElement->id_element,
+        ]);
+        $this->assertDatabaseHas('repartition_etudiants', [
+            'id_examen' => $moduleExam->id_examen,
+            'id_inscription_pedagogique' => $inscriptionPedagogique->id_inscription_pedagogique,
+        ]);
+        $this->assertDatabaseHas('repartition_etudiants', [
+            'id_examen' => $elementExam->id_examen,
+            'id_inscription_pedagogique' => $inscriptionPedagogique->id_inscription_pedagogique,
+        ]);
+    }
+
+    public function test_store_rejects_an_element_that_does_not_belong_to_the_selected_module(): void
+    {
+        [
+            'user' => $user,
+            'module' => $module,
+            'salle' => $salle,
+            'session' => $session,
+        ] = $this->createSharedSessionPlanningContext();
+
+        $otherModule = Module::factory()->create();
+        $otherElement = ElementModule::factory()->create([
+            'id_module' => $otherModule->id_module,
+            'code_element' => 'OTH-TP',
+        ]);
+
+        $response = $this
+            ->from(route('examens.examens.index'))
+            ->actingAs($user)
+            ->post(route('examens.examens.store'), [
+                'id_session_examen' => $session->id_session_examen,
+                'id_module' => $module->id_module,
+                'id_element' => $otherElement->id_element,
+                'salles' => [$salle->id_salle],
+                'date_examen' => '2026-06-20',
+                'date_debut' => '2026-06-20 08:00:00',
+                'date_fin' => '2026-06-20 10:00:00',
+                'statut' => 'Planifiee',
+            ]);
+
+        $response
+            ->assertRedirect(route('examens.examens.index'))
+            ->assertSessionHasErrors(['id_element']);
+
+        $this->assertDatabaseCount('examens', 0);
     }
 
     public function test_store_places_credit_registrations_in_the_last_selected_salle(): void
@@ -572,6 +826,22 @@ class ExamenControllerTest extends TestCase
             'id_offre' => $offre->id_offre,
             'type_inscription' => $typeInscription,
             'credits_acquis' => 0,
+        ]);
+    }
+
+    private function createModuleResult(
+        InscriptionPedagogique $inscriptionPedagogique,
+        Module $module,
+        string $statut,
+        ?string $dateValidation = '2026-06-30'
+    ): ResultatModule {
+        return ResultatModule::create([
+            'id_inscription_pedagogique' => $inscriptionPedagogique->id_inscription_pedagogique,
+            'id_module' => $module->id_module,
+            'moyenne_module' => 8.50,
+            'statut' => $statut,
+            'date_validation' => $dateValidation,
+            'est_anticipe' => false,
         ]);
     }
 }

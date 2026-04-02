@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>Repartition - {{ $examen->module->code_module ?? 'Examen' }}</title>
+    <title>Repartition - {{ $displayLabel ?? ($examLabel ?? ($examen->module->nom_module ?? 'Examen')) }}</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: "Roboto", Arial, sans-serif; padding: 0; }
@@ -40,6 +40,7 @@
         $showPresence = in_array('presence', $columns);
         $presenceFilled = $presenceFilled ?? true;
         $sessionLabel = $sessionLabel ?? ($examen->sessionExamen->nom_session ?? '-');
+        $displayLabel = $displayLabel ?? ($elementLabel ?? $moduleLabel ?? ($examen->module->nom_module ?? '-'));
         $columnCount = 1 + ($showCne ? 1 : 0) + ($showEtudiant ? 1 : 0) + ($showGrille ? 1 : 0) + ($showPlace ? 1 : 0) + ($showAnonymat ? 1 : 0) + ($showPresence ? 1 : 0);
         $groups = $salleGroups ?? collect([[
             'salle' => $examen->salle,
@@ -69,7 +70,7 @@
             </div>
 
             <h1>REPARTITION</h1>
-            <h2>{{ $niveauFiliere ?: ($examen->module->nom_module ?? 'Module') }}</h2>
+            <h2>{{ $niveauFiliere ?: ($examLabel ?? ($examen->module->nom_module ?? 'Module')) }}</h2>
 
             <table class="info-table">
                 <tr>
@@ -79,8 +80,8 @@
                     <td class="value">{{ $group['salle']->nom_salle ?? ('nb place'.$group['salle_index']) }}</td>
                 </tr>
                 <tr>
-                    <td class="label">Module</td>
-                    <td class="value">{{ $examen->module->nom_module ?? '-' }}</td>
+                    <td class="label">Examen</td>
+                    <td class="value">{{ $displayLabel }}</td>
                     <td class="label">Date</td>
                     <td class="value">{{ optional($examen->date_examen)->format('d/m/Y') ?? '-' }}</td>
                 </tr>

@@ -39,6 +39,23 @@ const formatSessionLabel = (session) => {
     return parts.join(' - ');
 };
 
+const formatModuleLabel = (module) =>
+    [module?.code_module, module?.nom_module].filter(Boolean).join(' - ');
+
+const formatElementLabel = (element) =>
+    [element?.code_element, element?.nom_element].filter(Boolean).join(' - ');
+
+const formatExamLabel = (examen) => {
+    const moduleLabel = formatModuleLabel(examen?.module);
+    const elementLabel = formatElementLabel(examen?.element);
+
+    if (elementLabel) {
+        return [moduleLabel || 'Module', elementLabel].filter(Boolean).join(' / ');
+    }
+
+    return moduleLabel || 'Module';
+};
+
 const statusTone = {
     Planifiee: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-200',
     'En cours': 'bg-amber-50 text-amber-600 dark:bg-amber-900/40 dark:text-amber-200',
@@ -61,14 +78,19 @@ const normalizeText = (value) => {
 export default function ExamensTable({ examens, sessions, modules, salles, statuts, semestres = [], niveaux = [] }) {
     const [modalOpen, setModalOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
-    const [selectedNiveau, setSelectedNiveau] = useState('');
-    const [selectedSemestre, setSelectedSemestre] = useState('');
+    const [sessionFilter, setSessionFilter] = useState('');
+    const [niveauFilter, setNiveauFilter] = useState('');
+    const [semestreFilter, setSemestreFilter] = useState('');
+    const [moduleFilter, setModuleFilter] = useState('');
+    const [editSelectedNiveau, setEditSelectedNiveau] = useState('');
+    const [editSelectedSemestre, setEditSelectedSemestre] = useState('');
     const [allocations, setAllocations] = useState({});
 
     const { data, setData, put, delete: destroy, errors, processing, reset, transform } = useForm({
         id_examen: null,
         id_session_examen: '',
         id_module: '',
+        id_element: '',
         id_salle: '',
         salles: [],
         repartition_salles: [],
@@ -81,21 +103,42 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
         description: '',
     });
 
-    const filteredSemestres = useMemo(
-        () => semestres.filter((sem) => !selectedNiveau || String(sem.id_niveau) === String(selectedNiveau)),
-        [semestres, selectedNiveau],
+    const modulesById = useMemo(
+        () => new Map(modules.map((module) => [String(module.id_module), module])),
+        [modules],
     );
 
-    const filteredModules = useMemo(() => {
+    const filteredListSemestres = useMemo(
+        () => semestres.filter((sem) => !niveauFilter || String(sem.id_niveau) === String(niveauFilter)),
+        [semestres, niveauFilter],
+    );
+
+    const filteredListModules = useMemo(() => {
         return modules.filter((module) => {
             const sems = module.semestres || [];
             const matchesNiveau =
-                !selectedNiveau || sems.some((sem) => String(sem.id_niveau) === String(selectedNiveau));
+                !niveauFilter || sems.some((sem) => String(sem.id_niveau) === String(niveauFilter));
             const matchesSemestre =
-                !selectedSemestre || sems.some((sem) => String(sem.id_semestre) === String(selectedSemestre));
+                !semestreFilter || sems.some((sem) => String(sem.id_semestre) === String(semestreFilter));
             return matchesNiveau && matchesSemestre;
         });
-    }, [modules, selectedNiveau, selectedSemestre]);
+    }, [modules, niveauFilter, semestreFilter]);
+
+    const filteredEditModules = useMemo(() => {
+        return modules.filter((module) => {
+            const sems = module.semestres || [];
+            const matchesNiveau =
+                !editSelectedNiveau || sems.some((sem) => String(sem.id_niveau) === String(editSelectedNiveau));
+            const matchesSemestre =
+                !editSelectedSemestre || sems.some((sem) => String(sem.id_semestre) === String(editSelectedSemestre));
+            return matchesNiveau && matchesSemestre;
+        });
+    }, [modules, editSelectedNiveau, editSelectedSemestre]);
+    const selectedEditModule = useMemo(
+        () => filteredEditModules.find((module) => String(module.id_module) === String(data.id_module)),
+        [data.id_module, filteredEditModules],
+    );
+    const availableEditElements = selectedEditModule?.elements || [];
 
     const selectedSalles = useMemo(
         () => salles.filter((salle) => data.salles.includes(String(salle.id_salle))),
@@ -113,11 +156,33 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
     }, [data.anonymat_end, data.anonymat_start]);
 
     useEffect(() => {
-        const exists = filteredModules.some((mod) => String(mod.id_module) === String(data.id_module));
+        const exists = filteredEditModules.some((mod) => String(mod.id_module) === String(data.id_module));
         if (!exists) {
             setData('id_module', '');
+            setData('id_element', '');
         }
-    }, [filteredModules, data.id_module, setData]);
+    }, [filteredEditModules, data.id_module, setData]);
+
+    useEffect(() => {
+        const exists = availableEditElements.some((element) => String(element.id_element) === String(data.id_element));
+        if (!exists && data.id_element) {
+            setData('id_element', '');
+        }
+    }, [availableEditElements, data.id_element, setData]);
+
+    useEffect(() => {
+        const semestreExists = filteredListSemestres.some((sem) => String(sem.id_semestre) === String(semestreFilter));
+        if (!semestreExists && semestreFilter) {
+            setSemestreFilter('');
+        }
+    }, [filteredListSemestres, semestreFilter]);
+
+    useEffect(() => {
+        const moduleExists = filteredListModules.some((module) => String(module.id_module) === String(moduleFilter));
+        if (!moduleExists && moduleFilter) {
+            setModuleFilter('');
+        }
+    }, [filteredListModules, moduleFilter]);
 
     useEffect(() => {
         setAllocations((current) => {
@@ -134,6 +199,7 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
     useEffect(() => {
         transform((currentData) => ({
             ...currentData,
+            id_element: currentData.id_element || '',
             repartition_salles: (currentData.salles || [])
                 .map((id) => {
                     const value = allocations[id];
@@ -170,13 +236,14 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
     const openModal = (examen) => {
         const moduleData = modules.find((m) => String(m.id_module) === String(examen.id_module));
         const firstSem = moduleData?.semestres?.[0];
-        setSelectedNiveau(firstSem?.id_niveau ? String(firstSem.id_niveau) : '');
-        setSelectedSemestre(firstSem?.id_semestre ? String(firstSem.id_semestre) : '');
+        setEditSelectedNiveau(firstSem?.id_niveau ? String(firstSem.id_niveau) : '');
+        setEditSelectedSemestre(firstSem?.id_semestre ? String(firstSem.id_semestre) : '');
 
         setData({
             id_examen: examen.id_examen,
             id_session_examen: examen.id_session_examen ?? '',
             id_module: examen.id_module ?? '',
+            id_element: examen.id_element ?? '',
             id_salle: examen.id_salle ?? '',
             salles: (examen.salles || []).map((s) => String(s.id_salle)),
             anonymat_start: examen.anonymat_start ?? '',
@@ -193,8 +260,8 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
 
     const closeModal = () => {
         setModalOpen(false);
-        setSelectedNiveau('');
-        setSelectedSemestre('');
+        setEditSelectedNiveau('');
+        setEditSelectedSemestre('');
         setAllocations({});
         reset();
     };
@@ -242,14 +309,14 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
     const filteredExamens = useMemo(() => {
         const query = normalizeText(searchTerm.trim());
 
-        if (!query) {
-            return examens;
-        }
-
         return examens.filter((examen) => {
+            const moduleData = modulesById.get(String(examen.id_module));
+            const moduleSemestres = moduleData?.semestres || [];
             const searchableValues = [
                 examen.module?.nom_module,
                 examen.module?.code_module,
+                examen.element?.nom_element,
+                examen.element?.code_element,
                 examen.session_examen?.nom_session,
                 examen.session_examen?.type_session,
                 examen.salle?.nom_salle,
@@ -261,11 +328,27 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
                 examen.date_fin,
             ];
 
-            return searchableValues.some((value) => normalizeText(value).includes(query));
-        });
-    }, [examens, searchTerm]);
+            const matchesSearch =
+                !query || searchableValues.some((value) => normalizeText(value).includes(query));
+            const matchesSession =
+                !sessionFilter || String(examen.id_session_examen) === String(sessionFilter);
+            const matchesNiveau =
+                !niveauFilter || moduleSemestres.some((sem) => String(sem.id_niveau) === String(niveauFilter));
+            const matchesSemestre =
+                !semestreFilter || moduleSemestres.some((sem) => String(sem.id_semestre) === String(semestreFilter));
+            const matchesModule =
+                !moduleFilter || String(examen.id_module) === String(moduleFilter);
 
-    const searchActive = searchTerm.trim().length > 0;
+            return matchesSearch && matchesSession && matchesNiveau && matchesSemestre && matchesModule;
+        });
+    }, [examens, moduleFilter, modulesById, niveauFilter, searchTerm, semestreFilter, sessionFilter]);
+
+    const hasActiveFilters =
+        searchTerm.trim().length > 0 ||
+        sessionFilter ||
+        niveauFilter ||
+        semestreFilter ||
+        moduleFilter;
 
     return (
         <div className="rounded-xl border border-gray-200 bg-white/90 p-6 shadow-sm dark:border-gray-700 dark:text-white dark:bg-gray-900">
@@ -273,7 +356,7 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
                 <div>
                     <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Examens programmés</h2>
                     <span className="text-sm text-gray-500 dark:text-gray-400">
-                        {searchActive ? (
+                        {hasActiveFilters ? (
                             <>
                                 {filteredExamens.length} / {examens.length} examens
                             </>
@@ -294,6 +377,112 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
                         placeholder="Rechercher (module, session, salle...)"
                         className="w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
                     />
+                </div>
+            </div>
+
+            <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+                <div>
+                    <label
+                        htmlFor="examens-session-filter"
+                        className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400"
+                    >
+                        Session
+                    </label>
+                    <select
+                        id="examens-session-filter"
+                        value={sessionFilter}
+                        onChange={(event) => setSessionFilter(event.target.value)}
+                        className="w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
+                    >
+                        <option value="">Toutes les sessions</option>
+                        {sessions.map((session) => (
+                            <option key={session.id_session_examen} value={session.id_session_examen}>
+                                {formatSessionLabel(session)}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+
+                <div>
+                    <label
+                        htmlFor="examens-niveau-filter"
+                        className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400"
+                    >
+                        Niveau
+                    </label>
+                    <select
+                        id="examens-niveau-filter"
+                        value={niveauFilter}
+                        onChange={(event) => setNiveauFilter(event.target.value)}
+                        className="w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
+                    >
+                        <option value="">Tous les niveaux</option>
+                        {niveaux.map((niveau) => (
+                            <option key={niveau.id_niveau} value={niveau.id_niveau}>
+                                {niveau.nom_niveau}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+
+                <div>
+                    <label
+                        htmlFor="examens-semestre-filter"
+                        className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400"
+                    >
+                        Semestre
+                    </label>
+                    <select
+                        id="examens-semestre-filter"
+                        value={semestreFilter}
+                        onChange={(event) => setSemestreFilter(event.target.value)}
+                        className="w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
+                    >
+                        <option value="">Tous les semestres</option>
+                        {filteredListSemestres.map((semestre) => (
+                            <option key={semestre.id_semestre} value={semestre.id_semestre}>
+                                {semestre.nom_semestre}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+
+                <div>
+                    <label
+                        htmlFor="examens-module-filter"
+                        className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400"
+                    >
+                        Module
+                    </label>
+                    <select
+                        id="examens-module-filter"
+                        value={moduleFilter}
+                        onChange={(event) => setModuleFilter(event.target.value)}
+                        className="w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
+                    >
+                        <option value="">Tous les modules</option>
+                        {filteredListModules.map((module) => (
+                            <option key={module.id_module} value={module.id_module}>
+                                {formatModuleLabel(module)}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+
+                <div className="flex items-end">
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setSearchTerm('');
+                            setSessionFilter('');
+                            setNiveauFilter('');
+                            setSemestreFilter('');
+                            setModuleFilter('');
+                        }}
+                        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                    >
+                        Reinitialiser
+                    </button>
                 </div>
             </div>
 
@@ -326,8 +515,10 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
                         {filteredExamens.map((examen) => (
                             <tr key={examen.id_examen} className="text-sm text-gray-700 dark:text-gray-200">
                                 <td className="px-4 py-3 font-medium">
-                                    <div>{examen.module?.nom_module ?? 'Module inconnu'}</div>
-                                    <div className="text-xs text-gray-500">{examen.module?.code_module}</div>
+                                    <div>{formatExamLabel(examen)}</div>
+                                    <div className="text-xs text-gray-500">
+                                        {examen.element ? 'Examen par element' : (examen.module?.code_module ?? '')}
+                                    </div>
                                 </td>
                                 <td className="px-4 py-3">
                                     <div>{examen.session_examen?.nom_session ?? '—'}</div>
@@ -388,9 +579,9 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
                         {filteredExamens.length === 0 && (
                             <tr>
                                 <td colSpan={7} className="px-4 py-6 text-center text-sm text-gray-500 dark:text-gray-400">
-                                    {searchActive
-                                        ? 'Aucun examen ne correspond à cette recherche.'
-                                        : 'Aucun examen planifié pour l’instant.'}
+                                    {hasActiveFilters
+                                        ? 'Aucun examen ne correspond aux filtres selectionnes.'
+                                        : 'Aucun examen planifie pour l\'instant.'}
                                 </td>
                             </tr>
                         )}
@@ -432,17 +623,37 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-100">Module</label>
                                     <select
                                         value={data.id_module}
-                                        onChange={(e) => setData('id_module', e.target.value)}
+                                        onChange={(e) => {
+                                            setData('id_module', e.target.value);
+                                            setData('id_element', '');
+                                        }}
                                         className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
                                     >
                                         <option value="">Sélectionner</option>
-                                        {filteredModules.map((module) => (
+                                        {filteredEditModules.map((module) => (
                                             <option key={module.id_module} value={module.id_module}>
-                                                {module.nom_module}
+                                                {formatModuleLabel(module)}
                                             </option>
                                         ))}
                                     </select>
                                     <InputError message={errors.id_module} className="mt-1" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-100">Element du module</label>
+                                    <select
+                                        value={data.id_element}
+                                        onChange={(e) => setData('id_element', e.target.value)}
+                                        disabled={!selectedEditModule}
+                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-white"
+                                    >
+                                        <option value="">Module complet</option>
+                                        {availableEditElements.map((element) => (
+                                            <option key={element.id_element} value={element.id_element}>
+                                                {formatElementLabel(element)}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <InputError message={errors.id_element} className="mt-1" />
                                 </div>
                             </div>
 

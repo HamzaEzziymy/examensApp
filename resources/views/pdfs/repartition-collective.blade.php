@@ -65,7 +65,7 @@
 
             <h1>Liste de Presence</h1>
             <h2>
-                {{ $niveauFiliere ?: ($examen->module->nom_module ?? 'Module') }}
+                {{ $niveauFiliere ?: ($examLabel ?? ($examen->module->nom_module ?? 'Module')) }}
                 @if($sectionName)
                     - Section {{ $sectionName }}
                 @endif

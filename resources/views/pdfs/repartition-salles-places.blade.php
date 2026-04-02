@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>Repartition salles & places</title>
+    <title>Repartition salles & places - {{ $displayLabel ?? ($examLabel ?? ($examen->module->nom_module ?? 'Examen')) }}</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: "Roboto", Arial, sans-serif; padding: 0; color: #000; }
@@ -34,6 +34,7 @@
         ]]);
         $sallesCount = $groups->count();
         $sessionLabel = $sessionLabel ?? ($examen->sessionExamen->nom_session ?? '-');
+        $displayLabel = $displayLabel ?? ($elementLabel ?? $moduleLabel ?? ($examen->module->nom_module ?? '-'));
     @endphp
 
     @foreach($groups as $groupIndex => $group)
@@ -74,6 +75,10 @@
                     <td class="value">{{ $niveauFiliere ?: '-' }}</td>
                     <td class="label">Salle</td>
                     <td class="value">{{ $group['salle']->nom_salle ?? ('Salle '.$group['salle_index']) }}</td>
+                </tr>
+                <tr>
+                    <td class="label">Examen</td>
+                    <td class="value" colspan="3">{{ $displayLabel }}</td>
                 </tr>
             </table>
 
