@@ -4,6 +4,17 @@ import { useState } from 'react';
 import { Users, Edit3, Trash2, Search, ChevronLeft, ChevronRight, CheckCircle, Clock, FileText } from 'lucide-react';
 import InputError from '@/Components/InputError';
 
+const formatExamLabel = (examen) => {
+    const moduleLabel = [examen?.module?.code_module, examen?.module?.nom_module].filter(Boolean).join(' - ');
+    const elementLabel = [examen?.element?.code_element, examen?.element?.nom_element].filter(Boolean).join(' - ');
+
+    if (elementLabel) {
+        return [moduleLabel || 'Examen', elementLabel].filter(Boolean).join(' / ');
+    }
+
+    return moduleLabel || 'Examen';
+};
+
 export default function CorrectorsIndex({ correcteurs = {}, examens = [], enseignants = [], elements = [], sessions = [] }) {
     const { auth } = usePage().props;
     
@@ -37,9 +48,12 @@ export default function CorrectorsIndex({ correcteurs = {}, examens = [], enseig
     // Get the selected exam to filter elements
     const selectedExamen = examens.find(e => e.id_examen == form.data.id_examen);
     const selectedModuleId = selectedExamen?.id_module;
+    const fixedExamElementId = selectedExamen?.id_element;
 
     // Filter elements based on selected exam's module
-    const elementsForSelectedModule = selectedModuleId 
+    const elementsForSelectedModule = fixedExamElementId
+        ? elements.filter(el => el.id_element === fixedExamElementId)
+        : selectedModuleId 
         ? elements.filter(el => el.id_module === selectedModuleId)
         : [];
 
@@ -69,7 +83,7 @@ export default function CorrectorsIndex({ correcteurs = {}, examens = [], enseig
 
     const filteredExamens = examensForSelectedFiliereAndAnnee.filter((examen) => {
         const query = examenSearch.toLowerCase();
-        const text = `${examen.module?.code_module || ''} ${examen.module?.nom_module || ''}`.toLowerCase();
+        const text = formatExamLabel(examen).toLowerCase();
         return text.includes(query);
     });
 
@@ -115,8 +129,8 @@ export default function CorrectorsIndex({ correcteurs = {}, examens = [], enseig
             const enseignantName = correcteur.enseignant 
                 ? `${correcteur.enseignant.nom} ${correcteur.enseignant.prenom}`.toLowerCase()
                 : '';
-            const moduleName = correcteur.examen?.module?.nom_module?.toLowerCase() || '';
-            return enseignantName.includes(query) || moduleName.includes(query) || correcteur.statut.toLowerCase().includes(query);
+            const examLabel = formatExamLabel(correcteur.examen).toLowerCase();
+            return enseignantName.includes(query) || examLabel.includes(query) || correcteur.statut.toLowerCase().includes(query);
         });
 
     // Calculate statistics
@@ -184,7 +198,7 @@ export default function CorrectorsIndex({ correcteurs = {}, examens = [], enseig
 
     const getSelectedExamenLabel = () => {
         const examen = examens.find(e => e.id_examen == form.data.id_examen);
-        return examen ? `${examen.module?.code_module} - ${examen.module?.nom_module}` : 'Sélectionner un examen';
+        return examen ? formatExamLabel(examen) : 'Sélectionner un examen';
     };
 
     const getSelectedEnseignantLabel = () => {
@@ -196,7 +210,8 @@ export default function CorrectorsIndex({ correcteurs = {}, examens = [], enseig
         if (!selectedModuleId) {
             return 'Sélectionner un examen d\'abord';
         }
-        const element = elementsForSelectedModule.find(e => e.id_element == form.data.id_element);
+        const resolvedElementId = form.data.id_element || fixedExamElementId;
+        const element = elementsForSelectedModule.find(e => e.id_element == resolvedElementId);
         return element ? `${element.code_element} - ${element.nom_element}` : 'Sélectionner un élément';
     };
 
@@ -333,13 +348,13 @@ export default function CorrectorsIndex({ correcteurs = {}, examens = [], enseig
                                                         type="button"
                                                         onClick={() => {
                                                             form.setData('id_examen', examen.id_examen);
-                                                            form.setData('id_element', ''); // Clear element when exam changes
+                                                            form.setData('id_element', examen.id_element || '');
                                                             setShowExamenDropdown(false);
                                                             setExamenSearch('');
                                                         }}
                                                         className="w-full px-3 py-2 text-left text-sm hover:bg-indigo-50 dark:hover:bg-gray-600"
                                                     >
-                                                        {examen.module?.code_module} - {examen.module?.nom_module}
+                                                        {formatExamLabel(examen)}
                                                     </button>
                                                 ))}
                                             </div>
@@ -597,10 +612,10 @@ export default function CorrectorsIndex({ correcteurs = {}, examens = [], enseig
                                                 </td>
                                                 <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
                                                     <div className="font-semibold">
-                                                        {correcteur.examen?.module?.code_module}
+                                                        {formatExamLabel(correcteur.examen)}
                                                     </div>
                                                     <div className="text-xs text-gray-500">
-                                                        {correcteur.examen?.module?.nom_module}
+                                                        {correcteur.examen?.session_examen?.nom_session}
                                                     </div>
                                                 </td>
                                                 <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">

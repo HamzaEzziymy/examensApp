@@ -8,7 +8,54 @@ import * as XLSX from 'xlsx';
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
+<<<<<<< HEAD
 export default function NotesIndex({ examens = [], enseignants = [] }) {
+=======
+const formatExamLabel = (examen) => {
+    const moduleLabel = [examen?.module?.code_module, examen?.module?.nom_module].filter(Boolean).join(' - ');
+    const elementLabel = [examen?.element?.code_element, examen?.element?.nom_element].filter(Boolean).join(' - ');
+
+    if (elementLabel) {
+        return [moduleLabel || 'Examen', elementLabel].filter(Boolean).join(' / ');
+    }
+
+    return moduleLabel || 'Examen';
+};
+
+const getImportCellValue = (row, keys) => {
+    for (const key of keys) {
+        const value = row?.[key];
+        if (value !== undefined && value !== null && String(value).trim() !== '') {
+            return value;
+        }
+    }
+
+    return '';
+};
+
+const normalizeImportIdentifier = (value) =>
+    String(value ?? '')
+        .trim()
+        .replace(/\s+/g, '')
+        .toUpperCase();
+
+const normalizeAnonymatIdentifier = (value) => {
+    const normalized = String(value ?? '').trim().replace(/\s+/g, '');
+
+    if (!normalized) {
+        return '';
+    }
+
+    if (/^\d+$/.test(normalized)) {
+        const stripped = normalized.replace(/^0+/, '');
+        return stripped || '0';
+    }
+
+    return normalized.toUpperCase();
+};
+
+export default function NotesIndex({ notes = {}, examens = [], enseignants = [] }) {
+>>>>>>> e6e809b845bc606b25332805f5937b342100d55e
     const { auth } = usePage().props;
 
     const [searchTerm, setSearchTerm] = useState('');
@@ -40,6 +87,10 @@ export default function NotesIndex({ examens = [], enseignants = [] }) {
 
     // Bulk input states
     const [bulkInputRows, setBulkInputRows] = useState([]);
+    const selectedImportExamData = examens.find(examen => examen.id_examen == selectedImportExamen);
+    const availableImportElements = selectedImportExamData?.id_element
+        ? (selectedImportExamData.module?.elements || []).filter(element => element.id_element == selectedImportExamData.id_element)
+        : (selectedImportExamData?.module?.elements || []);
 
     // Fetch grouped notes on mount and after import
     const fetchGroupedNotes = async () => {
@@ -62,7 +113,21 @@ export default function NotesIndex({ examens = [], enseignants = [] }) {
         }
     }, [selectedImportExamen, inputMode, showModal]);
 
+<<<<<<< HEAD
     const toggleGroup = (key) => setExpandedGroups(prev => ({ ...prev, [key]: !prev[key] }));
+=======
+    // Filter notes by search term
+    const filteredNotes = data
+        .filter((note) => {
+            const query = searchTerm.toLowerCase();
+            const etudiantName = note.anonymat?.etudiant 
+                ? `${note.anonymat.etudiant.nom} ${note.anonymat.etudiant.prenom}`.toLowerCase()
+                : '';
+            const moduleName = formatExamLabel(note.examen).toLowerCase();
+            const anonymatCode = note.anonymat?.code_anonymat?.toLowerCase() || '';
+            return etudiantName.includes(query) || moduleName.includes(query) || anonymatCode.includes(query);
+        });
+>>>>>>> e6e809b845bc606b25332805f5937b342100d55e
 
     const filteredGroups = groupedNotes.filter((group) => {
         const query = searchTerm.toLowerCase();
@@ -124,8 +189,231 @@ export default function NotesIndex({ examens = [], enseignants = [] }) {
         return 'text-red-600 dark:text-red-400';
     };
 
+<<<<<<< HEAD
     const resetModal = () => {
         setShowModal(false);
+=======
+    // Import functions
+    const handleFileSelect = (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        setImportFile(file);
+        setBackendErrors([]);
+        const reader = new FileReader();
+
+        reader.onload = (event) => {
+            try {
+                const workbook = XLSX.read(event.target.result, { type: 'binary' });
+                const sheetName = workbook.SheetNames[0];
+                const sheet = workbook.Sheets[sheetName];
+                const data = XLSX.utils.sheet_to_json(sheet);
+
+                if (data.length === 0) {
+                    toast.error('Le fichier Excel est vide');
+                    return;
+                }
+
+                // Validate data based on import type
+                const errors = [];
+                const preview = data.map((row, index) => {
+                    const rowErrors = [];
+                    const rowNumber = index + 2;
+                    
+                    let identifier = '';
+                    if (importType === 'cne') {
+                        identifier = normalizeImportIdentifier(
+                            getImportCellValue(row, ['cne', 'CNE', 'Cne'])
+                        );
+                        if (!identifier) rowErrors.push('CNE requis');
+                    } else {
+                        identifier = normalizeAnonymatIdentifier(
+                            getImportCellValue(row, ['anonymat', 'Anonymat', 'ANONYMAT', 'code_anonymat', 'Code anonymat', 'CODE_ANONYMAT'])
+                        );
+                        if (!identifier) rowErrors.push('Code anonymat requis');
+                    }
+
+                    const noteValue = getImportCellValue(row, ['note', 'Note', 'NOTE']);
+                    const note = noteValue === '' ? '' : noteValue.toString().trim();
+                    if (!note) {
+                        rowErrors.push('Note requise');
+                    } else if (!['ABS', 'CAP'].includes(note.toUpperCase()) && isNaN(parseFloat(note))) {
+                        rowErrors.push('Note invalide (nombre, ABS, ou CAP)');
+                    }
+
+                    if (rowErrors.length > 0) {
+                        errors.push({
+                            row: rowNumber,
+                            identifier: identifier,
+                            note: note,
+                            errors: rowErrors
+                        });
+                    }
+
+                    return {
+                        identifier: identifier,
+                        note: note,
+                        rowNumber: rowNumber,
+                        hasError: rowErrors.length > 0,
+                        errors: rowErrors
+                    };
+                });
+
+                setImportPreview(preview);
+                setImportErrors(errors);
+
+                const validCount = preview.filter(p => !p.hasError).length;
+                const errorCount = errors.length;
+
+                if (errorCount > 0) {
+                    if (validCount > 0) {
+                        toast.warning(`Fichier analysé: ${validCount} valides, ${errorCount} avec erreurs`);
+                    } else {
+                        toast.error(`Aucune note valide: ${errorCount} erreurs détectées`);
+                    }
+                } else {
+                    toast.success(`Fichier validé: ${validCount} notes prêtes à importer`);
+                }
+            } catch (error) {
+                console.error('Excel parsing error:', error);
+                toast.error('Erreur lors de la lecture du fichier Excel');
+            }
+        };
+
+        reader.readAsBinaryString(file);
+    };
+
+    const handleBulkImport = async () => {
+        if (!selectedImportExamen) {
+            toast.error('Veuillez sélectionner un examen');
+            return;
+        }
+
+        const validItems = importPreview.filter(item => !item.hasError);
+        if (validItems.length === 0) {
+            toast.error('Aucune note valide trouvée pour l\'import');
+            return;
+        }
+
+        setIsImporting(true);
+        setBackendErrors([]);
+
+        try {
+            // First, get anonymats/students based on identifiers
+            const identifiers = validItems.map(item => item.identifier);
+            let studentsResponse;
+            
+            if (importType === 'cne') {
+                studentsResponse = await axios.post(route('correction.notes.students-by-cne'), {
+                    cnes: identifiers,
+                    examen_id: selectedImportExamen
+                });
+            } else {
+                // For anonymat type, we need to get anonymats directly
+                const anonymatsResponse = await axios.get(route('correction.notes.anonymats'), {
+                    params: { examen_id: selectedImportExamen }
+                });
+                
+                // Create a map of anonymat codes to anonymats
+                const anonymatMap = {};
+                anonymatsResponse.data.forEach(anonymat => {
+                    const normalizedCode = normalizeAnonymatIdentifier(anonymat.code_anonymat);
+                    if (!normalizedCode) {
+                        return;
+                    }
+
+                    anonymatMap[normalizedCode] = {
+                        anonymat: anonymat,
+                        etudiant: anonymat.etudiant
+                    };
+                });
+                studentsResponse = { data: anonymatMap };
+            }
+
+            // Prepare notes for import
+            const notesToImport = [];
+            const notFoundErrors = [];
+
+            validItems.forEach((item, index) => {
+                const studentData = studentsResponse.data[item.identifier];
+                if (studentData && studentData.anonymat) {
+                    notesToImport.push({
+                        id_anonymat: studentData.anonymat.id_anonymat,
+                        id_examen: selectedImportExamen,
+                        id_element: selectedImportElement || null,
+                        id_enseignant: selectedImportEnseignant || null,
+                        note: item.note,
+                        note_sur: importNoteSur,
+                        commentaire: importCommentaire || null
+                    });
+                } else {
+                    notFoundErrors.push({
+                        row: item.rowNumber,
+                        identifier: item.identifier,
+                        errors: [importType === 'cne' ? 'Étudiant non trouvé ou non inscrit à cet examen' : 'Code anonymat non trouvé pour cet examen']
+                    });
+                }
+            });
+
+            if (notesToImport.length === 0) {
+                setBackendErrors(notFoundErrors);
+                toast.error('Aucun étudiant trouvé pour l\'import');
+                setIsImporting(false);
+                return;
+            }
+
+            // Import notes
+            const response = await axios.post(route('correction.notes.import'), 
+                { notes: notesToImport },
+                {
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-Requested-With': 'XMLHttpRequest'
+                    }
+                }
+            );
+
+            const responseData = response.data;
+            const allErrors = [...notFoundErrors, ...(responseData.import_errors || [])];
+
+            if (allErrors.length > 0) {
+                setBackendErrors(allErrors);
+                
+                if (responseData.created > 0) {
+                    toast.warning(`Import partiel: ${responseData.created} créées, ${allErrors.length} erreurs`);
+                } else {
+                    toast.error(`Import échoué: ${allErrors.length} erreurs`);
+                }
+            } else {
+                const createdCount = responseData.created || notesToImport.length;
+                toast.success(`Import réussi: ${createdCount} notes créées!`);
+                
+                // Reset and close modal
+                resetImportModal();
+            }
+
+            // Reload the page data
+            window.location.reload();
+
+        } catch (error) {
+            console.error('Import error:', error);
+            if (error.response && error.response.data) {
+                const responseData = error.response.data;
+                if (responseData.import_errors) {
+                    setBackendErrors(responseData.import_errors);
+                }
+                toast.error(responseData.message || 'Erreur lors de l\'import');
+            } else {
+                toast.error('Erreur de connexion');
+            }
+        } finally {
+            setIsImporting(false);
+        }
+    };
+
+    const resetImportModal = () => {
+        setShowImportModal(false);
+>>>>>>> e6e809b845bc606b25332805f5937b342100d55e
         setImportFile(null);
         setImportPreview([]);
         setImportErrors([]);
@@ -384,6 +672,7 @@ export default function NotesIndex({ examens = [], enseignants = [] }) {
                                             Chargement...
                                         </td>
                                     </tr>
+<<<<<<< HEAD
                                 ) : filteredGroups.length > 0 ? (
                                     filteredGroups.map((group) => {
                                         const key = `${group.id_examen}-${group.id_element ?? 'module'}`;
@@ -426,6 +715,49 @@ export default function NotesIndex({ examens = [], enseignants = [] }) {
                                                     <td className="px-4 py-3 text-sm">
                                                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800 dark:bg-indigo-900/30 dark:text-indigo-400">
                                                             {group.notes_count} étudiant{group.notes_count > 1 ? 's' : ''}
+=======
+                                </thead>
+                                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                                    {filteredNotes.length > 0 ? (
+                                        filteredNotes.map((note) => (
+                                            <tr key={note.id_note} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                                                <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
+                                                    <div className="font-semibold">
+                                                        {note.anonymat?.etudiant
+                                                            ? `${note.anonymat.etudiant.nom} ${note.anonymat.etudiant.prenom}`
+                                                            : 'N/A'}
+                                                    </div>
+                                                    <div className="text-xs text-gray-500">
+                                                        {note.anonymat?.code_anonymat}
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
+                                                    <div className="font-semibold">
+                                                        {formatExamLabel(note.examen)}
+                                                    </div>
+                                                    <div className="text-xs text-gray-500">
+                                                        {note.examen?.session_examen?.nom_session}
+                                                    </div>
+                                                </td>
+                                                <td className="px-4 py-3 text-sm text-gray-900 dark:text-gray-100">
+                                                    {note.element ? (
+                                                        <div>
+                                                            <div className="font-semibold">
+                                                                {note.element.code_element}
+                                                            </div>
+                                                            <div className="text-xs text-gray-500">
+                                                                {note.element.nom_element}
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <span className="text-xs text-gray-400 italic">Module complet</span>
+                                                    )}
+                                                </td>
+                                                <td className="px-4 py-3 text-sm">
+                                                    {note.note === 'ABS' ? (
+                                                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-400">
+                                                            ABS
+>>>>>>> e6e809b845bc606b25332805f5937b342100d55e
                                                         </span>
                                                     </td>
                                                     <td className="px-4 py-3 text-sm text-right">
@@ -575,13 +907,22 @@ export default function NotesIndex({ examens = [], enseignants = [] }) {
                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Examen *</label>
                                     <select
                                         value={selectedImportExamen}
+<<<<<<< HEAD
                                         onChange={(e) => { setSelectedImportExamen(e.target.value); setBulkInputRows([]); }}
+=======
+                                        onChange={(e) => {
+                                            const nextExamenId = e.target.value;
+                                            const examen = examens.find(item => item.id_examen == nextExamenId);
+                                            setSelectedImportExamen(nextExamenId);
+                                            setSelectedImportElement(examen?.id_element ? String(examen.id_element) : '');
+                                        }}
+>>>>>>> e6e809b845bc606b25332805f5937b342100d55e
                                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg"
                                     >
                                         <option value="">--Sélectionner un examen--</option>
                                         {examens.map(examen => (
                                             <option key={examen.id_examen} value={examen.id_examen}>
-                                                {examen.module?.code_module} - {examen.module?.nom_module}
+                                                {formatExamLabel(examen)}
                                             </option>
                                         ))}
                                     </select>
@@ -595,7 +936,7 @@ export default function NotesIndex({ examens = [], enseignants = [] }) {
                                         className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg disabled:opacity-50"
                                     >
                                         <option value="">--Module complet--</option>
-                                        {selectedImportExamen && examens.find(e => e.id_examen == selectedImportExamen)?.module?.elements?.map(element => (
+                                        {availableImportElements.map(element => (
                                             <option key={element.id_element} value={element.id_element}>
                                                 {element.code_element} - {element.nom_element}
                                             </option>
@@ -626,8 +967,254 @@ export default function NotesIndex({ examens = [], enseignants = [] }) {
                                         ))}
                                     </select>
                                 </div>
+<<<<<<< HEAD
                                 <div className="md:col-span-2">
                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Commentaire (optionnel)</label>
+=======
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                        Note sur
+                                    </label>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        max="100"
+                                        value={importNoteSur}
+                                        onChange={(e) => setImportNoteSur(e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="mb-6">
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                    Commentaire (optionnel)
+                                </label>
+                                <textarea
+                                    rows="2"
+                                    value={importCommentaire}
+                                    onChange={(e) => setImportCommentaire(e.target.value)}
+                                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg"
+                                    placeholder="Commentaire commun pour toutes les notes..."
+                                />
+                            </div>
+
+                            {/* Validation Summary */}
+                            {importPreview.length > 0 && (
+                                <div className="mb-6 grid grid-cols-3 gap-4">
+                                    <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+                                        <div className="text-blue-800 dark:text-blue-300 font-medium">Total</div>
+                                        <div className="text-2xl font-bold text-blue-900 dark:text-blue-100">{importPreview.length}</div>
+                                    </div>
+                                    <div className="bg-green-50 dark:bg-green-900/20 p-4 rounded-lg border border-green-200 dark:border-green-800">
+                                        <div className="text-green-800 dark:text-green-300 font-medium">Valides</div>
+                                        <div className="text-2xl font-bold text-green-900 dark:text-green-100">
+                                            {importPreview.filter(p => !p.hasError).length}
+                                        </div>
+                                    </div>
+                                    <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg border border-red-200 dark:border-red-800">
+                                        <div className="text-red-800 dark:text-red-300 font-medium">Erreurs</div>
+                                        <div className="text-2xl font-bold text-red-900 dark:text-red-100">{importErrors.length}</div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Errors Display */}
+                            {(importErrors.length > 0 || backendErrors.length > 0) && (
+                                <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                                    <h3 className="text-red-800 dark:text-red-300 font-medium mb-3">
+                                        Erreurs - {importErrors.length + backendErrors.length} ligne(s)
+                                    </h3>
+                                    <div className="max-h-48 overflow-y-auto">
+                                        <table className="w-full text-sm">
+                                            <thead className="bg-red-100 dark:bg-red-900/50 sticky top-0">
+                                                <tr>
+                                                    <th className="px-3 py-2 text-left text-red-800 dark:text-red-300">Ligne</th>
+                                                    <th className="px-3 py-2 text-left text-red-800 dark:text-red-300">{importType === 'cne' ? 'CNE' : 'Anonymat'}</th>
+                                                    <th className="px-3 py-2 text-left text-red-800 dark:text-red-300">Erreurs</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-red-200 dark:divide-red-800">
+                                                {[...importErrors, ...backendErrors].map((error, i) => (
+                                                    <tr key={i} className="text-red-700 dark:text-red-300">
+                                                        <td className="px-3 py-2 font-medium">{error.row}</td>
+                                                        <td className="px-3 py-2">{error.identifier || error.cne || error.anonymat || '-'}</td>
+                                                        <td className="px-3 py-2">
+                                                            <div className="space-y-1">
+                                                                {(Array.isArray(error.errors) ? error.errors : [error.errors]).map((err, j) => (
+                                                                    <div key={j} className="text-xs bg-red-100 dark:bg-red-900/30 px-2 py-1 rounded">
+                                                                        {err}
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div className="flex justify-end gap-3">
+                                <button
+                                    onClick={resetImportModal}
+                                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
+                                >
+                                    Annuler
+                                </button>
+                                {(() => {
+                                    const validCount = importPreview.filter(p => !p.hasError).length;
+                                    const hasValidRows = validCount > 0;
+                                    const hasErrors = importErrors.length > 0;
+                                    const allFieldsSelected = selectedImportExamen;
+
+                                    if (importPreview.length === 0) {
+                                        return (
+                                            <button disabled className="px-4 py-2 bg-gray-400 text-white rounded-lg cursor-not-allowed">
+                                                Sélectionnez un fichier Excel
+                                            </button>
+                                        );
+                                    }
+
+                                    if (!allFieldsSelected) {
+                                        return (
+                                            <button disabled className="px-4 py-2 bg-gray-400 text-white rounded-lg cursor-not-allowed">
+                                                Sélectionnez un examen
+                                            </button>
+                                        );
+                                    }
+
+                                    if (!hasValidRows) {
+                                        return (
+                                            <button disabled className="px-4 py-2 bg-gray-400 text-white rounded-lg cursor-not-allowed">
+                                                Aucune note valide
+                                            </button>
+                                        );
+                                    }
+
+                                    if (isImporting) {
+                                        return (
+                                            <button disabled className="px-4 py-2 bg-gray-400 text-white rounded-lg cursor-not-allowed flex items-center gap-2">
+                                                <Loader2 size={16} className="animate-spin" />
+                                                Import en cours...
+                                            </button>
+                                        );
+                                    }
+
+                                    return (
+                                        <button
+                                            onClick={handleBulkImport}
+                                            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg"
+                                        >
+                                            Importer {validCount} note{validCount > 1 ? 's' : ''}
+                                        </button>
+                                    );
+                                })()}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Bulk Input Modal */}
+            {showBulkInputModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-6xl max-h-[90vh] overflow-y-auto">
+                        <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between sticky top-0 bg-white dark:bg-gray-800">
+                            <h2 className="text-xl font-bold text-gray-900 dark:text-white">Saisie en lot - Notes</h2>
+                            <button onClick={resetBulkInputModal} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                                <X size={24} />
+                            </button>
+                        </div>
+                        <div className="p-6">
+                            {/* Common Fields */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                        Examen *
+                                    </label>
+                                    <select
+                                        value={selectedImportExamen}
+                                        onChange={(e) => {
+                                            const nextExamenId = e.target.value;
+                                            const examen = examens.find(item => item.id_examen == nextExamenId);
+                                            setSelectedImportExamen(nextExamenId);
+                                            setSelectedImportElement(examen?.id_element ? String(examen.id_element) : '');
+                                            setBulkInputRows([]); // Clear rows when exam changes
+                                        }}
+                                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg"
+                                    >
+                                        <option value="">--Sélectionner un examen--</option>
+                                        {examens.map(examen => (
+                                            <option key={examen.id_examen} value={examen.id_examen}>
+                                                {formatExamLabel(examen)}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                        Élément du module
+                                    </label>
+                                    <select
+                                        value={selectedImportElement}
+                                        onChange={(e) => setSelectedImportElement(e.target.value)}
+                                        disabled={!selectedImportExamen}
+                                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg disabled:opacity-50"
+                                    >
+                                        <option value="">--Module complet--</option>
+                                        {availableImportElements.map(element => (
+                                            <option key={element.id_element} value={element.id_element}>
+                                                {element.code_element} - {element.nom_element}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                        Note sur
+                                    </label>
+                                    <input
+                                        type="number"
+                                        step="0.01"
+                                        min="0"
+                                        max="100"
+                                        value={importNoteSur}
+                                        onChange={(e) => setImportNoteSur(e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                        Enseignant
+                                    </label>
+                                    <select
+                                        value={selectedImportEnseignant}
+                                        onChange={(e) => setSelectedImportEnseignant(e.target.value)}
+                                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg"
+                                    >
+                                        <option value="">--Aucun enseignant--</option>
+                                        {enseignants.map(enseignant => (
+                                            <option key={enseignant.id_enseignant} value={enseignant.id_enseignant}>
+                                                {enseignant.nom} {enseignant.prenom}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                        Commentaire (optionnel)
+                                    </label>
+>>>>>>> e6e809b845bc606b25332805f5937b342100d55e
                                     <input
                                         type="text"
                                         value={importCommentaire}

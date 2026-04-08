@@ -15,6 +15,12 @@ export default function PlanifierForm({
     asCard = true,
     hideTitle = false,
 }) {
+    const isSelfReferencingElement = (module, element) =>
+        module &&
+        element &&
+        element.code_element === module.code_module &&
+        element.nom_element === module.nom_module;
+
     const formatSessionLabel = (session) => {
         const parts = [session.nom_session];
 
@@ -31,10 +37,12 @@ export default function PlanifierForm({
         return parts.join(' - ');
     };
     const formatModuleLabel = (module) => [module.code_module, module.nom_module].filter(Boolean).join(' - ');
+    const formatElementLabel = (element) => [element?.code_element, element?.nom_element].filter(Boolean).join(' - ');
 
     const { data, setData, post, processing, errors, reset, transform } = useForm({
         id_session_examen: '',
         id_module: '',
+        id_element: '',
         plan_all_filtered_modules: false,
         module_ids: [],
         module_plannings: [],
@@ -71,6 +79,23 @@ export default function PlanifierForm({
     const isBulkPlanning = Boolean(data.plan_all_filtered_modules);
     const canPlanFilteredModules = Boolean(selectedNiveau && selectedSemestre && filteredModules.length > 0);
     const bulkModulePreview = useMemo(() => filteredModules.slice(0, 4), [filteredModules]);
+    const totalBulkExamCount = useMemo(
+        () =>
+            filteredModules.reduce((sum, module) => {
+                const extraElements = (module.elements || []).filter(
+                    (element) => !isSelfReferencingElement(module, element),
+                ).length;
+
+                return sum + 1 + extraElements;
+            }, 0),
+        [filteredModules],
+    );
+    const totalBulkElementCount = Math.max(0, totalBulkExamCount - filteredModules.length);
+    const selectedModule = useMemo(
+        () => filteredModules.find((module) => String(module.id_module) === String(data.id_module)),
+        [data.id_module, filteredModules],
+    );
+    const availableElements = selectedModule?.elements || [];
 
     const selectedSalles = useMemo(
         () => salles.filter((salle) => data.salles.includes(String(salle.id_salle))),
@@ -95,8 +120,16 @@ export default function PlanifierForm({
         const moduleExists = filteredModules.some((mod) => String(mod.id_module) === String(data.id_module));
         if (!moduleExists) {
             setData('id_module', '');
+            setData('id_element', '');
         }
     }, [filteredModules, data.id_module, setData]);
+
+    useEffect(() => {
+        const elementExists = availableElements.some((element) => String(element.id_element) === String(data.id_element));
+        if (!elementExists && data.id_element) {
+            setData('id_element', '');
+        }
+    }, [availableElements, data.id_element, setData]);
 
     useEffect(() => {
         if (data.plan_all_filtered_modules && !canPlanFilteredModules) {
@@ -152,6 +185,7 @@ export default function PlanifierForm({
         transform((currentData) => ({
             ...currentData,
             id_module: currentData.plan_all_filtered_modules ? '' : currentData.id_module,
+            id_element: currentData.plan_all_filtered_modules ? '' : currentData.id_element,
             module_ids: currentData.plan_all_filtered_modules
                 ? (currentData.module_plannings || []).map((planning) => Number(planning.id_module))
                 : [],
@@ -228,8 +262,8 @@ export default function PlanifierForm({
     const submit = (event) => {
         event.preventDefault();
         const successTitle =
-            data.plan_all_filtered_modules && data.module_plannings.length > 1
-                ? `${data.module_plannings.length} examens planifies`
+            data.plan_all_filtered_modules && totalBulkExamCount > 1
+                ? `${totalBulkExamCount} examens planifies`
                 : 'Examen planifie';
 
         post(route('examens.examens.store'), {
@@ -333,6 +367,7 @@ export default function PlanifierForm({
                                     setData('plan_all_filtered_modules', checked);
                                     if (checked) {
                                         setData('id_module', '');
+                                        setData('id_element', '');
                                     }
                                 }}
                                 className="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-600 dark:bg-gray-900"
@@ -343,7 +378,7 @@ export default function PlanifierForm({
                                 </span>
                                 <span className="mt-1 block text-xs text-gray-600 dark:text-gray-300">
                                     {canPlanFilteredModules
-                                        ? `${filteredModules.length} modules seront planifies en une seule action, chacun avec sa repartition separee.`
+                                        ? `${filteredModules.length} modules et ${totalBulkElementCount} element(s) seront planifies en une seule action.`
                                         : 'Choisissez d abord un niveau et un semestre contenant des modules.'}
                                 </span>
                             </span>
@@ -360,6 +395,13 @@ export default function PlanifierForm({
                                             className="rounded-full border border-indigo-200 bg-white px-2.5 py-1 text-xs font-medium text-indigo-700 dark:border-indigo-500/40 dark:bg-gray-900 dark:text-indigo-100"
                                         >
                                             {formatModuleLabel(module)}
+                                            {(() => {
+                                                const extraElements = (module.elements || []).filter(
+                                                    (element) => !isSelfReferencingElement(module, element),
+                                                ).length;
+
+                                                return extraElements > 0 ? ` + ${extraElements} element(s)` : '';
+                                            })()}
                                         </span>
                                     ))}
                                     {filteredModules.length > bulkModulePreview.length && (
@@ -372,6 +414,26 @@ export default function PlanifierForm({
                         )}
                     </div>
                     <InputError message={errors.module_ids} className="mt-1" />
+                </div>
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Element du module</label>
+                    <select
+                        value={data.id_element}
+                        onChange={(e) => setData('id_element', e.target.value)}
+                        disabled={isBulkPlanning || !selectedModule}
+                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700"
+                    >
+                        <option value="">Module complet</option>
+                        {availableElements.map((element) => (
+                            <option key={element.id_element} value={element.id_element}>
+                                {formatElementLabel(element)}
+                            </option>
+                        ))}
+                    </select>
+                    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                        Laissez vide pour une repartition sur tout le module.
+                    </p>
+                    <InputError message={errors.id_element} className="mt-1" />
                 </div>
             </div>
 
@@ -431,7 +493,7 @@ export default function PlanifierForm({
                 <InputError message={errors.salles} className="mt-1" />
                 {isBulkPlanning && (
                     <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                        Les memes salles seront utilisees pour chaque examen cree. La repartition sera calculee separement pour chaque module.
+                        Les memes salles seront utilisees pour chaque examen cree. La repartition sera calculee separement pour chaque module et chaque element genere.
                     </p>
                 )}
             </div>
@@ -441,7 +503,7 @@ export default function PlanifierForm({
                     <div>
                         <p className="text-sm font-medium text-gray-800 dark:text-gray-100">Dates par module</p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">
-                            Renseignez la date, l&apos;heure de debut et l&apos;heure de fin pour chaque module avant de lancer la creation groupee.
+                            Renseignez la date, l&apos;heure de debut et l&apos;heure de fin pour chaque module. Les elements du module seront crees avec les memes horaires.
                         </p>
                     </div>
 

@@ -45,9 +45,27 @@ const getPrimarySalleLabel = (examen) => {
     return firstSalle?.code_salle ?? firstSalle?.nom_salle ?? '';
 };
 
+const formatModuleLabel = (module) =>
+    [module?.code_module, module?.nom_module].filter(Boolean).join(' - ');
+
+const formatElementLabel = (element) =>
+    [element?.code_element, element?.nom_element].filter(Boolean).join(' - ');
+
+const formatExamLabel = (examen) => {
+    const moduleLabel = formatModuleLabel(examen?.module);
+    const elementLabel = formatElementLabel(examen?.element);
+
+    if (elementLabel) {
+        return [moduleLabel || 'Module', elementLabel].filter(Boolean).join(' / ');
+    }
+
+    return moduleLabel || 'Module';
+};
+
 const buildPayload = (source, overrides = {}) => ({
     id_session_examen: overrides.id_session_examen ?? source.id_session_examen ?? '',
     id_module: overrides.id_module ?? source.id_module ?? '',
+    id_element: overrides.id_element ?? source.id_element ?? '',
     id_salle: overrides.id_salle ?? source.id_salle ?? '',
     salles: overrides.salles ?? source.salles ?? [],
     repartition_salles: overrides.repartition_salles ?? source.repartition_salles ?? [],
@@ -66,6 +84,7 @@ export default function ExamensCalendar({ examens, sessions, modules, salles, st
         id_examen: null,
         id_session_examen: '',
         id_module: '',
+        id_element: '',
         id_salle: '',
         salles: [],
         repartition_salles: [],
@@ -85,7 +104,7 @@ export default function ExamensCalendar({ examens, sessions, modules, salles, st
 
         return examens.map((examen) => {
             const color = statusColors[examen.statut] ?? '#4b5563';
-            const moduleName = examen.module?.nom_module ?? 'Module';
+            const moduleName = formatExamLabel(examen);
             const semesterName = semesterByModule.get(String(examen.id_module)) || '';
             const title = [moduleName, semesterName].filter(Boolean).join(' - ');
 
@@ -108,6 +127,11 @@ export default function ExamensCalendar({ examens, sessions, modules, salles, st
         () => salles.filter((salle) => data.salles.includes(String(salle.id_salle))),
         [salles, data.salles],
     );
+    const selectedModule = useMemo(
+        () => modules.find((module) => String(module.id_module) === String(data.id_module)),
+        [data.id_module, modules],
+    );
+    const availableElements = selectedModule?.elements || [];
 
     useEffect(() => {
         setAllocations((current) => {
@@ -124,6 +148,7 @@ export default function ExamensCalendar({ examens, sessions, modules, salles, st
     useEffect(() => {
         transform((currentData) => ({
             ...currentData,
+            id_element: currentData.id_element || '',
             repartition_salles: (currentData.salles || [])
                 .map((id) => {
                     const value = allocations[id];
@@ -136,12 +161,20 @@ export default function ExamensCalendar({ examens, sessions, modules, salles, st
         }));
     }, [allocations, data.salles, transform]);
 
+    useEffect(() => {
+        const exists = availableElements.some((element) => String(element.id_element) === String(data.id_element));
+        if (!exists && data.id_element) {
+            setData('id_element', '');
+        }
+    }, [availableElements, data.id_element, setData]);
+
 
     const openEditor = (examen) => {
         setData({
             id_examen: examen.id_examen,
             id_session_examen: examen.id_session_examen ?? '',
             id_module: examen.id_module ?? '',
+            id_element: examen.id_element ?? '',
             id_salle: examen.id_salle ?? '',
             salles: (examen.salles || []).map((s) => String(s.id_salle)),
             date_examen: toInputDate(examen.date_examen ?? examen.date_debut),
@@ -359,7 +392,7 @@ export default function ExamensCalendar({ examens, sessions, modules, salles, st
                                 <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">Details / modification</h3>
                                 {selectedExam && (
                                     <p className="text-sm text-gray-500 dark:text-gray-400">
-                                        {selectedExam.module?.code_module} - {selectedExam.module?.nom_module} - {selectedExam.session_examen?.nom_session}
+                                        {formatExamLabel(selectedExam)} - {selectedExam.session_examen?.nom_session}
                                     </p>
                                 )}
                             </div>
@@ -381,7 +414,7 @@ export default function ExamensCalendar({ examens, sessions, modules, salles, st
                                 </div>
                                 <div>
                                     <p className="font-semibold">Module</p>
-                                    <p>{selectedExam.module?.nom_module ?? '-'}</p>
+                                    <p>{formatExamLabel(selectedExam)}</p>
                                 </div>
                                 <div>
                                     <p className="font-semibold">Salle</p>
@@ -411,7 +444,10 @@ export default function ExamensCalendar({ examens, sessions, modules, salles, st
                                 <label className="text-sm font-medium text-gray-700 dark:text-gray-200">Module</label>
                                 <select
                                     value={data.id_module}
-                                    onChange={(event) => setData('id_module', event.target.value)}
+                                    onChange={(event) => {
+                                        setData('id_module', event.target.value);
+                                        setData('id_element', '');
+                                    }}
                                     className="mt-1 min-h-[8rem] w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
                                 >
                                     <option value="">Selectionner</option>
@@ -422,6 +458,23 @@ export default function ExamensCalendar({ examens, sessions, modules, salles, st
                                     ))}
                                 </select>
                                 <InputError message={errors.id_module} className="mt-1" />
+                            </div>
+                            <div>
+                                <label className="text-sm font-medium text-gray-700 dark:text-gray-200">Element du module</label>
+                                <select
+                                    value={data.id_element}
+                                    onChange={(event) => setData('id_element', event.target.value)}
+                                    disabled={!selectedModule}
+                                    className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700"
+                                >
+                                    <option value="">Module complet</option>
+                                    {availableElements.map((element) => (
+                                        <option key={element.id_element} value={element.id_element}>
+                                            {formatElementLabel(element)}
+                                        </option>
+                                    ))}
+                                </select>
+                                <InputError message={errors.id_element} className="mt-1" />
                             </div>
 
                             <div>

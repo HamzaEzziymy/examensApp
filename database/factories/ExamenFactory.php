@@ -32,6 +32,7 @@ class ExamenFactory extends Factory
         return [
             'id_session_examen' => SessionExamen::factory(),
             'id_module'         => Module::factory(),
+            'id_element'        => null,
             'id_salle'          => Salle::factory(),
             'date_examen'       => $start->format('Y-m-d'),
             'date_debut'        => $start->format('Y-m-d H:i:s'),

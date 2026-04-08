@@ -15,7 +15,25 @@ class NoteController extends Controller
 {
     public function index(Request $request)
     {
+<<<<<<< HEAD
         $examens = Examen::with(['module.offresFormation.section', 'module.elements'])
+=======
+        // Paginate notes with relationships
+        $notes = Note::with([
+                'anonymat.inscriptionPedagogique.inscriptionAdministrative.etudiant',
+                'examen.module.offresFormation.section',
+                'examen.module.elements',
+                'examen.element',
+                'examen.sessionExamen',
+                'element',
+                'enseignant'
+            ])
+            ->latest('date_saisie')
+            ->paginate(25);
+        
+        // Load examens with relationships
+        $examens = Examen::with(['module.offresFormation.section', 'module.elements', 'element', 'sessionExamen'])
+>>>>>>> e6e809b845bc606b25332805f5937b342100d55e
             ->latest('date_examen')
             ->limit(200)
             ->get();
@@ -408,19 +426,72 @@ class NoteController extends Controller
         $examenId = $request->input('examen_id');
         if (empty($cnes) || !$examenId) return response()->json([]);
 
+<<<<<<< HEAD
         $anonymats = Anonymat::with(['inscriptionPedagogique.inscriptionAdministrative.etudiant'])
             ->where('id_examen', $examenId)
             ->whereHas('inscriptionPedagogique.inscriptionAdministrative.etudiant', fn($q) => $q->whereIn('cne', $cnes))
+=======
+        $normalizedCnes = collect($cnes)
+            ->map(fn ($cne) => $this->normalizeImportIdentifier($cne))
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($normalizedCnes->isEmpty()) {
+            return response()->json([]);
+        }
+
+        // Load anonymats for the selected exam and normalize keys in PHP.
+        // This is more tolerant to casing and spacing than an exact SQL whereIn.
+        $anonymats = Anonymat::with([
+                'inscriptionPedagogique.inscriptionAdministrative.etudiant'
+            ])
+            ->where('id_examen', $examenId)
+>>>>>>> e6e809b845bc606b25332805f5937b342100d55e
             ->get();
 
         $result = [];
         foreach ($anonymats as $anonymat) {
+<<<<<<< HEAD
             $etudiant = $anonymat->inscriptionPedagogique?->inscriptionAdministrative?->etudiant;
             if ($etudiant) {
                 $result[$etudiant->cne] = ['anonymat' => $anonymat, 'etudiant' => $etudiant];
+=======
+            if ($anonymat->inscriptionPedagogique && 
+                $anonymat->inscriptionPedagogique->inscriptionAdministrative && 
+                $anonymat->inscriptionPedagogique->inscriptionAdministrative->etudiant) {
+                
+                $etudiant = $anonymat->inscriptionPedagogique->inscriptionAdministrative->etudiant;
+                $normalizedCne = $this->normalizeImportIdentifier($etudiant->cne);
+
+                if ($normalizedCne === '' || ! $normalizedCnes->contains($normalizedCne)) {
+                    continue;
+                }
+
+                $result[$normalizedCne] = [
+                    'anonymat' => $anonymat,
+                    'etudiant' => $etudiant
+                ];
+>>>>>>> e6e809b845bc606b25332805f5937b342100d55e
             }
         }
 
         return response()->json($result);
+    }
+
+    private function normalizeImportIdentifier($value, bool $stripLeadingZeros = false): string
+    {
+        $normalized = trim((string) $value);
+        $normalized = preg_replace('/\s+/', '', $normalized);
+
+        if ($normalized === null || $normalized === '') {
+            return '';
+        }
+
+        if ($stripLeadingZeros && preg_match('/^\d+$/', $normalized)) {
+            return ltrim($normalized, '0') ?: '0';
+        }
+
+        return strtoupper($normalized);
     }
 }

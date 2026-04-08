@@ -49,6 +49,7 @@ const TEMPLATE_HEADER_ROW = 9;
 const TEMPLATE_START_ROW = 10;
 const TEMPLATE_REPEAT_ROW = 11;
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+const MODULE_ONLY_FILTER = '__module__';
 
 const safeSheetName = (value) => {
     const name = (value || 'Sheet').replace(/[\\/?*[\]:]/g, ' ').trim() || 'Sheet';
@@ -60,10 +61,20 @@ const formatModuleLabel = (module) => {
     return parts.length ? parts.join(' - ') : 'Module';
 };
 
+const formatModuleName = (module) => module?.nom_module || module?.code_module || 'Module';
+
 const formatElementLabel = (element) => {
     const parts = [element?.code_element, element?.nom_element].filter(Boolean);
     return parts.length ? parts.join(' - ') : 'Element';
 };
+
+const formatElementName = (element) => element?.nom_element || element?.code_element || null;
+
+const isSelfReferencingElement = (module, element) =>
+    module &&
+    element &&
+    element.code_element === module.code_module &&
+    element.nom_element === module.nom_module;
 
 const formatSessionLabel = (session) => {
     if (!session) return null;
@@ -190,6 +201,26 @@ const resolveExamMeta = (examen) => {
     };
 };
 
+const isDentaireFiliere = (value) => normalizeText(value).includes('dent');
+
+const usesElementRepartitionLogic = (examen) => isDentaireFiliere(resolveExamMeta(examen).filiereNom);
+
+const formatExamLabel = (examen) => {
+    const moduleLabel = formatModuleLabel(examen?.module);
+
+    if (!usesElementRepartitionLogic(examen)) {
+        return moduleLabel;
+    }
+
+    const elementLabel = formatElementLabel(examen?.element);
+
+    if (elementLabel && elementLabel !== 'Element') {
+        return `${moduleLabel} / ${elementLabel}`;
+    }
+
+    return moduleLabel;
+};
+
 export default function RepartitionIndex({ examens, repartitions, inscriptions, selectedExamenId, salles }) {
     const [editingId, setEditingId] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
@@ -197,6 +228,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
     const [rowsPerPage, setRowsPerPage] = useState(10);
     const [selectedNiveau, setSelectedNiveau] = useState('');
     const [selectedSemestre, setSelectedSemestre] = useState('');
+    const [selectedElement, setSelectedElement] = useState('');
     const [columns, setColumns] = useState({
         cne: true,
         etudiant: true,
@@ -212,6 +244,10 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
     const selectedExamen = useMemo(
         () => examens.find((examen) => examen.id_examen === selectedExamenId),
         [examens, selectedExamenId],
+    );
+    const selectedExamenUsesElements = useMemo(
+        () => (selectedExamen ? usesElementRepartitionLogic(selectedExamen) : false),
+        [selectedExamen],
     );
 
     const editingRow = useMemo(
@@ -386,7 +422,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         return Array.from(map.values()).sort((a, b) => a.nom.localeCompare(b.nom));
     }, [examensWithMeta, selectedNiveau]);
 
-    const filteredExamens = useMemo(() => {
+    const examensMatchingAcademicFilters = useMemo(() => {
         return examensWithMeta
             .filter(({ niveauId, semestreId }) => {
                 if (selectedNiveau && String(niveauId) !== String(selectedNiveau)) {
@@ -400,6 +436,72 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
             .map(({ examen }) => examen);
     }, [examensWithMeta, selectedNiveau, selectedSemestre]);
 
+    const filteredExamens = examensMatchingAcademicFilters;
+
+    const availableElements = useMemo(() => {
+        if (!selectedExamen?.module || !selectedExamenUsesElements) {
+            return [];
+        }
+
+        const options = (selectedExamen.module.elements || [])
+            .filter((element) => !isSelfReferencingElement(selectedExamen.module, element))
+            .map((element) => ({
+                id: String(element.id_element),
+                label: formatElementLabel(element),
+            }));
+
+        const hasModuleOnly = examensMatchingAcademicFilters.some(
+            (examen) =>
+                String(examen.id_module) === String(selectedExamen.id_module) &&
+                !examen.element?.id_element,
+        );
+
+        options.sort((left, right) => left.label.localeCompare(right.label));
+
+        if (hasModuleOnly) {
+            options.unshift({
+                id: MODULE_ONLY_FILTER,
+                label: 'Module complet',
+            });
+        }
+
+        return options;
+    }, [examensMatchingAcademicFilters, selectedExamen, selectedExamenUsesElements]);
+
+    useEffect(() => {
+        if (!selectedExamen) {
+            if (selectedElement) {
+                setSelectedElement('');
+            }
+
+            return;
+        }
+
+        if (!selectedExamenUsesElements) {
+            if (selectedElement) {
+                setSelectedElement('');
+            }
+
+            return;
+        }
+
+        const nextValue = selectedExamen.element?.id_element
+            ? String(selectedExamen.element.id_element)
+            : MODULE_ONLY_FILTER;
+
+        if (selectedElement !== nextValue) {
+            setSelectedElement(nextValue);
+        }
+    }, [selectedExamen, selectedElement, selectedExamenUsesElements]);
+
+    useEffect(() => {
+        if (filteredExamens.length > 0 || !selectedExamenId) {
+            return;
+        }
+
+        handleExamChange('');
+    }, [filteredExamens, selectedExamenId]);
+
     useEffect(() => {
         if (filteredExamens.length === 0) return;
 
@@ -409,6 +511,40 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
             handleExamChange(String(filteredExamens[0].id_examen));
         }
     }, [filteredExamens, selectedExamenId]);
+
+    const handleElementChange = (event) => {
+        const value = event.target.value;
+        setSelectedElement(value);
+
+        if (!selectedExamenUsesElements || !selectedExamen?.id_module || !value) {
+            return;
+        }
+
+        const targetExam = examensMatchingAcademicFilters.find((examen) => {
+            if (String(examen.id_module) !== String(selectedExamen.id_module)) {
+                return false;
+            }
+
+            if (value === MODULE_ONLY_FILTER) {
+                return !examen.element?.id_element;
+            }
+
+            return String(examen.element?.id_element ?? '') === String(value);
+        });
+
+        if (!targetExam) {
+            Swal.fire({
+                icon: 'info',
+                title: 'Aucun examen planifie pour cet element',
+            });
+
+            return;
+        }
+
+        if (String(targetExam.id_examen) !== String(selectedExamenId ?? '')) {
+            handleExamChange(String(targetExam.id_examen));
+        }
+    };
 
     const resetForm = () => {
         setEditingId(null);
@@ -547,14 +683,14 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         await downloadPdfPerSalle(baseUrl, new URLSearchParams(), 'presence-collective');
     };
 
-    const handleSallesPlacesExport = () => {
+    const handleSallesPlacesExport = async () => {
         if (!selectedExamenId) {
             Swal.fire({ icon: 'info', title: 'Choisissez un examen' });
             return;
         }
 
-        const url = route('surveillance.repartition-etudiants.export-salles-places', selectedExamenId);
-        window.open(url, '_blank');
+        const baseUrl = route('surveillance.repartition-etudiants.export-salles-places', selectedExamenId);
+        await downloadPdfPerSalle(baseUrl, new URLSearchParams(), 'repartition-salles-places');
     };
 
     const handleExcelTemplates = async () => {
@@ -582,10 +718,11 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                 setTemplateBuffer(buffer);
             }
 
-            const moduleLabel = formatModuleLabel(selectedExamen.module);
+            const moduleName = formatModuleName(selectedExamen.module);
             const sessionLabel = formatSessionLabel(selectedExamen.session_examen);
             const { semestreNom, niveauNom, filiereNom } = resolveExamMeta(selectedExamen);
             const filiereName = filiereNom;
+            const shouldExportElements = selectedExamenUsesElements;
             const headerLine = [niveauNom, semestreNom, filiereName ? `Filiere ${filiereName}` : null]
                 .filter(Boolean)
                 .join(' - ');
@@ -594,21 +731,25 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
 
             const baseName =
                 sanitizeFileName(
-                    [sessionLabel, selectedExamen.module?.code_module, selectedExamen.module?.nom_module]
+                    [
+                        sessionLabel,
+                        selectedExamen.module?.code_module,
+                        selectedExamen.module?.nom_module,
+                    ]
                         .filter(Boolean)
                         .join('_'),
                 ) || 'notes_module';
 
-            const fillWorkbook = async ({ sheetTitle, moduleName, secondaryLabel }) => {
+            const fillWorkbook = async ({ sheetTitle, primaryLabel, secondaryLabel }) => {
                 const workbook = await XlsxPopulate.fromDataAsync(buffer.slice(0));
                 const sheet = workbook.sheet(0);
 
-                sheet.name(safeSheetName(sheetTitle || moduleLabel || 'RN'));
+                sheet.name(safeSheetName(sheetTitle || moduleName || 'RN'));
 
                 sheet.cell('B3').value(sessionLabel || '');
                 sheet.cell('B4').value(headerLine || '');
-                sheet.cell('B6').value(moduleName || moduleLabel || '');
-                sheet.cell('B7').value(secondaryLabel || '');
+                sheet.cell('B6').value(primaryLabel || moduleName || '');
+                sheet.cell('B7').value(secondaryLabel || primaryLabel || moduleName || '');
                 sheet.cell('C9').value(`NOTE SUR ${noteScale}`);
 
                 const templateEndRow = Math.max(sheet.usedRange()?.endCell().rowNumber() ?? TEMPLATE_START_ROW, TEMPLATE_START_ROW);
@@ -637,24 +778,28 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
 
             const moduleFilename = ensureXlsxExtension(`${baseName}_module`);
             const moduleBlob = await fillWorkbook({
-                sheetTitle: 'Module',
-                moduleName: selectedExamen.module?.nom_module,
-                secondaryLabel: selectedExamen.module?.code_module,
+                sheetTitle: moduleName,
+                primaryLabel: moduleName,
+                secondaryLabel: moduleName,
             });
             downloadBlob(moduleBlob, moduleFilename);
 
-            const elements = selectedExamen.module?.elements || [];
+            const elements = shouldExportElements
+                ? (selectedExamen.module?.elements || []).filter(
+                      (element) => !isSelfReferencingElement(selectedExamen.module, element),
+                  )
+                : [];
             for (const [index, element] of elements.entries()) {
-                const elementLabel = formatElementLabel(element);
+                const elementName = formatElementName(element) || moduleName;
                 const elementBase =
                     sanitizeFileName(`${baseName}_${element.code_element || element.nom_element || `element_${index + 1}`}`) ||
                     `element_${index + 1}`;
                 const filename = ensureXlsxExtension(elementBase);
 
                 const blob = await fillWorkbook({
-                    sheetTitle: elementLabel,
-                    moduleName: selectedExamen.module?.nom_module || moduleLabel,
-                    secondaryLabel: element?.nom_element || element?.code_element || elementLabel,
+                    sheetTitle: elementName,
+                    primaryLabel: moduleName,
+                    secondaryLabel: elementName,
                 });
 
                 downloadBlob(blob, filename);
@@ -664,7 +809,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                 icon: 'success',
                 title: 'Fichier(s) Excel generes',
                 text:
-                    elements.length > 0
+                    shouldExportElements && elements.length > 0
                         ? `1 module + ${elements.length} element(s) telecharges.`
                         : 'Fichier module telecharge.',
                 timer: 1800,
@@ -689,7 +834,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
 
             <div className="mb-6 grid gap-4 rounded-xl border border-gray-200 bg-white/90 p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900 md:grid-cols-3">
                 <div className="md:col-span-2 space-y-3">
-                    <div className="grid gap-3 sm:grid-cols-2">
+                    <div className={`grid gap-3 sm:grid-cols-2 ${selectedExamenUsesElements ? 'xl:grid-cols-4' : 'xl:grid-cols-3'}`}>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Niveau</label>
                             <select
@@ -697,6 +842,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                 onChange={(event) => {
                                     setSelectedNiveau(event.target.value);
                                     setSelectedSemestre('');
+                                    setSelectedElement('');
                                 }}
                                 className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:bg-slate-800 dark:text-white"
                             >
@@ -712,7 +858,10 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Semestre</label>
                             <select
                                 value={selectedSemestre}
-                                onChange={(event) => setSelectedSemestre(event.target.value)}
+                                onChange={(event) => {
+                                    setSelectedSemestre(event.target.value);
+                                    setSelectedElement('');
+                                }}
                                 className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:bg-slate-800 dark:text-white"
                             >
                                 <option value="">Tous</option>
@@ -723,27 +872,45 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                 ))}
                             </select>
                         </div>
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Selectionnez un examen</label>
-                        <select
-                            value={selectedExamenId ? String(selectedExamenId) : ''}
-                            onChange={handleExamChange}
-                            className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:bg-slate-800 dark:text-white"
-                        >
-                            <option value="">-- Choisir un examen --</option>
-                            {filteredExamens.map((examen) => (
-                                <option key={examen.id_examen} value={examen.id_examen}>
-                                    {examen.module?.nom_module ?? 'Module'} - {examen.session_examen?.nom_session ?? 'Session'} - {new Date(examen.date_examen).toLocaleDateString()}
-                                </option>
-                            ))}
-                        </select>
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Selectionnez un examen</label>
+                            <select
+                                value={selectedExamenId ? String(selectedExamenId) : ''}
+                                onChange={handleExamChange}
+                                className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:bg-slate-800 dark:text-white"
+                            >
+                                <option value="">-- Choisir un examen --</option>
+                                {filteredExamens.map((examen) => (
+                                    <option key={examen.id_examen} value={examen.id_examen}>
+                                        {formatExamLabel(examen)} - {examen.session_examen?.nom_session ?? 'Session'} - {new Date(examen.date_examen).toLocaleDateString()}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        {selectedExamenUsesElements && (
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Element</label>
+                                <select
+                                    value={selectedElement}
+                                    onChange={handleElementChange}
+                                    disabled={!selectedExamenUsesElements || availableElements.length === 0}
+                                    className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:bg-slate-800 dark:text-white"
+                                >
+                                    <option value="">Selectionner</option>
+                                    {availableElements.map((element) => (
+                                        <option key={element.id} value={element.id}>
+                                            {element.label}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        )}
                     </div>
                 </div>
                 <div className="rounded-lg bg-gray-50 p-4 text-sm text-gray-700 dark:bg-gray-800/60 dark:text-gray-200">
                     {selectedExamen ? (
                         <>
-                            <div className="font-semibold">{selectedExamen.module?.nom_module}</div>
+                            <div className="font-semibold">{formatExamLabel(selectedExamen)}</div>
                             <div className="text-xs text-gray-500 dark:text-gray-400">
                                 {selectedExamen.session_examen?.nom_session} - {formatDateTime(selectedExamen.date_debut)} - {formatDateTime(selectedExamen.date_fin)}
                             </div>
@@ -821,7 +988,9 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                 >
                                     <span className="inline-flex items-center gap-2">
                                         <FileSpreadsheet size={16} />
-                                        Excel correcteurs (module + elements)
+                                        {selectedExamenUsesElements
+                                            ? 'Excel correcteurs (module + elements)'
+                                            : 'Excel correcteurs (module)'}
                                     </span>
                                 </button>
                             </div>

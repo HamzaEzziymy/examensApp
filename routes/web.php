@@ -220,12 +220,18 @@ Route::prefix('surveillance')->name('surveillance.')->group(function () {
 |  Correction & Résultats
 |=========================*/
 Route::prefix('correction')->name('correction.')->group(function () {
+<<<<<<< HEAD
     Route::post('notes/import', [NoteController::class, 'import'])->name('notes.import');
     Route::get('notes/grouped', [NoteController::class, 'getGroupedNotes'])->name('notes.grouped');
     Route::get('notes/export-pdf', [NoteController::class, 'exportPdf'])->name('notes.export-pdf');
     Route::get('notes/anonymats/by-exam', [NoteController::class, 'getAnonymats'])->name('notes.anonymats');
     Route::get('notes/correcteurs/by-exam', [NoteController::class, 'getCorrecteurs'])->name('notes.correcteurs');
     Route::post('notes/students-by-cne', [NoteController::class, 'getStudentsByCne'])->name('notes.students-by-cne');
+=======
+    Route::get('resultats-modules/export-releve-notes', [ResultatModuleController::class, 'exportReleveNotes'])
+        ->name('resultats-modules.export-releve-notes');
+
+>>>>>>> e6e809b845bc606b25332805f5937b342100d55e
     Route::resources([
         'correcteurs' => CorrecteurController::class,
         'notes' => NoteController::class,

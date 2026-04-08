@@ -22,13 +22,14 @@ class CorrecteurController extends Controller
                 'enseignant',
                 'examen.module.offresFormation.section',
                 'examen.sessionExamen',
+                'examen.element',
                 'element'
             ])
             ->latest('created_at')
             ->paginate(10);
         
         // Load examens with relationships
-        $examens = Examen::with(['module.offresFormation.section', 'module.elements', 'sessionExamen'])
+        $examens = Examen::with(['module.offresFormation.section', 'module.elements', 'sessionExamen', 'element'])
             ->latest('date_examen')
             ->limit(200)
             ->get();
