@@ -13,204 +13,311 @@ use Inertia\Inertia;
 
 class NoteController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
     public function index(Request $request)
     {
-        // Paginate notes with relationships
-        $notes = Note::with([
-                'anonymat.inscriptionPedagogique.inscriptionAdministrative.etudiant',
-                'examen.module.offresFormation.section',
-                'examen.module.elements',
-                'element',
-                'enseignant'
-            ])
-            ->latest('date_saisie')
-            ->paginate(25);
-        
-        // Load examens with relationships
         $examens = Examen::with(['module.offresFormation.section', 'module.elements'])
             ->latest('date_examen')
             ->limit(200)
             ->get();
 
-        // Load enseignants for dropdown
         $enseignants = \App\Models\Enseignant::select('id_enseignant', 'nom', 'prenom')->get();
 
-        // Empty arrays - will be loaded via AJAX when exam is selected
-        $anonymats = [];
-
         return Inertia::render('correction/Notes/Index', [
-            'notes' => $notes,
-            'examens' => $examens,
-            'anonymats' => $anonymats,
+            'examens'     => $examens,
             'enseignants' => $enseignants,
         ]);
     }
 
     /**
-     * Store a newly created resource in storage.
+     * Get grouped notes by examen and element (AJAX endpoint)
      */
+    public function getGroupedNotes(Request $request)
+    {
+        try {
+            $idFiliere = $request->input('id_filiere');
+            $idAnnee   = $request->input('id_annee');
+
+            $totalNotes = Note::count();
+            if ($totalNotes === 0) {
+                return response()->json([]);
+            }
+
+            $query = Note::with([
+                'anonymat.inscriptionPedagogique.inscriptionAdministrative.etudiant',
+                'examen.sessionExamen',
+                'examen.module.offresFormation.section.filiere',
+                'examen.module.offresFormation.anneeUniversitaire',
+                'examen.module',
+                'element',
+                'enseignant',
+            ]);
+
+            $shouldFilterFiliere = $idFiliere && $idFiliere !== 'all';
+            $shouldFilterAnnee   = $idAnnee   && $idAnnee   !== 'all';
+
+            if ($shouldFilterFiliere || $shouldFilterAnnee) {
+                $query->whereHas('examen', function ($qExamen) use ($shouldFilterFiliere, $shouldFilterAnnee, $idFiliere, $idAnnee) {
+                    $qExamen->whereHas('module', function ($qModule) use ($shouldFilterFiliere, $shouldFilterAnnee, $idFiliere, $idAnnee) {
+                        $qModule->whereHas('offresFormation', function ($qOffre) use ($shouldFilterFiliere, $shouldFilterAnnee, $idFiliere, $idAnnee) {
+                            if ($shouldFilterFiliere) {
+                                $qOffre->whereHas('section', fn($q) => $q->where('id_filiere', $idFiliere));
+                            }
+                            if ($shouldFilterAnnee) {
+                                $qOffre->where('id_annee', $idAnnee);
+                            }
+                        });
+                    });
+                });
+            }
+
+            $notes = $query->get();
+
+            if ($notes->isEmpty()) {
+                return response()->json([]);
+            }
+
+            $grouped = $notes->groupBy(function ($note) {
+                return $note->id_examen . '-' . ($note->id_element ?? 'module');
+            })->map(function ($groupNotes) {
+                $firstNote = $groupNotes->first();
+                $module    = $firstNote->examen?->module;
+                $element   = $firstNote->element;
+
+                return [
+                    'id_examen'      => $firstNote->id_examen,
+                    'id_element'     => $firstNote->id_element,
+                    'session_nom'    => $firstNote->examen?->sessionExamen?->nom_session ?? null,
+                    'session_type'   => $firstNote->examen?->sessionExamen?->type_session ?? null,
+                    'module_code'    => $module?->code_module ?? 'N/A',
+                    'module_name'    => $module?->nom_module  ?? 'Module inconnu',
+                    'element_code'   => $element?->code_element ?? null,
+                    'element_name'   => $element?->nom_element  ?? null,
+                    'notes_count'    => $groupNotes->count(),
+                    'notes'        => $groupNotes->map(function ($note) {
+                        $etudiant = $note->anonymat?->etudiant
+                            ?? $note->anonymat?->inscriptionPedagogique?->inscriptionAdministrative?->etudiant;
+
+                        return [
+                            'id_note'          => $note->id_note,
+                            'note'             => $note->note,
+                            'note_sur'         => $note->note_sur ?? 20,
+                            'date_saisie'      => $note->date_saisie ?? $note->created_at,
+                            'code_anonymat'    => $note->anonymat?->code_anonymat ?? 'N/A',
+                            'etudiant_nom'     => $etudiant?->nom    ?? 'Inconnu',
+                            'etudiant_prenom'  => $etudiant?->prenom ?? '',
+                            'etudiant_cne'     => $etudiant?->cne    ?? 'N/A',
+                            'enseignant_nom'   => $note->enseignant?->nom    ?? null,
+                            'enseignant_prenom'=> $note->enseignant?->prenom ?? null,
+                        ];
+                    })->values()->toArray(),
+                ];
+            })->values()->toArray();
+
+            return response()->json($grouped);
+
+        } catch (\Exception $e) {
+            \Log::error('Error in getGroupedNotes: ' . $e->getMessage());
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+    /**
+     * Export notes as PDF (Relevé de Notes)
+     */
+    public function exportPdf(Request $request)
+    {
+        $idExamen  = $request->input('id_examen');
+        $idElement = $request->input('id_element');
+        $sortBy    = $request->input('sort_by', 'nom');
+        $sortOrder = $request->input('sort_order', 'asc');
+
+        $query = Note::with([
+            'anonymat.inscriptionPedagogique.inscriptionAdministrative.etudiant',
+            'examen.module.offresFormation.section.filiere',
+            'examen.module.offresFormation.anneeUniversitaire',
+            'examen.sessionExamen',
+            'element',
+            'enseignant',
+        ])->where('id_examen', $idExamen);
+
+        if ($idElement && $idElement !== 'null' && $idElement !== 'undefined') {
+            $query->where('id_element', $idElement);
+        }
+
+        $notes = $query->get()->map(function ($note) {
+            $etudiant = $note->anonymat?->etudiant;
+            return [
+                'cne'      => $etudiant?->cne    ?? 'N/A',
+                'nom'      => $etudiant?->nom     ?? 'Inconnu',
+                'prenom'   => $etudiant?->prenom  ?? '',
+                'anonymat' => $note->anonymat?->code_anonymat ?? 'N/A',
+                'note'     => $note->note,
+                'note_sur' => $note->note_sur ?? 20,
+            ];
+        });
+
+        $notes = $notes->sortBy(function ($n) use ($sortBy) {
+            return match($sortBy) {
+                'note'    => is_numeric($n['note']) ? (float)$n['note'] : -1,
+                'anonymat'=> $n['anonymat'],
+                'cne'     => $n['cne'],
+                default   => $n['nom'] . ' ' . $n['prenom'],
+            };
+        }, SORT_REGULAR, $sortOrder === 'desc')->values();
+
+        // Gather meta info
+        $firstNote  = Note::with([
+            'examen.module.offresFormation.section.filiere',
+            'examen.module.offresFormation.semestre.niveau',
+            'examen.module.offresFormation.anneeUniversitaire',
+            'examen.sessionExamen.anneeUniversitaire',
+            'examen.sessionExamen.filiere',
+            'element',
+        ])->where('id_examen', $idExamen)->first();
+
+        $module  = $firstNote?->examen?->module;
+        $element = $firstNote?->element;
+        $session = $firstNote?->examen?->sessionExamen;
+        $offre   = $module?->offresFormation?->first();
+
+        $annee      = $offre?->anneeUniversitaire?->annee_univ
+                   ?? $session?->anneeUniversitaire?->annee_univ
+                   ?? '';
+        $filiere    = $offre?->section?->filiere?->nom_filiere
+                   ?? $session?->filiere?->nom_filiere
+                   ?? '';
+        $niveau     = $offre?->semestre?->niveau?->nom_niveau ?? '';
+        $sessionNom = $session?->nom_session ?? '';
+        $semestre   = $session?->quadrimestre ? 'Semestre ' . $session->quadrimestre : '';
+        $faculte    = \App\Models\Faculte::first();
+
+        \Log::info('=== PDF Session Debug ===');
+        \Log::info('Session: ' . ($session ? $session->nom_session : 'NULL'));
+        \Log::info('Semestre: ' . $semestre);
+        \Log::info('Annee: ' . $annee);
+        \Log::info('Filiere: ' . $filiere);
+        \Log::info('Niveau: ' . $niveau);
+
+        $data = [
+            'notes'     => $notes->toArray(),
+            'module'    => $module,
+            'element'   => $element,
+            'annee'     => $annee,
+            'filiere'   => $filiere,
+            'niveau'    => $niveau,
+            'faculte'   => $faculte,
+            'session'   => $sessionNom,
+            'semestre'  => $semestre,
+            'generated' => now()->format('d/m/Y H:i:s'),
+        ];
+
+        if ($request->has('debug')) {
+            return response()->json($data);
+        }
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.releve-notes', $data)
+            ->setPaper('a4', 'portrait');
+
+        $filename = 'releve_notes_' . ($module?->code_module ?? 'module') . '_' . now()->format('Ymd') . '.pdf';
+
+        return $pdf->download($filename);
+    }
+
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'id_anonymat' => 'required|exists:anonymat,id_anonymat',
-            'id_examen' => 'required|exists:examens,id_examen',
-            'id_element' => 'nullable|exists:elements_module,id_element',
-            'id_enseignant' => 'nullable|exists:enseignants,id_enseignant',
-            'note' => ['required', function ($attribute, $value, $fail) use ($request) {
-                // Allow special values
-                if (in_array(strtoupper($value), ['ABS', 'CAP'])) {
-                    return;
-                }
-                // Otherwise must be numeric
-                if (!is_numeric($value)) {
-                    $fail('La note doit être un nombre ou ABS/CAP.');
-                    return;
-                }
-                // Check range
-                $noteSur = $request->input('note_sur', 20);
-                if ($value < 0 || $value > $noteSur) {
-                    $fail("La note doit être entre 0 et {$noteSur}.");
-                }
-            }],
-            'note_sur' => 'required|numeric|min:0|max:100',
-            'commentaire' => 'nullable|string',
+            'id_anonymat'  => 'required|exists:anonymat,id_anonymat',
+            'id_examen'    => 'required|exists:examens,id_examen',
+            'id_element'   => 'nullable|exists:elements_module,id_element',
+            'id_enseignant'=> 'nullable|exists:enseignants,id_enseignant',
+            'note'         => ['required', $this->noteValidationRule($request)],
+            'note_sur'     => 'required|numeric|min:0|max:100',
+            'commentaire'  => 'nullable|string',
         ]);
 
-        // Convert note to uppercase if it's ABS or CAP
         if (in_array(strtoupper($validated['note']), ['ABS', 'CAP'])) {
             $validated['note'] = strtoupper($validated['note']);
         }
 
         Note::create($validated);
 
-        return redirect()->route('correction.notes.index')
-            ->with('success', 'Note ajoutée avec succès');
+        return redirect()->route('correction.notes.index')->with('success', 'Note ajoutée avec succès');
     }
 
-    /**
-     * Update the specified resource in storage.
-     */
+    public function show($id)
+    {
+        $note = Note::with([
+            'anonymat.inscriptionPedagogique.inscriptionAdministrative.etudiant',
+            'examen.module', 'element', 'enseignant',
+        ])->findOrFail($id);
+
+        return response()->json($note);
+    }
+
+    public function edit(string $id) {}
+
     public function update(Request $request, $id)
     {
-        $note = Note::findOrFail($id);
-
+        $note      = Note::findOrFail($id);
         $validated = $request->validate([
-            'id_anonymat' => 'required|exists:anonymat,id_anonymat',
-            'id_examen' => 'required|exists:examens,id_examen',
-            'id_element' => 'nullable|exists:elements_module,id_element',
-            'id_enseignant' => 'nullable|exists:enseignants,id_enseignant',
-            'note' => ['required', function ($attribute, $value, $fail) use ($request) {
-                // Allow special values
-                if (in_array(strtoupper($value), ['ABS', 'CAP'])) {
-                    return;
-                }
-                // Otherwise must be numeric
-                if (!is_numeric($value)) {
-                    $fail('La note doit être un nombre ou ABS/CAP.');
-                    return;
-                }
-                // Check range
-                $noteSur = $request->input('note_sur', 20);
-                if ($value < 0 || $value > $noteSur) {
-                    $fail("La note doit être entre 0 et {$noteSur}.");
-                }
-            }],
-            'note_sur' => 'required|numeric|min:0|max:100',
-            'commentaire' => 'nullable|string',
+            'id_anonymat'  => 'required|exists:anonymat,id_anonymat',
+            'id_examen'    => 'required|exists:examens,id_examen',
+            'id_element'   => 'nullable|exists:elements_module,id_element',
+            'id_enseignant'=> 'nullable|exists:enseignants,id_enseignant',
+            'note'         => ['required', $this->noteValidationRule($request)],
+            'note_sur'     => 'required|numeric|min:0|max:100',
+            'commentaire'  => 'nullable|string',
         ]);
 
-        // Convert note to uppercase if it's ABS or CAP
         if (in_array(strtoupper($validated['note']), ['ABS', 'CAP'])) {
             $validated['note'] = strtoupper($validated['note']);
         }
 
         $note->update($validated);
 
-        return redirect()->route('correction.notes.index')
-            ->with('success', 'Note modifiée avec succès');
+        return redirect()->route('correction.notes.index')->with('success', 'Note modifiée avec succès');
     }
 
-    /**
-     * Remove the specified resource from storage.
-     */
     public function destroy($id)
     {
-        $note = Note::findOrFail($id);
-        $note->delete();
-
-        return redirect()->route('correction.notes.index')
-            ->with('success', 'Note supprimée avec succès');
+        Note::findOrFail($id)->delete();
+        return redirect()->route('correction.notes.index')->with('success', 'Note supprimée avec succès');
     }
 
-    /**
-     * Import notes from file.
-     */
     public function import(Request $request)
     {
-        // Handle bulk import
         if ($request->has('notes') && is_array($request->notes)) {
             return $this->bulkStore($request);
         }
-
-        return redirect()->route('correction.notes.index')
-            ->with('success', 'Import en cours de développement');
+        return redirect()->route('correction.notes.index')->with('success', 'Import en cours de développement');
     }
 
-    /**
-     * Bulk store notes from Excel import
-     */
     protected function bulkStore(Request $request)
     {
         $request->validate([
-            'notes' => 'required|array|min:1',
-            'notes.*.id_anonymat' => 'required|exists:anonymat,id_anonymat',
-            'notes.*.id_examen' => 'required|exists:examens,id_examen',
-            'notes.*.id_element' => 'nullable|exists:elements_module,id_element',
-            'notes.*.id_enseignant' => 'nullable|exists:enseignants,id_enseignant',
-            'notes.*.note' => ['required', function ($attribute, $value, $fail) use ($request) {
-                // Allow special values
-                if (in_array(strtoupper($value), ['ABS', 'CAP'])) {
-                    return;
-                }
-                // Otherwise must be numeric
-                if (!is_numeric($value)) {
-                    $fail('La note doit être un nombre ou ABS/CAP.');
-                    return;
-                }
-                // Check range - extract note_sur from the same note item
-                $noteIndex = explode('.', $attribute)[1]; // Get index from 'notes.0.note'
-                $noteSur = $request->input("notes.{$noteIndex}.note_sur", 20);
-                if ($value < 0 || $value > $noteSur) {
-                    $fail("La note doit être entre 0 et {$noteSur}.");
-                }
-            }],
-            'notes.*.note_sur' => 'required|numeric|min:0|max:100',
-            'notes.*.commentaire' => 'nullable|string',
+            'notes'                => 'required|array|min:1',
+            'notes.*.id_anonymat'  => 'required|exists:anonymat,id_anonymat',
+            'notes.*.id_examen'    => 'required|exists:examens,id_examen',
+            'notes.*.id_element'   => 'nullable|exists:elements_module,id_element',
+            'notes.*.id_enseignant'=> 'nullable|exists:enseignants,id_enseignant',
+            'notes.*.note_sur'     => 'required|numeric|min:0|max:100',
+            'notes.*.commentaire'  => 'nullable|string',
         ]);
 
-        $created = 0;
-        $skipped = 0;
-        $errors = [];
+        $created   = 0;
+        $skipped   = 0;
+        $errors    = [];
         $totalRows = count($request->notes);
 
         DB::beginTransaction();
         try {
             foreach ($request->notes as $index => $noteData) {
-                // Get student info for error reporting
-                $anonymat = Anonymat::with('inscriptionPedagogique.inscriptionAdministrative.etudiant')
-                    ->find($noteData['id_anonymat']);
-                $studentName = $anonymat && $anonymat->inscriptionPedagogique && $anonymat->inscriptionPedagogique->inscriptionAdministrative && $anonymat->inscriptionPedagogique->inscriptionAdministrative->etudiant
-                    ? "{$anonymat->inscriptionPedagogique->inscriptionAdministrative->etudiant->nom} {$anonymat->inscriptionPedagogique->inscriptionAdministrative->etudiant->prenom}"
-                    : 'Inconnu';
-                $studentCne = $anonymat && $anonymat->inscriptionPedagogique && $anonymat->inscriptionPedagogique->inscriptionAdministrative && $anonymat->inscriptionPedagogique->inscriptionAdministrative->etudiant
-                    ? $anonymat->inscriptionPedagogique->inscriptionAdministrative->etudiant->cne
-                    : 'N/A';
-                $anonymatCode = $anonymat ? $anonymat->code_anonymat : 'N/A';
+                $anonymat    = Anonymat::with('inscriptionPedagogique.inscriptionAdministrative.etudiant')->find($noteData['id_anonymat']);
+                $etudiant    = $anonymat?->inscriptionPedagogique?->inscriptionAdministrative?->etudiant;
+                $studentName = $etudiant ? "{$etudiant->nom} {$etudiant->prenom}" : 'Inconnu';
+                $studentCne  = $etudiant?->cne ?? 'N/A';
+                $anonymatCode= $anonymat?->code_anonymat ?? 'N/A';
 
-                // Check for duplicate
                 $exists = Note::where('id_anonymat', $noteData['id_anonymat'])
                     ->where('id_examen', $noteData['id_examen'])
                     ->where('id_element', $noteData['id_element'] ?? null)
@@ -218,173 +325,99 @@ class NoteController extends Controller
 
                 if (!$exists) {
                     try {
-                        // Convert note to uppercase if it's ABS or CAP
                         if (in_array(strtoupper($noteData['note']), ['ABS', 'CAP'])) {
                             $noteData['note'] = strtoupper($noteData['note']);
                         }
-                        
                         Note::create($noteData);
                         $created++;
                     } catch (\Exception $e) {
                         $skipped++;
-                        $errors[] = [
-                            'row' => $index + 1,
-                            'cne' => $studentCne,
-                            'anonymat' => $anonymatCode,
-                            'student_name' => $studentName,
-                            'errors' => ['Erreur de base de données: ' . $e->getMessage()]
-                        ];
+                        $errors[] = ['row' => $index + 1, 'cne' => $studentCne, 'anonymat' => $anonymatCode, 'student_name' => $studentName, 'errors' => ['Erreur DB: ' . $e->getMessage()]];
                     }
                 } else {
                     $skipped++;
-                    $errors[] = [
-                        'row' => $index + 1,
-                        'cne' => $studentCne,
-                        'anonymat' => $anonymatCode,
-                        'student_name' => $studentName,
-                        'errors' => ['Note déjà existante pour cet étudiant, examen et élément']
-                    ];
+                    $errors[] = ['row' => $index + 1, 'cne' => $studentCne, 'anonymat' => $anonymatCode, 'student_name' => $studentName, 'errors' => ['Note déjà existante']];
                 }
             }
             DB::commit();
 
-            // Build response message
             $message = $this->buildImportMessage($created, $skipped, $totalRows);
 
-            // Check if request expects JSON (AJAX request)
             if ($request->expectsJson() || $request->ajax()) {
-                if (empty($errors)) {
-                    return response()->json([
-                        'success' => true,
-                        'message' => $message,
-                        'created' => $created,
-                        'skipped' => $skipped,
-                        'import_errors' => []
-                    ]);
-                } else {
-                    return response()->json([
-                        'success' => $created > 0,
-                        'message' => $message,
-                        'created' => $created,
-                        'skipped' => $skipped,
-                        'import_errors' => $errors
-                    ], $created > 0 ? 200 : 422);
-                }
+                return response()->json([
+                    'success'       => $created > 0,
+                    'message'       => $message,
+                    'created'       => $created,
+                    'skipped'       => $skipped,
+                    'import_errors' => $errors,
+                ], empty($errors) || $created > 0 ? 200 : 422);
             }
 
-            // Standard redirect response
-            if (empty($errors)) {
-                return redirect()->route('correction.notes.index')
-                    ->with('success', $message);
-            } else {
-                return redirect()->route('correction.notes.index')
-                    ->with('import_partial', $message)
-                    ->with('import_errors', $errors);
-            }
+            return redirect()->route('correction.notes.index')->with(empty($errors) ? 'success' : 'import_partial', $message);
 
         } catch (\Exception $e) {
             DB::rollBack();
-            
             if ($request->expectsJson() || $request->ajax()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Erreur lors de l\'import: ' . $e->getMessage(),
-                    'created' => 0,
-                    'skipped' => $totalRows,
-                    'import_errors' => []
-                ], 500);
+                return response()->json(['success' => false, 'message' => 'Erreur: ' . $e->getMessage(), 'created' => 0, 'skipped' => $totalRows, 'import_errors' => []], 500);
             }
-            
-            return back()->withErrors(['error' => 'Erreur lors de l\'import: ' . $e->getMessage()]);
+            return back()->withErrors(['error' => 'Erreur: ' . $e->getMessage()]);
         }
     }
 
-    /**
-     * Build human-readable import result message
-     */
     private function buildImportMessage(int $created, int $skipped, int $total): string
     {
-        if ($skipped === 0) {
-            return "Import réussi: {$created} notes créées avec succès";
-        } elseif ($created === 0) {
-            return "Import échoué: {$skipped} notes avec erreurs sur {$total}";
-        } else {
-            return "Import partiel: {$created} notes créées, {$skipped} avec erreurs";
-        }
+        if ($skipped === 0)   return "Import réussi: {$created} notes créées";
+        if ($created === 0)   return "Import échoué: {$skipped} erreurs sur {$total}";
+        return "Import partiel: {$created} créées, {$skipped} erreurs";
     }
 
-    /**
-     * Get anonymats for a specific exam (AJAX endpoint)
-     */
+    private function noteValidationRule(Request $request): \Closure
+    {
+        return function ($attribute, $value, $fail) use ($request) {
+            if (in_array(strtoupper($value), ['ABS', 'CAP'])) return;
+            if (!is_numeric($value)) { $fail('La note doit être un nombre ou ABS/CAP.'); return; }
+            $noteSur = $request->input('note_sur', 20);
+            if ($value < 0 || $value > $noteSur) $fail("La note doit être entre 0 et {$noteSur}.");
+        };
+    }
+
     public function getAnonymats(Request $request)
     {
         $examenId = $request->input('examen_id');
-        
-        if (!$examenId) {
-            return response()->json([]);
-        }
+        if (!$examenId) return response()->json([]);
 
-        $anonymats = Anonymat::with([
-                'inscriptionPedagogique.inscriptionAdministrative.etudiant'
-            ])
-            ->where('id_examen', $examenId)
-            ->get();
-
-        return response()->json($anonymats);
+        return response()->json(
+            Anonymat::with(['inscriptionPedagogique.inscriptionAdministrative.etudiant'])
+                ->where('id_examen', $examenId)->get()
+        );
     }
 
-    /**
-     * Get correcteurs for a specific exam (AJAX endpoint)
-     */
     public function getCorrecteurs(Request $request)
     {
         $examenId = $request->input('examen_id');
-        
-        if (!$examenId) {
-            return response()->json([]);
-        }
+        if (!$examenId) return response()->json([]);
 
-        $correcteurs = Correcteur::with(['enseignant'])
-            ->where('id_examen', $examenId)
-            ->get();
-
-        return response()->json($correcteurs);
+        return response()->json(
+            Correcteur::with(['enseignant'])->where('id_examen', $examenId)->get()
+        );
     }
 
-    /**
-     * Get students by CNE for import (AJAX endpoint)
-     */
     public function getStudentsByCne(Request $request)
     {
-        $cnes = $request->input('cnes', []);
+        $cnes     = $request->input('cnes', []);
         $examenId = $request->input('examen_id');
-        
-        if (empty($cnes) || !$examenId) {
-            return response()->json([]);
-        }
+        if (empty($cnes) || !$examenId) return response()->json([]);
 
-        // Get anonymats for the specific exam that match the CNEs
-        $anonymats = Anonymat::with([
-                'inscriptionPedagogique.inscriptionAdministrative.etudiant'
-            ])
+        $anonymats = Anonymat::with(['inscriptionPedagogique.inscriptionAdministrative.etudiant'])
             ->where('id_examen', $examenId)
-            ->whereHas('inscriptionPedagogique.inscriptionAdministrative.etudiant', function ($query) use ($cnes) {
-                $query->whereIn('cne', $cnes);
-            })
+            ->whereHas('inscriptionPedagogique.inscriptionAdministrative.etudiant', fn($q) => $q->whereIn('cne', $cnes))
             ->get();
 
-        // Create a map of CNE to anonymat for easy lookup
         $result = [];
         foreach ($anonymats as $anonymat) {
-            if ($anonymat->inscriptionPedagogique && 
-                $anonymat->inscriptionPedagogique->inscriptionAdministrative && 
-                $anonymat->inscriptionPedagogique->inscriptionAdministrative->etudiant) {
-                
-                $etudiant = $anonymat->inscriptionPedagogique->inscriptionAdministrative->etudiant;
-                $result[$etudiant->cne] = [
-                    'anonymat' => $anonymat,
-                    'etudiant' => $etudiant
-                ];
+            $etudiant = $anonymat->inscriptionPedagogique?->inscriptionAdministrative?->etudiant;
+            if ($etudiant) {
+                $result[$etudiant->cne] = ['anonymat' => $anonymat, 'etudiant' => $etudiant];
             }
         }
 

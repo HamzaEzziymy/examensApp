@@ -220,16 +220,18 @@ Route::prefix('surveillance')->name('surveillance.')->group(function () {
 |  Correction & Résultats
 |=========================*/
 Route::prefix('correction')->name('correction.')->group(function () {
+    Route::post('notes/import', [NoteController::class, 'import'])->name('notes.import');
+    Route::get('notes/grouped', [NoteController::class, 'getGroupedNotes'])->name('notes.grouped');
+    Route::get('notes/export-pdf', [NoteController::class, 'exportPdf'])->name('notes.export-pdf');
+    Route::get('notes/anonymats/by-exam', [NoteController::class, 'getAnonymats'])->name('notes.anonymats');
+    Route::get('notes/correcteurs/by-exam', [NoteController::class, 'getCorrecteurs'])->name('notes.correcteurs');
+    Route::post('notes/students-by-cne', [NoteController::class, 'getStudentsByCne'])->name('notes.students-by-cne');
     Route::resources([
         'correcteurs' => CorrecteurController::class,
         'notes' => NoteController::class,
         'resultats-elements' => ResultatElementController::class,
         'resultats-modules' => ResultatModuleController::class,
     ]);
-    Route::post('notes/import', [NoteController::class, 'import'])->name('notes.import');
-    Route::get('notes/anonymats/by-exam', [NoteController::class, 'getAnonymats'])->name('notes.anonymats');
-    Route::get('notes/correcteurs/by-exam', [NoteController::class, 'getCorrecteurs'])->name('notes.correcteurs');
-    Route::post('notes/students-by-cne', [NoteController::class, 'getStudentsByCne'])->name('notes.students-by-cne');
 });
 
 /* =========================
