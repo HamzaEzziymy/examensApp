@@ -37,7 +37,7 @@ use App\Http\Controllers\{
     SujetExamenController,
     GrilleCorrectionController,
     TirageExamenController,
-    // Surveillance / salle d’exam
+    // Surveillance / salle d'exam
     SurveillanceController,
     AnonymatController,
     RepartitionEtudiantController,
@@ -136,11 +136,15 @@ Route::prefix('personnes')->name('personnes.')->group(function () {
         'etudiants' => EtudiantController::class,
     ]);
 
+<<<<<<< HEAD
     // Bulk delete for students
     Route::post('etudiants/bulk-destroy', [EtudiantController::class, 'bulkDestroy'])
         ->name('etudiants.bulk-destroy');
 
     // Pivot enseignant_module (assignations d’enseignants aux modules)
+=======
+    // Pivot enseignant_module (assignations d'enseignants aux modules)
+>>>>>>> c97f90bb78ec447cd33e739d37d1787364174421
     Route::resource('enseignant-modules', EnseignantModuleController::class)
         ->only(['index', 'store', 'destroy']);
 
@@ -192,7 +196,7 @@ Route::prefix('examens')->name('examens.')->group(function () {
         'tirages' => TirageExamenController::class,
     ]);
 
-    // Exemples d’actions personnalisées utiles (optionnel)
+    // Exemples d'actions personnalisées utiles (optionnel)
     // Route::post('examens/{examen}/publier', [ExamenController::class, 'publier'])->name('examens.publier');
     // Route::get('examens/{examen}/pv',      [PvExamenController::class, 'showByExamen'])->name('examens.pv');
 
@@ -227,6 +231,7 @@ Route::prefix('correction')->name('correction.')->group(function () {
     Route::post('notes/import', [NoteController::class, 'import'])->name('notes.import');
     Route::get('notes/grouped', [NoteController::class, 'getGroupedNotes'])->name('notes.grouped');
     Route::get('notes/export-pdf', [NoteController::class, 'exportPdf'])->name('notes.export-pdf');
+    Route::get('notes/export-pdf-custom', [NoteController::class, 'exportPdfCustom'])->name('notes.export-pdf-custom');
     Route::get('notes/anonymats/by-exam', [NoteController::class, 'getAnonymats'])->name('notes.anonymats');
     Route::get('notes/correcteurs/by-exam', [NoteController::class, 'getCorrecteurs'])->name('notes.correcteurs');
     Route::post('notes/students-by-cne', [NoteController::class, 'getStudentsByCne'])->name('notes.students-by-cne');
