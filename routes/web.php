@@ -220,21 +220,26 @@ Route::prefix('surveillance')->name('surveillance.')->group(function () {
 |  Correction & Résultats
 |=========================*/
 Route::prefix('correction')->name('correction.')->group(function () {
+    Route::post('notes/import', [NoteController::class, 'import'])->name('notes.import');
+    Route::get('notes/grouped', [NoteController::class, 'getGroupedNotes'])->name('notes.grouped');
+    Route::get('notes/export-pdf', [NoteController::class, 'exportPdf'])->name('notes.export-pdf');
+    Route::get('notes/anonymats/by-exam', [NoteController::class, 'getAnonymats'])->name('notes.anonymats');
+    Route::get('notes/correcteurs/by-exam', [NoteController::class, 'getCorrecteurs'])->name('notes.correcteurs');
+    Route::post('notes/students-by-cne', [NoteController::class, 'getStudentsByCne'])->name('notes.students-by-cne');
     Route::get('resultats-modules/export-releve-notes', [ResultatModuleController::class, 'exportReleveNotes'])
         ->name('resultats-modules.export-releve-notes');
+<<<<<<< HEAD
     Route::get('resultats-modules/export-releve-semestre', [ResultatModuleController::class, 'exportReleveSemestre'])
         ->name('resultats-modules.export-releve-semestre');
 
+=======
+>>>>>>> 030d4a03ac4f1324dbceaac7d8621f24f9477bdb
     Route::resources([
         'correcteurs' => CorrecteurController::class,
         'notes' => NoteController::class,
         'resultats-elements' => ResultatElementController::class,
         'resultats-modules' => ResultatModuleController::class,
     ]);
-    Route::post('notes/import', [NoteController::class, 'import'])->name('notes.import');
-    Route::get('notes/anonymats/by-exam', [NoteController::class, 'getAnonymats'])->name('notes.anonymats');
-    Route::get('notes/correcteurs/by-exam', [NoteController::class, 'getCorrecteurs'])->name('notes.correcteurs');
-    Route::post('notes/students-by-cne', [NoteController::class, 'getStudentsByCne'])->name('notes.students-by-cne');
 });
 
 /* =========================
