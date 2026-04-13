@@ -15,25 +15,13 @@ class NoteController extends Controller
 {
     public function index(Request $request)
     {
-<<<<<<< HEAD
-        // Paginate notes with relationships
-        $notes = Note::with([
-                'anonymat.inscriptionPedagogique.inscriptionAdministrative.etudiant',
-                'examen.offreFormation.section',
-                'examen.module.elements',
-                'examen.element',
-                'examen.sessionExamen',
+        $examens = Examen::with([
+                'offreFormation.section',
+                'module.offresFormation.section',
+                'module.elements',
                 'element',
-                'enseignant'
+                'sessionExamen',
             ])
-            ->latest('date_saisie')
-            ->paginate(25);
-        
-        // Load examens with relationships
-        $examens = Examen::with(['offreFormation.section', 'module.elements', 'element', 'sessionExamen'])
-=======
-        $examens = Examen::with(['module.offresFormation.section', 'module.elements'])
->>>>>>> 030d4a03ac4f1324dbceaac7d8621f24f9477bdb
             ->latest('date_examen')
             ->limit(200)
             ->get();
