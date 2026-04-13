@@ -37,7 +37,7 @@ use App\Http\Controllers\{
     SujetExamenController,
     GrilleCorrectionController,
     TirageExamenController,
-    // Surveillance / salle d’exam
+    // Surveillance / salle d'exam
     SurveillanceController,
     AnonymatController,
     RepartitionEtudiantController,
@@ -136,7 +136,7 @@ Route::prefix('personnes')->name('personnes.')->group(function () {
         'etudiants' => EtudiantController::class,
     ]);
 
-    // Pivot enseignant_module (assignations d’enseignants aux modules)
+    // Pivot enseignant_module (assignations d'enseignants aux modules)
     Route::resource('enseignant-modules', EnseignantModuleController::class)
         ->only(['index', 'store', 'destroy']);
 
@@ -188,7 +188,7 @@ Route::prefix('examens')->name('examens.')->group(function () {
         'tirages' => TirageExamenController::class,
     ]);
 
-    // Exemples d’actions personnalisées utiles (optionnel)
+    // Exemples d'actions personnalisées utiles (optionnel)
     // Route::post('examens/{examen}/publier', [ExamenController::class, 'publier'])->name('examens.publier');
     // Route::get('examens/{examen}/pv',      [PvExamenController::class, 'showByExamen'])->name('examens.pv');
 
@@ -229,12 +229,9 @@ Route::prefix('correction')->name('correction.')->group(function () {
     Route::post('notes/students-by-cne', [NoteController::class, 'getStudentsByCne'])->name('notes.students-by-cne');
     Route::get('resultats-modules/export-releve-notes', [ResultatModuleController::class, 'exportReleveNotes'])
         ->name('resultats-modules.export-releve-notes');
-<<<<<<< HEAD
     Route::get('resultats-modules/export-releve-semestre', [ResultatModuleController::class, 'exportReleveSemestre'])
         ->name('resultats-modules.export-releve-semestre');
 
-=======
->>>>>>> 030d4a03ac4f1324dbceaac7d8621f24f9477bdb
     Route::resources([
         'correcteurs' => CorrecteurController::class,
         'notes' => NoteController::class,
