@@ -112,7 +112,7 @@ class DashboardController extends Controller
 
         $upcomingExams = (clone $examensQuery)
             ->with([
-                'module:id_module,code_module,nom_module',
+                'module' => fn ($query) => $query->select('modules.id_module', 'modules.code_module', 'modules.nom_module'),
                 'sessionExamen:id_session_examen,nom_session',
                 'salle:id_salle,nom_salle',
                 'salles:id_salle,nom_salle',
@@ -124,6 +124,7 @@ class DashboardController extends Controller
             ->get([
                 'id_examen',
                 'id_session_examen',
+                'id_offre',
                 'id_module',
                 'id_salle',
                 'date_examen',
@@ -604,8 +605,8 @@ class DashboardController extends Controller
                             ->whereHas('sessionExamen', function (Builder $sessionQuery) {
                                 $sessionQuery->whereNull('id_filiere');
                             })
-                            ->whereHas('module.offresFormation.section', function (Builder $moduleQuery) use ($filiereId) {
-                                $moduleQuery->where('id_filiere', $filiereId);
+                            ->whereHas('offreFormation.section', function (Builder $offreQuery) use ($filiereId) {
+                                $offreQuery->where('id_filiere', $filiereId);
                             });
                     });
             });

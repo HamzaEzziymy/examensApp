@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class OffreFormation extends Model
 {
@@ -48,5 +49,9 @@ class OffreFormation extends Model
     {
         return $this->belongsTo(Enseignant::class, 'id_coordinateur', 'id_enseignant');
     }
-}
 
+    public function examens(): HasMany
+    {
+        return $this->hasMany(Examen::class, 'id_offre', 'id_offre');
+    }
+}

@@ -3,9 +3,10 @@
 namespace Database\Factories;
 
 use App\Models\Examen;
-use App\Models\SessionExamen;
 use App\Models\Module;
+use App\Models\OffreFormation;
 use App\Models\Salle;
+use App\Models\SessionExamen;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 class ExamenFactory extends Factory
@@ -28,10 +29,14 @@ class ExamenFactory extends Factory
     {
         $start = $this->faker->dateTimeBetween('-1 months', '+2 months');
         $end   = (clone $start)->modify('+'. $this->faker->numberBetween(60, 180) .' minutes');
+        $offre = OffreFormation::factory();
 
         return [
             'id_session_examen' => SessionExamen::factory(),
-            'id_module'         => Module::factory(),
+            'id_offre'          => $offre,
+            'id_module'         => fn (array $attributes) => OffreFormation::query()
+                ->whereKey($attributes['id_offre'] ?? null)
+                ->value('id_module') ?? Module::factory()->create()->id_module,
             'id_element'        => null,
             'id_salle'          => Salle::factory(),
             'date_examen'       => $start->format('Y-m-d'),

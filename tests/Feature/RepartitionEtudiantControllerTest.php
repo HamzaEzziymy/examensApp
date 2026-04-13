@@ -604,6 +604,85 @@ class RepartitionEtudiantControllerTest extends TestCase
             ->where('inscriptions.1.id_inscription_pedagogique', $eligibleLatestRattrapage->id_inscription_pedagogique));
     }
 
+    public function test_update_allows_current_unique_values_on_same_repartition(): void
+    {
+        $user = User::factory()->create();
+        $annee = AnneeUniversitaire::factory()->active()->create();
+        $filiere = Filiere::factory()->create(['nom_filiere' => 'Medecine']);
+        $section = Section::factory()->create([
+            'id_filiere' => $filiere->id_filiere,
+            'nom_section' => 'Section Medecine',
+        ]);
+        $niveau = Niveau::factory()->create(['nom_niveau' => 'Licence 1']);
+        $semestre = Semestre::factory()->create([
+            'id_niveau' => $niveau->id_niveau,
+            'nom_semestre' => 'S1',
+        ]);
+        $module = Module::factory()->create([
+            'code_module' => 'MED-UPD-001',
+            'nom_module' => 'Anatomie',
+        ]);
+        $salle = Salle::factory()->create([
+            'code_salle' => 'A101',
+            'nom_salle' => 'Salle A101',
+            'capacite' => 40,
+            'capacite_examens' => 40,
+        ]);
+
+        UserFiliereAnnee::create([
+            'user_id' => $user->id,
+            'id_filiere' => $filiere->id_filiere,
+            'id_annee' => $annee->id_annee,
+        ]);
+
+        $offre = OffreFormation::create([
+            'id_module' => $module->id_module,
+            'id_semestre' => $semestre->id_semestre,
+            'id_section' => $section->id_section,
+            'id_annee' => $annee->id_annee,
+            'id_coordinateur' => null,
+            'nom_affiche' => 'Anatomie',
+        ]);
+
+        $session = SessionExamen::create([
+            'id_filiere' => $filiere->id_filiere,
+            'id_annee' => $annee->id_annee,
+            'nom_session' => 'Session Normale',
+            'type_session' => 'Normale',
+            'date_session_examen' => '2026-06-01',
+            'quadrimestre' => 2,
+        ]);
+
+        $exam = $this->createExam($session, $module, $salle, '2026-06-10');
+        $inscriptionPedagogique = $this->createPedagogicalRegistration($annee, $niveau, $section, $offre, 'Alpha', 'Update');
+        $repartition = $this->createRepartition($exam, $inscriptionPedagogique, '1001', 'A101-001');
+
+        $response = $this
+            ->actingAs($user)
+            ->put(route('surveillance.repartition-etudiants.update', $repartition), [
+                'id_examen' => $exam->id_examen,
+                'id_inscription_pedagogique' => $inscriptionPedagogique->id_inscription_pedagogique,
+                'code_grille' => 1001,
+                'code_anonymat' => '1001',
+                'numero_place' => 'A101-001',
+                'present' => true,
+                'observation' => 'MAJ',
+            ]);
+
+        $response->assertRedirect(route('surveillance.repartition-etudiants.index', ['examen' => $exam->id_examen]));
+
+        $this->assertDatabaseHas('repartition_etudiants', [
+            'id_repartition' => $repartition->id_repartition,
+            'id_examen' => $exam->id_examen,
+            'id_inscription_pedagogique' => $inscriptionPedagogique->id_inscription_pedagogique,
+            'code_grille' => 1001,
+            'code_anonymat' => '1001',
+            'numero_place' => 'A101-001',
+            'present' => true,
+            'observation' => 'MAJ',
+        ]);
+    }
+
     private function createExam(SessionExamen $session, Module $module, Salle $salle, string $date, ?int $elementId = null): Examen
     {
         return Examen::create([

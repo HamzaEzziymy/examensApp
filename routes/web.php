@@ -229,6 +229,12 @@ Route::prefix('correction')->name('correction.')->group(function () {
     Route::post('notes/students-by-cne', [NoteController::class, 'getStudentsByCne'])->name('notes.students-by-cne');
     Route::get('resultats-modules/export-releve-notes', [ResultatModuleController::class, 'exportReleveNotes'])
         ->name('resultats-modules.export-releve-notes');
+<<<<<<< HEAD
+    Route::get('resultats-modules/export-releve-semestre', [ResultatModuleController::class, 'exportReleveSemestre'])
+        ->name('resultats-modules.export-releve-semestre');
+
+=======
+>>>>>>> 030d4a03ac4f1324dbceaac7d8621f24f9477bdb
     Route::resources([
         'correcteurs' => CorrecteurController::class,
         'notes' => NoteController::class,
