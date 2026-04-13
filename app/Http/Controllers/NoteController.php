@@ -15,7 +15,6 @@ class NoteController extends Controller
 {
     public function index(Request $request)
     {
-<<<<<<< HEAD
         $examens = Examen::with([
                 'offreFormation.section',
                 'module.offresFormation.section',
@@ -23,9 +22,6 @@ class NoteController extends Controller
                 'element',
                 'sessionExamen',
             ])
-=======
-        $examens = Examen::with(['module.offresFormation.section', 'module.elements'])
->>>>>>> c97f90bb78ec447cd33e739d37d1787364174421
             ->latest('date_examen')
             ->limit(200)
             ->get();
