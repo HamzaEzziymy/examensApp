@@ -122,6 +122,88 @@ class NoteController extends Controller
     }
 
     /**
+     * Export notes as PDF with custom columns
+     */
+    public function exportPdfCustom(Request $request)
+    {
+        $idExamen  = $request->input('id_examen');
+        $idElement = $request->input('id_element');
+        $sortBy    = $request->input('sort_by', 'nom');
+        $sortOrder = $request->input('sort_order', 'asc');
+        $columns   = $request->input('columns', ['num','anonymat','cne','nom','prenom','note','mention']);
+
+        $query = Note::with([
+            'anonymat.inscriptionPedagogique.inscriptionAdministrative.etudiant',
+            'examen.module.offresFormation.section.filiere',
+            'examen.module.offresFormation.semestre.niveau',
+            'examen.module.offresFormation.anneeUniversitaire',
+            'examen.sessionExamen.anneeUniversitaire',
+            'examen.sessionExamen.filiere',
+            'element',
+            'enseignant',
+        ])->where('id_examen', $idExamen);
+
+        if ($idElement && $idElement !== 'null' && $idElement !== 'undefined') {
+            $query->where('id_element', $idElement);
+        }
+
+        $notes = $query->get()->map(function ($note) {
+            $etudiant = $note->anonymat?->etudiant;
+            return [
+                'cne'        => $etudiant?->cne    ?? 'N/A',
+                'nom'        => $etudiant?->nom     ?? 'Inconnu',
+                'prenom'     => $etudiant?->prenom  ?? '',
+                'anonymat'   => $note->anonymat?->code_anonymat ?? 'N/A',
+                'note'       => $note->note,
+                'note_sur'   => $note->note_sur ?? 20,
+                'enseignant' => $note->enseignant ? $note->enseignant->nom . ' ' . $note->enseignant->prenom : null,
+            ];
+        });
+
+        $notes = $notes->sortBy(function ($n) use ($sortBy) {
+            return match($sortBy) {
+                'note'    => is_numeric($n['note']) ? (float)$n['note'] : -1,
+                'anonymat'=> is_numeric($n['anonymat']) ? (int)$n['anonymat'] : $n['anonymat'],
+                'cne'     => $n['cne'],
+                default   => $n['nom'] . ' ' . $n['prenom'],
+            };
+        }, SORT_REGULAR, $sortOrder === 'desc')->values();
+
+        $firstNote = Note::with([
+            'examen.module.offresFormation.section.filiere',
+            'examen.module.offresFormation.semestre.niveau',
+            'examen.module.offresFormation.anneeUniversitaire',
+            'examen.sessionExamen.anneeUniversitaire',
+            'examen.sessionExamen.filiere',
+            'element',
+        ])->where('id_examen', $idExamen)->first();
+
+        $module  = $firstNote?->examen?->module;
+        $element = $firstNote?->element;
+        $session = $firstNote?->examen?->sessionExamen;
+        $offre   = $module?->offresFormation?->first();
+
+        $data = [
+            'notes'    => $notes->toArray(),
+            'columns'  => is_array($columns) ? $columns : explode(',', $columns),
+            'module'   => $module,
+            'element'  => $element,
+            'annee'    => $offre?->anneeUniversitaire?->annee_univ ?? $session?->anneeUniversitaire?->annee_univ ?? '',
+            'filiere'  => $offre?->section?->filiere?->nom_filiere ?? $session?->filiere?->nom_filiere ?? '',
+            'niveau'   => $offre?->semestre?->niveau?->nom_niveau ?? '',
+            'faculte'  => \App\Models\Faculte::first(),
+            'session'  => $session?->nom_session ?? '',
+            'semestre' => $session?->quadrimestre ? 'Semestre ' . $session->quadrimestre : '',
+            'generated'=> now()->format('d/m/Y H:i:s'),
+        ];
+
+        $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.releve-notes-custom', $data)
+            ->setPaper('a4', 'portrait');
+
+        return $pdf->download('releve_custom_' . ($module?->code_module ?? 'module') . '_' . now()->format('Ymd') . '.pdf');
+    }
+
+    /**
      * Export notes as PDF (Relevé de Notes)
      */
     public function exportPdf(Request $request)
@@ -159,7 +241,7 @@ class NoteController extends Controller
         $notes = $notes->sortBy(function ($n) use ($sortBy) {
             return match($sortBy) {
                 'note'    => is_numeric($n['note']) ? (float)$n['note'] : -1,
-                'anonymat'=> $n['anonymat'],
+                'anonymat'=> is_numeric($n['anonymat']) ? (int)$n['anonymat'] : $n['anonymat'],
                 'cne'     => $n['cne'],
                 default   => $n['nom'] . ' ' . $n['prenom'],
             };
