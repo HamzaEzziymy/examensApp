@@ -39,9 +39,9 @@
             'salle_index' => 1,
         ]]);
         $sessionName = $sessionName ?? ($examen->sessionExamen->nom_session ?? '-');
-        $semesterName = $examen->module->offresFormation->first()->semestre->nom_semestre ?? null;
+        $semesterName = $examen->offreFormation?->semestre?->nom_semestre;
         $periodLabel = optional($examen->date_examen)->format('F Y');
-        $primaryOffre = $examen->module->offresFormation->first();
+        $primaryOffre = $examen->offreFormation;
         $filiereName = $primaryOffre?->section?->filiere?->nom_filiere;
         $sectionName = $primaryOffre?->section?->nom_section;
     @endphp

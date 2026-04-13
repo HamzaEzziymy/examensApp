@@ -21,7 +21,7 @@ class NoteController extends Controller
         // Paginate notes with relationships
         $notes = Note::with([
                 'anonymat.inscriptionPedagogique.inscriptionAdministrative.etudiant',
-                'examen.module.offresFormation.section',
+                'examen.offreFormation.section',
                 'examen.module.elements',
                 'examen.element',
                 'examen.sessionExamen',
@@ -32,7 +32,7 @@ class NoteController extends Controller
             ->paginate(25);
         
         // Load examens with relationships
-        $examens = Examen::with(['module.offresFormation.section', 'module.elements', 'element', 'sessionExamen'])
+        $examens = Examen::with(['offreFormation.section', 'module.elements', 'element', 'sessionExamen'])
             ->latest('date_examen')
             ->limit(200)
             ->get();

@@ -20,7 +20,7 @@ class CorrecteurController extends Controller
         // Paginate correcteurs with relationships
         $correcteurs = Correcteur::with([
                 'enseignant',
-                'examen.module.offresFormation.section',
+                'examen.offreFormation.section',
                 'examen.sessionExamen',
                 'examen.element',
                 'element'
@@ -29,7 +29,7 @@ class CorrecteurController extends Controller
             ->paginate(10);
         
         // Load examens with relationships
-        $examens = Examen::with(['module.offresFormation.section', 'module.elements', 'sessionExamen', 'element'])
+        $examens = Examen::with(['offreFormation.section', 'module.elements', 'sessionExamen', 'element'])
             ->latest('date_examen')
             ->limit(200)
             ->get();

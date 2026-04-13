@@ -22,13 +22,20 @@ class AnonymatAndAttendanceSeeder extends Seeder
             $exam->load([
                 'sessionExamen:id_session_examen,id_filiere,type_session,nom_session',
                 'sessionExamen.filiere:id_filiere,nom_filiere',
-                'module.offresFormation.semestre.niveau',
+                'offreFormation.semestre.niveau',
+                'offreFormation.section:id_section,id_filiere',
+                'offreFormation.section.filiere:id_filiere,nom_filiere',
                 'salle:id_salle,code_salle,capacite_examens,capacite',
                 'salles:id_salle,code_salle,capacite_examens,capacite',
             ]);
 
             $registrations = InscriptionPedagogique::query()
                 ->whereHas('offreFormation', function ($query) use ($exam) {
+                    if ($exam->id_offre) {
+                        $query->where('id_offre', $exam->id_offre);
+                        return;
+                    }
+
                     $query->where('id_module', $exam->id_module);
                 })
                 ->when($activeYearId, function ($query) use ($activeYearId) {
@@ -175,7 +182,7 @@ class AnonymatAndAttendanceSeeder extends Seeder
 
     private function filiereCode(Examen $examen): int
     {
-        $filiere = $examen->sessionExamen->filiere ?? null;
+        $filiere = $examen->sessionExamen->filiere ?? $examen->offreFormation?->section?->filiere;
         $name = strtolower($filiere->nom_filiere ?? '');
 
         $byName = match (true) {
@@ -199,12 +206,7 @@ class AnonymatAndAttendanceSeeder extends Seeder
 
     private function niveauCode(Examen $examen): int
     {
-        $module = $examen->module;
-        if (! $module) {
-            return 0;
-        }
-
-        $offre = $module->offresFormation->first();
+        $offre = $examen->offreFormation;
         $niveau = $offre?->semestre?->niveau;
 
         if (! $niveau) {

@@ -222,6 +222,8 @@ Route::prefix('surveillance')->name('surveillance.')->group(function () {
 Route::prefix('correction')->name('correction.')->group(function () {
     Route::get('resultats-modules/export-releve-notes', [ResultatModuleController::class, 'exportReleveNotes'])
         ->name('resultats-modules.export-releve-notes');
+    Route::get('resultats-modules/export-releve-semestre', [ResultatModuleController::class, 'exportReleveSemestre'])
+        ->name('resultats-modules.export-releve-semestre');
 
     Route::resources([
         'correcteurs' => CorrecteurController::class,

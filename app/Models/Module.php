@@ -5,8 +5,8 @@ namespace App\Models;
 use App\Services\ModuleService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasManyThrough;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Module extends Model
 {
@@ -61,9 +61,16 @@ class Module extends Model
         return $this->hasMany(ResultatModule::class, 'id_module', 'id_module');
     }
 
-    public function examens(): HasMany
+    public function examens(): HasManyThrough
     {
-        return $this->hasMany(Examen::class, 'id_module', 'id_module');
+        return $this->hasManyThrough(
+            Examen::class,
+            OffreFormation::class,
+            'id_module',
+            'id_offre',
+            'id_module',
+            'id_offre'
+        );
     }
 
     /**

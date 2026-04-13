@@ -10,6 +10,7 @@ use App\Models\Filiere;
 use App\Models\InscriptionAdministrative;
 use App\Models\InscriptionPedagogique;
 use App\Models\Module;
+use App\Models\ModuleValidationRule;
 use App\Models\Niveau;
 use App\Models\OffreFormation;
 use App\Models\ResultatElement;
@@ -27,7 +28,229 @@ class ResultatModuleControllerTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_export_releve_notes_can_be_filtered_by_semester(): void
+    public function test_export_releve_semestre_can_be_filtered_by_semester(): void
+    {
+        $user = User::factory()->create();
+        $annee = AnneeUniversitaire::factory()->active()->create(['annee_univ' => '2025/2026']);
+        $filiere = Filiere::factory()->create(['nom_filiere' => 'Medecine']);
+        $section = Section::factory()->create([
+            'id_filiere' => $filiere->id_filiere,
+            'nom_section' => 'Section A',
+        ]);
+        $niveau = Niveau::factory()->create(['nom_niveau' => 'Licence 1']);
+        $semestre1 = Semestre::factory()->create([
+            'id_niveau' => $niveau->id_niveau,
+            'nom_semestre' => 'S1',
+            'ordre' => 1,
+        ]);
+        $semestre2 = Semestre::factory()->create([
+            'id_niveau' => $niveau->id_niveau,
+            'nom_semestre' => 'S2',
+            'ordre' => 2,
+        ]);
+
+        UserFiliereAnnee::create([
+            'user_id' => $user->id,
+            'id_filiere' => $filiere->id_filiere,
+            'id_annee' => $annee->id_annee,
+        ]);
+
+        $module1 = Module::factory()->create([
+            'code_module' => 'MED-S1-001',
+            'nom_module' => 'Anatomie Generale',
+        ]);
+        $module2 = Module::factory()->create([
+            'code_module' => 'MED-S2-001',
+            'nom_module' => 'Histologie',
+        ]);
+
+        $offre1 = OffreFormation::create([
+            'id_module' => $module1->id_module,
+            'id_semestre' => $semestre1->id_semestre,
+            'id_section' => $section->id_section,
+            'id_annee' => $annee->id_annee,
+            'id_coordinateur' => null,
+            'nom_affiche' => 'Anatomie Generale',
+        ]);
+        $offre2 = OffreFormation::create([
+            'id_module' => $module2->id_module,
+            'id_semestre' => $semestre2->id_semestre,
+            'id_section' => $section->id_section,
+            'id_annee' => $annee->id_annee,
+            'id_coordinateur' => null,
+            'nom_affiche' => 'Histologie',
+        ]);
+
+        $student = Etudiant::factory()->create([
+            'id_section' => $section->id_section,
+            'nom' => 'Alpha',
+            'prenom' => 'Etudiant',
+            'cne' => 'CNE-ALPHA',
+        ]);
+        $admin = InscriptionAdministrative::create([
+            'id_etudiant' => $student->id_etudiant,
+            'id_annee' => $annee->id_annee,
+            'id_niveau' => $niveau->id_niveau,
+            'id_section' => $section->id_section,
+            'date_inscription' => '2026-01-10',
+            'statut' => 'Active',
+            'type_inscription' => 'nouveau',
+        ]);
+
+        $ip1 = InscriptionPedagogique::create([
+            'id_inscription_admin' => $admin->id_inscription_admin,
+            'id_offre' => $offre1->id_offre,
+            'type_inscription' => 'Normal',
+            'credits_acquis' => 0,
+        ]);
+        $ip2 = InscriptionPedagogique::create([
+            'id_inscription_admin' => $admin->id_inscription_admin,
+            'id_offre' => $offre2->id_offre,
+            'type_inscription' => 'Normal',
+            'credits_acquis' => 0,
+        ]);
+
+        ResultatModule::create([
+            'id_inscription_pedagogique' => $ip1->id_inscription_pedagogique,
+            'id_module' => $module1->id_module,
+            'moyenne_module' => 14.50,
+            'statut' => 'Valide',
+            'date_validation' => '2026-06-20',
+            'est_anticipe' => false,
+        ]);
+        ResultatModule::create([
+            'id_inscription_pedagogique' => $ip2->id_inscription_pedagogique,
+            'id_module' => $module2->id_module,
+            'moyenne_module' => 9.50,
+            'statut' => 'Rattrapage',
+            'date_validation' => '2026-06-21',
+            'est_anticipe' => false,
+        ]);
+
+        $this->actingAs($user);
+
+        $controller = app(ResultatModuleController::class);
+        $request = Request::create(route('correction.resultats-modules.export-releve-semestre'), 'GET', [
+            'semester_id' => $semestre1->id_semestre,
+        ]);
+
+        $pdf = $controller->exportReleveSemestre($request);
+
+        $this->assertInstanceOf(PdfBuilder::class, $pdf);
+        $this->assertSame('pdfs.releve-semestre', $pdf->viewName);
+        $this->assertSame('a4', $pdf->format);
+        $this->assertSame('Portrait', $pdf->orientation);
+        $this->assertSame('S1', $pdf->viewData['selectedSemesterLabel']);
+        $this->assertTrue($pdf->viewData['includeSemesterSummaryBox']);
+
+        $releves = collect($pdf->viewData['releves']);
+        $this->assertCount(1, $releves);
+        $this->assertSame('S1', $releves->first()['semestre_nom']);
+
+        $modules = collect($releves->first()['modules']);
+        $this->assertCount(1, $modules);
+        $this->assertSame('MED-S1-001', $modules->first()['code_module']);
+
+        $requestWithoutSummary = Request::create(route('correction.resultats-modules.export-releve-semestre'), 'GET', [
+            'semester_id' => $semestre1->id_semestre,
+            'include_semester_summary' => '0',
+        ]);
+
+        $pdfWithoutSummary = $controller->exportReleveSemestre($requestWithoutSummary);
+
+        $this->assertInstanceOf(PdfBuilder::class, $pdfWithoutSummary);
+        $this->assertFalse($pdfWithoutSummary->viewData['includeSemesterSummaryBox']);
+    }
+
+    public function test_export_releve_semestre_can_be_limited_to_a_single_session_block(): void
+    {
+        $user = User::factory()->create();
+        $annee = AnneeUniversitaire::factory()->active()->create(['annee_univ' => '2025/2026']);
+        $filiere = Filiere::factory()->create(['nom_filiere' => 'Medecine']);
+        $section = Section::factory()->create([
+            'id_filiere' => $filiere->id_filiere,
+            'nom_section' => 'Section A',
+        ]);
+        $niveau = Niveau::factory()->create(['nom_niveau' => 'Licence 1']);
+        $semestre = Semestre::factory()->create([
+            'id_niveau' => $niveau->id_niveau,
+            'nom_semestre' => 'S1',
+            'ordre' => 1,
+        ]);
+
+        UserFiliereAnnee::create([
+            'user_id' => $user->id,
+            'id_filiere' => $filiere->id_filiere,
+            'id_annee' => $annee->id_annee,
+        ]);
+
+        $module = Module::factory()->create([
+            'code_module' => 'MED-S1-001',
+            'nom_module' => 'Anatomie Generale',
+        ]);
+
+        $offre = OffreFormation::create([
+            'id_module' => $module->id_module,
+            'id_semestre' => $semestre->id_semestre,
+            'id_section' => $section->id_section,
+            'id_annee' => $annee->id_annee,
+            'id_coordinateur' => null,
+            'nom_affiche' => 'Anatomie Generale',
+        ]);
+
+        $student = Etudiant::factory()->create([
+            'id_section' => $section->id_section,
+            'nom' => 'Alpha',
+            'prenom' => 'Etudiant',
+            'cne' => 'CNE-ALPHA',
+        ]);
+        $admin = InscriptionAdministrative::create([
+            'id_etudiant' => $student->id_etudiant,
+            'id_annee' => $annee->id_annee,
+            'id_niveau' => $niveau->id_niveau,
+            'id_section' => $section->id_section,
+            'date_inscription' => '2026-01-10',
+            'statut' => 'Active',
+            'type_inscription' => 'nouveau',
+        ]);
+        $pedagogicalRegistration = InscriptionPedagogique::create([
+            'id_inscription_admin' => $admin->id_inscription_admin,
+            'id_offre' => $offre->id_offre,
+            'type_inscription' => 'Normal',
+            'credits_acquis' => 0,
+        ]);
+
+        ResultatModule::create([
+            'id_inscription_pedagogique' => $pedagogicalRegistration->id_inscription_pedagogique,
+            'id_module' => $module->id_module,
+            'moyenne_module' => 14.50,
+            'statut' => 'Valide',
+            'date_validation' => '2026-06-20',
+            'est_anticipe' => false,
+        ]);
+
+        $this->actingAs($user);
+
+        $controller = app(ResultatModuleController::class);
+        $request = Request::create(route('correction.resultats-modules.export-releve-semestre'), 'GET', [
+            'semester_id' => $semestre->id_semestre,
+            'student_id' => $student->id_etudiant,
+            'semester_session' => 'normale',
+        ]);
+
+        $pdf = $controller->exportReleveSemestre($request);
+
+        $this->assertInstanceOf(PdfBuilder::class, $pdf);
+        $this->assertSame('normale', $pdf->viewData['selectedSemesterSession']);
+        $this->assertSame('Session normale', $pdf->viewData['selectedSemesterSessionLabel']);
+
+        $html = view($pdf->viewName, $pdf->viewData)->render();
+
+        $this->assertStringContainsString('Session Normale', $html);
+        $this->assertStringNotContainsString('Session Rattrapage', $html);
+    }
+
+    public function test_export_releve_notes_keeps_full_year_even_when_semester_filter_is_present(): void
     {
         $user = User::factory()->create();
         $annee = AnneeUniversitaire::factory()->active()->create(['annee_univ' => '2025/2026']);
@@ -130,23 +353,20 @@ class ResultatModuleControllerTest extends TestCase
 
         $controller = app(ResultatModuleController::class);
         $request = Request::create(route('correction.resultats-modules.export-releve-notes'), 'GET', [
+            'student_id' => $student->id_etudiant,
             'semester_id' => $semestre1->id_semestre,
         ]);
 
         $pdf = $controller->exportReleveNotes($request);
 
         $this->assertInstanceOf(PdfBuilder::class, $pdf);
-        $this->assertSame('pdfs.releve-notes-grouped', $pdf->viewName);
-        $this->assertSame('a3', $pdf->format);
-        $this->assertSame('Landscape', $pdf->orientation);
-        $this->assertSame('S1', $pdf->viewData['selectedSemesterLabel']);
+        $this->assertSame('pdfs.releve-notes', $pdf->viewName);
+        $this->assertSame('a4', $pdf->format);
 
         $students = collect($pdf->viewData['students']);
         $this->assertCount(1, $students);
-
         $modules = collect($students->first()['modules']);
-        $this->assertCount(1, $modules);
-        $this->assertSame('MED-S1-001', $modules->first()['code_module']);
+        $this->assertCount(2, $modules);
     }
 
     public function test_export_releve_notes_contains_module_and_element_marks_with_module_status_per_student(): void
@@ -439,5 +659,190 @@ class ResultatModuleControllerTest extends TestCase
         $students = collect($pdf->viewData['students']);
         $this->assertCount(1, $students);
         $this->assertSame('CNE-ALPHA', $students->first()['cne']);
+    }
+
+    public function test_module_validation_rule_can_be_saved_for_current_filiere(): void
+    {
+        $user = User::factory()->create();
+        $annee = AnneeUniversitaire::factory()->active()->create(['annee_univ' => '2025/2026']);
+        $filiere = Filiere::factory()->create(['nom_filiere' => 'Medecine']);
+        $section = Section::factory()->create([
+            'id_filiere' => $filiere->id_filiere,
+            'nom_section' => 'Section A',
+        ]);
+        $niveau = Niveau::factory()->create(['nom_niveau' => 'Licence 1']);
+        $semestre = Semestre::factory()->create([
+            'id_niveau' => $niveau->id_niveau,
+            'nom_semestre' => 'S1',
+            'ordre' => 1,
+        ]);
+
+        UserFiliereAnnee::create([
+            'user_id' => $user->id,
+            'id_filiere' => $filiere->id_filiere,
+            'id_annee' => $annee->id_annee,
+        ]);
+
+        $module = Module::factory()->create([
+            'code_module' => 'MED-S1-001',
+            'nom_module' => 'Anatomie Generale',
+        ]);
+
+        OffreFormation::create([
+            'id_module' => $module->id_module,
+            'id_semestre' => $semestre->id_semestre,
+            'id_section' => $section->id_section,
+            'id_annee' => $annee->id_annee,
+            'id_coordinateur' => null,
+            'nom_affiche' => 'Anatomie Generale',
+        ]);
+
+        $response = $this
+            ->actingAs($user)
+            ->from(route('correction.resultats-modules.index'))
+            ->post(route('correction.resultats-modules.store'), [
+                'id_module' => $module->id_module,
+                'module_pass_threshold' => 12,
+                'enforce_all_elements_threshold' => true,
+                'element_pass_threshold' => 10,
+            ]);
+
+        $response->assertRedirect(route('correction.resultats-modules.index'));
+
+        $this->assertDatabaseHas('module_validation_rules', [
+            'id_filiere' => $filiere->id_filiere,
+            'id_module' => $module->id_module,
+            'module_pass_threshold' => 12.00,
+            'enforce_all_elements_threshold' => true,
+            'element_pass_threshold' => 10.00,
+        ]);
+    }
+
+    public function test_export_releve_notes_applies_element_threshold_rule(): void
+    {
+        $user = User::factory()->create();
+        $annee = AnneeUniversitaire::factory()->active()->create(['annee_univ' => '2025/2026']);
+        $filiere = Filiere::factory()->create(['nom_filiere' => 'Medecine']);
+        $section = Section::factory()->create([
+            'id_filiere' => $filiere->id_filiere,
+            'nom_section' => 'Section A',
+        ]);
+        $niveau = Niveau::factory()->create(['nom_niveau' => 'Licence 1']);
+        $semestre = Semestre::factory()->create([
+            'id_niveau' => $niveau->id_niveau,
+            'nom_semestre' => 'S1',
+            'ordre' => 1,
+        ]);
+
+        UserFiliereAnnee::create([
+            'user_id' => $user->id,
+            'id_filiere' => $filiere->id_filiere,
+            'id_annee' => $annee->id_annee,
+        ]);
+
+        $module = Module::factory()->create([
+            'code_module' => 'MED-S1-001',
+            'nom_module' => 'Anatomie Generale',
+        ]);
+        $element1 = ElementModule::factory()->create([
+            'id_module' => $module->id_module,
+            'code_element' => 'MED-EL-1',
+            'nom_element' => 'Cours magistral',
+            'coefficient' => 1,
+        ]);
+        $element2 = ElementModule::factory()->create([
+            'id_module' => $module->id_module,
+            'code_element' => 'MED-EL-2',
+            'nom_element' => 'Travaux pratiques',
+            'coefficient' => 1,
+        ]);
+
+        $offre = OffreFormation::create([
+            'id_module' => $module->id_module,
+            'id_semestre' => $semestre->id_semestre,
+            'id_section' => $section->id_section,
+            'id_annee' => $annee->id_annee,
+            'id_coordinateur' => null,
+            'nom_affiche' => 'Anatomie Generale',
+        ]);
+
+        $student = Etudiant::factory()->create([
+            'id_section' => $section->id_section,
+            'nom' => 'Alpha',
+            'prenom' => 'Etudiant',
+            'cne' => 'CNE-ALPHA',
+        ]);
+        $admin = InscriptionAdministrative::create([
+            'id_etudiant' => $student->id_etudiant,
+            'id_annee' => $annee->id_annee,
+            'id_niveau' => $niveau->id_niveau,
+            'id_section' => $section->id_section,
+            'date_inscription' => '2026-01-10',
+            'statut' => 'Active',
+            'type_inscription' => 'nouveau',
+        ]);
+        $pedagogicalRegistration = InscriptionPedagogique::create([
+            'id_inscription_admin' => $admin->id_inscription_admin,
+            'id_offre' => $offre->id_offre,
+            'type_inscription' => 'Normal',
+            'credits_acquis' => 0,
+        ]);
+
+        ResultatModule::create([
+            'id_inscription_pedagogique' => $pedagogicalRegistration->id_inscription_pedagogique,
+            'id_module' => $module->id_module,
+            'moyenne_module' => 12.00,
+            'statut' => 'Valide',
+            'date_validation' => '2026-06-20',
+            'est_anticipe' => false,
+        ]);
+        ResultatElement::create([
+            'id_inscription_pedagogique' => $pedagogicalRegistration->id_inscription_pedagogique,
+            'id_element' => $element1->id_element,
+            'id_session_examen' => null,
+            'moyenne_element' => 14.00,
+            'statut' => 'Valide',
+            'date_validation' => '2026-06-19',
+        ]);
+        ResultatElement::create([
+            'id_inscription_pedagogique' => $pedagogicalRegistration->id_inscription_pedagogique,
+            'id_element' => $element2->id_element,
+            'id_session_examen' => null,
+            'moyenne_element' => 6.00,
+            'statut' => 'Non Valide',
+            'date_validation' => '2026-06-19',
+        ]);
+
+        ModuleValidationRule::create([
+            'id_filiere' => $filiere->id_filiere,
+            'id_module' => $module->id_module,
+            'module_pass_threshold' => 10,
+            'enforce_all_elements_threshold' => true,
+            'element_pass_threshold' => 10,
+        ]);
+
+        $this->actingAs($user);
+
+        $controller = app(ResultatModuleController::class);
+        $request = Request::create(route('correction.resultats-modules.export-releve-notes'), 'GET', [
+            'student_id' => $student->id_etudiant,
+        ]);
+
+        $pdf = $controller->exportReleveNotes($request);
+
+        $this->assertInstanceOf(PdfBuilder::class, $pdf);
+
+        $students = collect($pdf->viewData['students']);
+        $this->assertCount(1, $students);
+
+        $studentPayload = $students->first();
+        $this->assertSame(0, $studentPayload['validated_modules_count']);
+
+        $modulePayload = collect($studentPayload['modules'])->first();
+        $this->assertSame(12.0, $modulePayload['moyenne_module']);
+        $this->assertSame('Non Valide', $modulePayload['statut_module']);
+        $this->assertTrue($modulePayload['has_custom_validation_rule']);
+        $this->assertSame(10.0, $modulePayload['module_threshold']);
+        $this->assertSame(10.0, $modulePayload['element_threshold']);
     }
 }

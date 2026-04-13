@@ -60,6 +60,7 @@ export default function PlanifierForm({
     const [selectedNiveau, setSelectedNiveau] = useState('');
     const [selectedSemestre, setSelectedSemestre] = useState('');
     const [allocations, setAllocations] = useState({});
+    const [pendingSalleId, setPendingSalleId] = useState('');
 
     const filteredSemestres = useMemo(
         () => semestres.filter((sem) => !selectedNiveau || String(sem.id_niveau) === String(selectedNiveau)),
@@ -99,6 +100,10 @@ export default function PlanifierForm({
 
     const selectedSalles = useMemo(
         () => salles.filter((salle) => data.salles.includes(String(salle.id_salle))),
+        [salles, data.salles],
+    );
+    const availableSalles = useMemo(
+        () => salles.filter((salle) => !data.salles.includes(String(salle.id_salle))),
         [salles, data.salles],
     );
     const selectedSession = useMemo(
@@ -259,6 +264,22 @@ export default function PlanifierForm({
         setAllocations(next);
     };
 
+    const addSalle = (salleId) => {
+        if (!salleId || data.salles.includes(salleId)) {
+            return;
+        }
+
+        setData('salles', [...data.salles, salleId]);
+        setPendingSalleId('');
+    };
+
+    const removeSalle = (salleId) => {
+        setData(
+            'salles',
+            data.salles.filter((currentSalleId) => currentSalleId !== salleId),
+        );
+    };
+
     const submit = (event) => {
         event.preventDefault();
         const successTitle =
@@ -269,6 +290,7 @@ export default function PlanifierForm({
         post(route('examens.examens.store'), {
             onSuccess: () => {
                 reset();
+                setPendingSalleId('');
                 onSuccess?.();
                 Swal.fire({
                     icon: 'success',
@@ -477,19 +499,97 @@ export default function PlanifierForm({
             )}
 
             <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Salles (multi)</label>
-                <select
-                    multiple
-                    value={data.salles}
-                    onChange={(e) => setData('salles', Array.from(e.target.selectedOptions).map((opt) => opt.value))}
-                    className="mt-1 min-h-[8rem] w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
-                >
-                    {salles.map((salle) => (
-                        <option key={salle.id_salle} value={String(salle.id_salle)}>
-                            {salle.nom_salle} - Capacite {salle.capacite_examens}
-                        </option>
-                    ))}
-                </select>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Salles</label>
+                <div className="mt-1 rounded-xl border border-gray-200 bg-gray-50/70 p-3 dark:border-gray-700 dark:bg-gray-900/40">
+                    <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
+                        <div>
+                            <label className="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                Ajouter une salle
+                            </label>
+                            <select
+                                value={pendingSalleId}
+                                onChange={(e) => {
+                                    const value = e.target.value;
+                                    setPendingSalleId(value);
+                                    addSalle(value);
+                                }}
+                                disabled={!availableSalles.length}
+                                className="mt-1 w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                            >
+                                <option value="">
+                                    {availableSalles.length ? 'Selectionnez une salle' : 'Toutes les salles sont deja ajoutees'}
+                                </option>
+                                {availableSalles.map((salle) => (
+                                    <option key={salle.id_salle} value={String(salle.id_salle)}>
+                                        {(salle.code_salle || salle.nom_salle) +
+                                            (salle.nom_salle && salle.code_salle ? ` - ${salle.nom_salle}` : '') +
+                                            ` - Capacite ${salle.capacite_examens ?? salle.capacite ?? 0}`}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="rounded-xl border border-indigo-200 bg-white px-4 py-3 text-sm dark:border-indigo-500/40 dark:bg-gray-800">
+                            <div className="text-xs font-medium uppercase tracking-wide text-indigo-600 dark:text-indigo-300">
+                                Salles selectionnees
+                            </div>
+                            <div className="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-100">
+                                {selectedSalles.length}
+                            </div>
+                        </div>
+                    </div>
+
+                    {selectedSalles.length > 0 ? (
+                        <div className="mt-4 grid gap-3">
+                            {selectedSalles.map((salle, index) => (
+                                <div
+                                    key={salle.id_salle}
+                                    className="grid gap-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800 lg:grid-cols-[40px_minmax(0,1fr)_auto]"
+                                >
+                                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-100">
+                                        {index + 1}
+                                    </div>
+                                    <div className="grid gap-2 md:grid-cols-2">
+                                        <div>
+                                            <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                                Salle
+                                            </label>
+                                            <input
+                                                type="text"
+                                                readOnly
+                                                value={salle.nom_salle || salle.code_salle || `Salle ${salle.id_salle}`}
+                                                className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                                Details
+                                            </label>
+                                            <input
+                                                type="text"
+                                                readOnly
+                                                value={`${salle.code_salle || 'Sans code'} • Capacite ${salle.capacite_examens ?? salle.capacite ?? 'N/C'}`}
+                                                className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div className="flex items-start justify-end">
+                                        <button
+                                            type="button"
+                                            onClick={() => removeSalle(String(salle.id_salle))}
+                                            className="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-50 dark:border-red-500/30 dark:text-red-300 dark:hover:bg-red-950/30"
+                                        >
+                                            Retirer
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        <div className="mt-4 rounded-xl border border-dashed border-gray-300 bg-white/70 px-4 py-5 text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-400">
+                            Aucune salle ajoutee. Selectionnez une salle dans la liste ci-dessus pour l&apos;ajouter.
+                        </div>
+                    )}
+                </div>
                 <InputError message={errors.salles} className="mt-1" />
                 {isBulkPlanning && (
                     <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">

@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <title>Releve des notes</title>
+    <title>Releve semestre</title>
     <style>
         :root {
             --page-padding-top: 6mm;
@@ -147,6 +147,11 @@
         .session-col { width: 7.5%; }
         .final-col { width: 9.5%; }
         .result-col { width: 8.5%; }
+        .notes-table.single-session .semester-col { width: 9%; }
+        .notes-table.single-session .module-col { width: 43%; }
+        .notes-table.single-session .session-col { width: 9.5%; }
+        .notes-table.single-session .final-col { width: 10.5%; }
+        .notes-table.single-session .result-col { width: 9%; }
 
         .module-row td {
             font-weight: 800;
@@ -172,8 +177,6 @@
             font-weight: 900;
             color: #374151;
         }
-
-        .semester-start td { border-top-width: 1.5px; }
 
         .module-name {
             margin-top: 0;
@@ -206,6 +209,8 @@
             margin-top: auto;
             padding-top: var(--footer-padding-top);
         }
+
+        .footer-panel.summary-hidden { justify-content: flex-start; }
 
         .signature-box {
             width: 172px;
@@ -267,9 +272,12 @@
 </head>
 <body>
 @php
-    $students = collect($students ?? []);
+    $releves = collect($releves ?? []);
     $filiereLabel = $filiereLabel ?? '-';
     $anneeLabel = $anneeLabel ?? '-';
+    $selectedSemesterSession = $selectedSemesterSession ?? null;
+    $selectedSemesterSessionLabel = $selectedSemesterSessionLabel ?? null;
+    $includeSemesterSummaryBox = $includeSemesterSummaryBox ?? true;
     $formatScore = function ($score) {
         if ($score === null || $score === '') {
             return '-';
@@ -403,27 +411,17 @@
             })
             ->implode('; ');
     };
+    $displayNormalSession = $selectedSemesterSession !== 'rattrapage';
+    $displayRattrapageSession = $selectedSemesterSession !== 'normale';
+    $singleSessionLayout = ($displayNormalSession xor $displayRattrapageSession);
 @endphp
 
-@foreach($students as $studentIndex => $student)
+@foreach($releves as $releveIndex => $releve)
     @php
-        $modules = collect($student['modules'] ?? []);
-        $semesterGroups = $modules
-            ->groupBy(function (array $module) {
-                return (string) ($module['semestre_id'] ?? 0);
-            })
-            ->map(function ($semesterModules) {
-                $semesterModules = collect($semesterModules)->values();
-
-                return [
-                    'semestre_nom' => $semesterModules->first()['semestre_nom'] ?? '-',
-                    'rows_count' => $semesterModules->sum(function (array $module) {
-                        return 1 + collect($module['elements'] ?? [])->count();
-                    }),
-                    'modules' => $semesterModules,
-                ];
-            })
-            ->values();
+        $modules = collect($releve['modules'] ?? []);
+        $semesterRows = max((int) $modules->sum(function (array $module) {
+            return 1 + collect($module['elements'] ?? [])->count();
+        }), 1);
         $moduleScores = $modules
             ->pluck('moyenne_module')
             ->filter(function ($score) {
@@ -438,11 +436,10 @@
         })->count();
         $allValidated = $modules->isNotEmpty() && $validatedModules === $modules->count();
         $resultMessage = $allValidated
-            ? "L'annee est Validee : Admis(e)."
-            : "L'annee est non validee : Ajourn&eacute;(e), ".max($modules->count() - $validatedModules, 0)." modules.";
-        $rowCount = max((int) $semesterGroups->sum('rows_count'), 1);
-        $pageStyles = $pageDensityStyle($rowCount);
-        if ($studentIndex > 0) {
+            ? "Le semestre est valide : tous les modules sont valides."
+            : "Le semestre est non valide : ".max($modules->count() - $validatedModules, 0)." modules restants.";
+        $pageStyles = $pageDensityStyle($semesterRows);
+        if ($releveIndex > 0) {
             $pageStyles['page-break-before'] = 'always';
         }
     @endphp
@@ -452,111 +449,129 @@
             <div class="brand-rule"></div>
         </div>
 
-        <div class="title">RELEV&Eacute; DE NOTES</div>
-        <div class="subtitle">Ann&eacute;e Universitaire {{ $anneeLabel ?: '-' }}</div>
+        <div class="title">RELEVE SEMESTRE</div>
+        <div class="subtitle">
+            {{ $releve['semestre_nom'] ?: ($selectedSemesterLabel ?: 'Semestre') }} - Annee Universitaire {{ $anneeLabel ?: '-' }}
+            @if($selectedSemesterSessionLabel)
+                - {{ $selectedSemesterSessionLabel }}
+            @endif
+        </div>
 
         <div class="content-flow">
             <table class="student-info">
                 <tr>
-                    <td class="left"><span class="student-label">CNE</span> {{ $student['cne'] ?: '-' }}</td>
-                    <td class="right"><span class="student-label">Niveau</span> {{ $student['niveau'] ?: '-' }}</td>
+                    <td class="left"><span class="student-label">CNE</span> {{ $releve['cne'] ?: '-' }}</td>
+                    <td class="right"><span class="student-label">Niveau</span> {{ $releve['niveau'] ?: '-' }}</td>
                 </tr>
                 <tr>
-                    <td class="left"><span class="student-label">Nom pr&eacute;nom</span> {{ mb_strtoupper((string) ($student['nom_complet'] ?: '-')) }}</td>
-                    <td class="right"><span class="student-label">Fili&egrave;re</span> {{ $filiereLabel ?: '-' }}</td>
+                    <td class="left"><span class="student-label">Nom prenom</span> {{ strtoupper((string) ($releve['nom_complet'] ?: '-')) }}</td>
+                    <td class="right"><span class="student-label">Filiere</span> {{ $filiereLabel ?: '-' }}</td>
                 </tr>
             </table>
 
-            <table class="notes-table">
+            <table class="notes-table {{ $singleSessionLayout ? 'single-session' : '' }}">
                 <thead>
                 <tr>
                     <th class="semester-col" rowspan="2">Semestre</th>
                     <th class="module-col" rowspan="2">Modules</th>
-                    <th colspan="3">Session Normale</th>
-                    <th colspan="3">Session Rattrapage</th>
+                    @if($displayNormalSession)
+                        <th colspan="3">Session Normale</th>
+                    @endif
+                    @if($displayRattrapageSession)
+                        <th colspan="3">Session Rattrapage</th>
+                    @endif
                     <th class="final-col" rowspan="2">Note Finale</th>
-                    <th class="result-col" rowspan="2">R&eacute;sultats</th>
+                    <th class="result-col" rowspan="2">Resultats</th>
                 </tr>
                 <tr class="subhead">
-                    <th class="session-col">TP</th>
-                    <th class="session-col">Exam</th>
-                    <th class="session-col">Note</th>
-                    <th class="session-col">TP</th>
-                    <th class="session-col">Exam</th>
-                    <th class="session-col">Note</th>
+                    @if($displayNormalSession)
+                        <th class="session-col">TP</th>
+                        <th class="session-col">Exam</th>
+                        <th class="session-col">Note</th>
+                    @endif
+                    @if($displayRattrapageSession)
+                        <th class="session-col">TP</th>
+                        <th class="session-col">Exam</th>
+                        <th class="session-col">Note</th>
+                    @endif
                 </tr>
                 </thead>
                 <tbody>
-                @foreach($semesterGroups as $semesterGroup)
+                @foreach($modules as $moduleIndex => $module)
                     @php
-                        $semesterRows = max((int) ($semesterGroup['rows_count'] ?? 0), 1);
+                        $moduleResult = $module['statut_module_short'] ?? ($module['statut_module'] ?? '-');
+                        $isFirstModule = $moduleIndex === 0;
                     @endphp
-                    @foreach(collect($semesterGroup['modules'] ?? []) as $moduleIndex => $module)
-                        @php
-                            $moduleResult = $module['statut_module_short'] ?? ($module['statut_module'] ?? '-');
-                            $isFirstModuleInSemester = $moduleIndex === 0;
-                        @endphp
-                        <tr class="module-row {{ $isFirstModuleInSemester ? 'semester-start' : '' }}">
-                            @if($isFirstModuleInSemester)
-                                <td class="semester-cell" rowspan="{{ $semesterRows }}">
-                                    <div class="semester-label">{{ $semesterGroup['semestre_nom'] ?: '-' }}</div>
-                                </td>
-                            @endif
-                            <td>
-                                <div class="module-name">{{ $module['nom_module'] ?: '-' }}</div>
+                    <tr class="module-row">
+                        @if($isFirstModule)
+                            <td class="semester-cell" rowspan="{{ $semesterRows }}">
+                                <div class="semester-label">{{ $releve['semestre_nom'] ?: ($selectedSemesterLabel ?: '-') }}</div>
                             </td>
+                        @endif
+                        <td>
+                            <div class="module-name">{{ $module['nom_module'] ?: '-' }}</div>
+                        </td>
+                        @if($displayNormalSession)
                             <td class="text-center {{ $scoreClass($module['session_normale_tp'] ?? null) }}">{{ $formatScore($module['session_normale_tp'] ?? null) }}</td>
                             <td class="text-center {{ $scoreClass($module['session_normale_exam'] ?? null) }}">{{ $formatScore($module['session_normale_exam'] ?? null) }}</td>
                             <td class="text-center {{ $scoreClass($module['session_normale_note'] ?? null) }}">{{ $formatScore($module['session_normale_note'] ?? null) }}</td>
+                        @endif
+                        @if($displayRattrapageSession)
                             <td class="text-center {{ $scoreClass($module['session_rattrapage_tp'] ?? null) }}">{{ $formatScore($module['session_rattrapage_tp'] ?? null) }}</td>
                             <td class="text-center {{ $scoreClass($module['session_rattrapage_exam'] ?? null) }}">{{ $formatScore($module['session_rattrapage_exam'] ?? null) }}</td>
                             <td class="text-center {{ $scoreClass($module['session_rattrapage_note'] ?? null) }}">{{ $formatScore($module['session_rattrapage_note'] ?? null) }}</td>
-                            <td class="text-center {{ $scoreClass($module['moyenne_module'] ?? null) }}">{{ $formatScore($module['moyenne_module'] ?? null) }}</td>
-                            <td class="text-center {{ $resultClass($moduleResult) }}">{{ $moduleResult }}</td>
-                        </tr>
+                        @endif
+                        <td class="text-center {{ $scoreClass($module['moyenne_module'] ?? null) }}">{{ $formatScore($module['moyenne_module'] ?? null) }}</td>
+                        <td class="text-center {{ $resultClass($moduleResult) }}">{{ $moduleResult }}</td>
+                    </tr>
 
-                        @foreach(collect($module['elements'] ?? []) as $element)
-                            @php
-                                $percentage = $element['coefficient_percent'] ?? null;
-                                $elementLabel = trim(collect([
-                                    $element['code_element'] ? $element['code_element'].':' : null,
-                                    $element['nom_element'] ?: null,
-                                    $percentage !== null ? '('.rtrim(rtrim(number_format((float) $percentage, 2, '.', ''), '0'), '.').'%)' : null,
-                                ])->filter()->implode(' '));
-                            @endphp
-                            <tr class="element-row">
-                                <td class="element-label">{{ $elementLabel !== '' ? $elementLabel : '-' }}</td>
+                    @foreach(collect($module['elements'] ?? []) as $element)
+                        @php
+                            $percentage = $element['coefficient_percent'] ?? null;
+                            $elementLabel = trim(collect([
+                                $element['code_element'] ? $element['code_element'].':' : null,
+                                $element['nom_element'] ?: null,
+                                $percentage !== null ? '('.rtrim(rtrim(number_format((float) $percentage, 2, '.', ''), '0'), '.').'%)' : null,
+                            ])->filter()->implode(' '));
+                        @endphp
+                        <tr class="element-row">
+                            <td class="element-label">{{ $elementLabel !== '' ? $elementLabel : '-' }}</td>
+                            @if($displayNormalSession)
                                 <td class="text-center {{ $scoreClass($element['session_normale_tp'] ?? null) }}">{{ $formatScore($element['session_normale_tp'] ?? null) }}</td>
                                 <td class="text-center {{ $scoreClass($element['session_normale_exam'] ?? null) }}">{{ $formatScore($element['session_normale_exam'] ?? null) }}</td>
                                 <td class="text-center {{ $scoreClass($element['session_normale_note'] ?? null) }}">{{ $formatScore($element['session_normale_note'] ?? null) }}</td>
+                            @endif
+                            @if($displayRattrapageSession)
                                 <td class="text-center {{ $scoreClass($element['session_rattrapage_tp'] ?? null) }}">{{ $formatScore($element['session_rattrapage_tp'] ?? null) }}</td>
                                 <td class="text-center {{ $scoreClass($element['session_rattrapage_exam'] ?? null) }}">{{ $formatScore($element['session_rattrapage_exam'] ?? null) }}</td>
                                 <td class="text-center {{ $scoreClass($element['session_rattrapage_note'] ?? null) }}">{{ $formatScore($element['session_rattrapage_note'] ?? null) }}</td>
-                                <td class="text-center {{ $scoreClass($element['moyenne_element'] ?? null) }}">{{ $formatScore($element['moyenne_element'] ?? null) }}</td>
-                                <td class="text-center result-neutral">-</td>
-                            </tr>
-                        @endforeach
+                            @endif
+                            <td class="text-center {{ $scoreClass($element['moyenne_element'] ?? null) }}">{{ $formatScore($element['moyenne_element'] ?? null) }}</td>
+                            <td class="text-center result-neutral">-</td>
+                        </tr>
                     @endforeach
                 @endforeach
                 </tbody>
             </table>
 
-            <div class="footer-panel">
+            <div class="footer-panel {{ $includeSemesterSummaryBox ? '' : 'summary-hidden' }}">
                 <div class="signature-box">Cachet et Signature</div>
 
-                <div class="year-box">
-                    <div class="year-title">R&eacute;sultat d'Ann&eacute;e</div>
-                    <div class="year-average">
-                        <span>Moyenne G&eacute;n&eacute;rale :</span>
-                        <span>{{ $formatScore($averageScore) }} / 20</span>
+                @if($includeSemesterSummaryBox)
+                    <div class="year-box">
+                        <div class="year-title">Resultat du semestre</div>
+                        <div class="year-average">
+                            <span>Moyenne Generale :</span>
+                            <span>{{ $formatScore($averageScore) }} / 20</span>
+                        </div>
+                        <div class="year-pill {{ $allValidated ? 'ok' : 'ko' }}">
+                            {{ $resultMessage }}
+                        </div>
                     </div>
-                    <div class="year-pill {{ $allValidated ? 'ok' : 'ko' }}">
-                        {{ $resultMessage }}
-                    </div>
-                </div>
+                @endif
             </div>
 
-            <div class="generated-at">G&eacute;n&eacute;r&eacute; le : {{ $generatedAt->format('d/m/Y \\a H:i') }}</div>
+            <div class="generated-at">Genere le : {{ $generatedAt->format('d/m/Y \\a H:i') }}</div>
         </div>
     </div>
 @endforeach
