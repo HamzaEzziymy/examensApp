@@ -136,15 +136,11 @@ Route::prefix('personnes')->name('personnes.')->group(function () {
         'etudiants' => EtudiantController::class,
     ]);
 
-<<<<<<< HEAD
     // Bulk delete for students
     Route::post('etudiants/bulk-destroy', [EtudiantController::class, 'bulkDestroy'])
         ->name('etudiants.bulk-destroy');
 
     // Pivot enseignant_module (assignations d’enseignants aux modules)
-=======
-    // Pivot enseignant_module (assignations d'enseignants aux modules)
->>>>>>> cacb619ebd09a9f8d797d6df99f144f4f6be5b3f
     Route::resource('enseignant-modules', EnseignantModuleController::class)
         ->only(['index', 'store', 'destroy']);
 

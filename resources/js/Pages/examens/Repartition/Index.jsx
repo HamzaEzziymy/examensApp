@@ -2,10 +2,10 @@
 import { Head, router, useForm } from '@inertiajs/react';
 import ExamHeader from '../Header';
 import { useEffect, useMemo, useState } from 'react';
-import Dropdown from '@/Components/Dropdown';
 import InputError from '@/Components/InputError';
 import Swal from 'sweetalert2';
-import { CheckCircle2, ChevronDown, Edit3, FileSpreadsheet, Trash2, XCircle } from 'lucide-react';
+import { CheckCircle2, Download, Edit3, FileSpreadsheet, FileText, Table2, Trash2, X, XCircle } from 'lucide-react';
+import * as XLSX from 'xlsx';
 import XlsxPopulate from 'xlsx-populate/browser/xlsx-populate';
 
 const badgeClasses = (present) =>
@@ -50,6 +50,14 @@ const TEMPLATE_START_ROW = 10;
 const TEMPLATE_REPEAT_ROW = 11;
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 const MODULE_ONLY_FILTER = '__module__';
+const REPARTITION_EXPORT_FIELDS = [
+    { key: 'cne', label: 'CNE', defaultOn: true },
+    { key: 'etudiant', label: 'Etudiant', defaultOn: true },
+    { key: 'grille', label: 'Grille', defaultOn: true },
+    { key: 'place', label: 'Place', defaultOn: true },
+    { key: 'anonymat', label: 'Anonymat', defaultOn: true },
+    { key: 'presence', label: 'Presence', defaultOn: true },
+];
 
 const safeSheetName = (value) => {
     const name = (value || 'Sheet').replace(/[\\/?*[\]:]/g, ' ').trim() || 'Sheet';
@@ -221,6 +229,352 @@ const formatExamLabel = (examen) => {
     return moduleLabel;
 };
 
+const repartitionStudent = (repartition) =>
+    repartition?.inscription_pedagogique?.etudiant ||
+    repartition?.inscription_pedagogique?.inscription_administrative?.etudiant ||
+    {};
+
+const repartitionStudentName = (repartition) => {
+    const student = repartitionStudent(repartition);
+    return [student.nom, student.prenom].filter(Boolean).join(' ').trim() || '-';
+};
+
+const selectedExportColumns = (columns) =>
+    REPARTITION_EXPORT_FIELDS
+        .filter(({ key }) => columns[key])
+        .map(({ key }) => key);
+
+function RepartitionExportModal({
+    selectedExamen,
+    selectedExamenUsesElements,
+    repartitions,
+    initialColumns,
+    initialPresenceFilled,
+    onClose,
+    onPdfRepartition,
+    onPdfCollective,
+    onPdfSallesPlaces,
+    onExcelRepartition,
+    onExcelTemplates,
+}) {
+    const [format, setFormat] = useState('pdf');
+    const [documentType, setDocumentType] = useState('repartition');
+    const [localColumns, setLocalColumns] = useState(initialColumns);
+    const [localPresenceFilled, setLocalPresenceFilled] = useState(initialPresenceFilled);
+    const [isExporting, setIsExporting] = useState(false);
+
+    const selectedColumns = selectedExportColumns(localColumns);
+    const canConfigureColumns = documentType === 'repartition';
+    const exportDisabled = isExporting || (canConfigureColumns && selectedColumns.length === 0);
+
+    const documentOptions = format === 'pdf'
+        ? [
+            {
+                key: 'repartition',
+                label: 'Repartition',
+                description: 'PDF par salle avec colonnes au choix.',
+                icon: FileText,
+            },
+            {
+                key: 'collective',
+                label: 'Presence collective',
+                description: 'Feuille collective pour la session.',
+                icon: FileText,
+            },
+            {
+                key: 'places',
+                label: 'Plan salles / places',
+                description: 'Liste orientee salles et numeros de place.',
+                icon: FileText,
+            },
+        ]
+        : [
+            {
+                key: 'repartition',
+                label: 'Repartition Excel',
+                description: 'Table editable avec les etudiants affectes.',
+                icon: Table2,
+            },
+            {
+                key: 'correctors',
+                label: 'Fichiers correcteurs',
+                description: selectedExamenUsesElements
+                    ? 'Modele notes module + elements.'
+                    : 'Modele notes du module.',
+                icon: FileSpreadsheet,
+            },
+        ];
+
+    useEffect(() => {
+        setDocumentType('repartition');
+    }, [format]);
+
+    const toggleColumn = (key) => {
+        setLocalColumns((current) => ({ ...current, [key]: !current[key] }));
+    };
+
+    const setAllColumns = (value) => {
+        setLocalColumns(
+            Object.fromEntries(REPARTITION_EXPORT_FIELDS.map(({ key }) => [key, value])),
+        );
+    };
+
+    const handleSubmit = async () => {
+        setIsExporting(true);
+        try {
+            if (format === 'pdf') {
+                if (documentType === 'collective') {
+                    await onPdfCollective();
+                } else if (documentType === 'places') {
+                    await onPdfSallesPlaces();
+                } else {
+                    await onPdfRepartition(localColumns, localPresenceFilled);
+                }
+            } else if (documentType === 'correctors') {
+                await onExcelTemplates();
+            } else {
+                onExcelRepartition(localColumns, localPresenceFilled);
+            }
+
+            onClose();
+        } catch (error) {
+            setIsExporting(false);
+            throw error;
+        }
+    };
+
+    const previewRows = repartitions.slice(0, 5);
+    const outputLabel = format === 'pdf' ? 'PDF' : 'Excel';
+    const selectedDocument = documentOptions.find((option) => option.key === documentType);
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
+            <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-gray-900">
+                <div className="flex items-start justify-between border-b border-slate-200 bg-slate-900 px-6 py-4 text-white dark:border-slate-700">
+                    <div>
+                        <h2 className="flex items-center gap-2 text-lg font-bold">
+                            <Download size={18} />
+                            Exporter la repartition
+                        </h2>
+                        <p className="mt-1 text-xs text-slate-300">
+                            {selectedExamen ? formatExamLabel(selectedExamen) : 'Examen non selectionne'}
+                        </p>
+                    </div>
+                    <button type="button" onClick={onClose} className="rounded-lg p-1 text-slate-300 transition hover:bg-white/10 hover:text-white">
+                        <X size={20} />
+                    </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-6">
+                    <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
+                        <div className="space-y-6">
+                            <section>
+                                <p className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">
+                                    Format d'export
+                                </p>
+                                <div className="grid gap-3 sm:grid-cols-2">
+                                    {[
+                                        { key: 'pdf', label: 'PDF', description: 'Documents prets a imprimer.', icon: FileText },
+                                        { key: 'excel', label: 'Excel', description: 'Fichiers editables pour traitement.', icon: FileSpreadsheet },
+                                    ].map((option) => {
+                                        const Icon = option.icon;
+                                        const active = format === option.key;
+
+                                        return (
+                                            <button
+                                                key={option.key}
+                                                type="button"
+                                                onClick={() => setFormat(option.key)}
+                                                className={`rounded-xl border-2 p-4 text-left transition ${
+                                                    active
+                                                        ? 'border-indigo-500 bg-indigo-50 text-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-200'
+                                                        : 'border-slate-200 text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:text-slate-200 dark:hover:border-slate-600'
+                                                }`}
+                                            >
+                                                <div className="mb-2 flex items-center gap-2">
+                                                    <Icon size={18} />
+                                                    <span className="text-sm font-semibold">{option.label}</span>
+                                                </div>
+                                                <div className="text-xs leading-5 text-slate-500 dark:text-slate-400">
+                                                    {option.description}
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </section>
+
+                            <section>
+                                <p className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">
+                                    Document
+                                </p>
+                                <div className="grid gap-3">
+                                    {documentOptions.map((option) => {
+                                        const Icon = option.icon;
+                                        const active = documentType === option.key;
+
+                                        return (
+                                            <button
+                                                key={option.key}
+                                                type="button"
+                                                onClick={() => setDocumentType(option.key)}
+                                                className={`flex items-start gap-3 rounded-xl border p-3 text-left transition ${
+                                                    active
+                                                        ? 'border-indigo-400 bg-indigo-50 text-indigo-800 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200'
+                                                        : 'border-slate-200 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800'
+                                                }`}
+                                            >
+                                                <Icon className="mt-0.5 shrink-0" size={17} />
+                                                <span>
+                                                    <span className="block text-sm font-semibold">{option.label}</span>
+                                                    <span className="mt-0.5 block text-xs leading-5 text-slate-500 dark:text-slate-400">
+                                                        {option.description}
+                                                    </span>
+                                                </span>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </section>
+
+                            {canConfigureColumns && (
+                                <section>
+                                    <div className="mb-3 flex items-center justify-between">
+                                        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">
+                                            Colonnes
+                                        </p>
+                                        <div className="flex gap-3">
+                                            <button type="button" onClick={() => setAllColumns(true)} className="text-xs font-medium text-indigo-600 hover:text-indigo-500">
+                                                Tout
+                                            </button>
+                                            <button type="button" onClick={() => setAllColumns(false)} className="text-xs font-medium text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
+                                                Aucun
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div className="grid gap-2 sm:grid-cols-2">
+                                        {REPARTITION_EXPORT_FIELDS.map(({ key, label }) => (
+                                            <button
+                                                key={key}
+                                                type="button"
+                                                onClick={() => toggleColumn(key)}
+                                                className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm transition ${
+                                                    localColumns[key]
+                                                        ? 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-200'
+                                                        : 'border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800'
+                                                }`}
+                                            >
+                                                <span className={`flex h-4 w-4 items-center justify-center rounded border ${localColumns[key] ? 'border-indigo-600 bg-indigo-600' : 'border-slate-300 dark:border-slate-600'}`}>
+                                                    {localColumns[key] && <span className="block h-1.5 w-1.5 rounded-full bg-white" />}
+                                                </span>
+                                                {label}
+                                            </button>
+                                        ))}
+                                    </div>
+                                    <label className="mt-3 flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
+                                        <input
+                                            type="checkbox"
+                                            checked={localPresenceFilled}
+                                            onChange={() => setLocalPresenceFilled((current) => !current)}
+                                            className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                        />
+                                        Remplir la colonne presence
+                                    </label>
+                                </section>
+                            )}
+                        </div>
+
+                        <aside className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900/50">
+                            <div>
+                                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">
+                                    Resume
+                                </p>
+                                <div className="mt-3 grid grid-cols-2 gap-2">
+                                    <div className="rounded-lg bg-white p-3 dark:bg-slate-800">
+                                        <div className="text-xs text-slate-500 dark:text-slate-400">Format</div>
+                                        <div className="mt-1 text-lg font-bold text-slate-900 dark:text-white">{outputLabel}</div>
+                                    </div>
+                                    <div className="rounded-lg bg-white p-3 dark:bg-slate-800">
+                                        <div className="text-xs text-slate-500 dark:text-slate-400">Lignes</div>
+                                        <div className="mt-1 text-lg font-bold text-slate-900 dark:text-white">{repartitions.length}</div>
+                                    </div>
+                                    <div className="rounded-lg bg-white p-3 dark:bg-slate-800">
+                                        <div className="text-xs text-slate-500 dark:text-slate-400">Document</div>
+                                        <div className="mt-1 text-sm font-bold text-slate-900 dark:text-white">{selectedDocument?.label || '-'}</div>
+                                    </div>
+                                    <div className="rounded-lg bg-white p-3 dark:bg-slate-800">
+                                        <div className="text-xs text-slate-500 dark:text-slate-400">Colonnes</div>
+                                        <div className="mt-1 text-lg font-bold text-slate-900 dark:text-white">
+                                            {canConfigureColumns ? selectedColumns.length : '-'}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">
+                                    Apercu
+                                </p>
+                                <div className="overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
+                                    {previewRows.length > 0 ? (
+                                        <table className="w-full text-xs">
+                                            <thead className="bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+                                                <tr>
+                                                    <th className="px-2 py-2 text-left font-semibold">Etudiant</th>
+                                                    <th className="px-2 py-2 text-left font-semibold">Grille</th>
+                                                    <th className="px-2 py-2 text-left font-semibold">Place</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                                                {previewRows.map((repartition) => (
+                                                    <tr key={repartition.id_repartition}>
+                                                        <td className="px-2 py-2 text-slate-700 dark:text-slate-200">
+                                                            {repartitionStudentName(repartition)}
+                                                        </td>
+                                                        <td className="px-2 py-2 text-slate-500 dark:text-slate-400">
+                                                            {repartition.code_grille ?? '-'}
+                                                        </td>
+                                                        <td className="px-2 py-2 text-slate-500 dark:text-slate-400">
+                                                            {repartition.numero_place ?? '-'}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    ) : (
+                                        <div className="px-3 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
+                                            Aucune repartition pour cet examen.
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </aside>
+                    </div>
+                </div>
+
+                <div className="flex flex-col-reverse gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4 dark:border-slate-700 dark:bg-slate-800/50 sm:flex-row sm:items-center sm:justify-between">
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-white dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
+                    >
+                        Annuler
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleSubmit}
+                        disabled={exportDisabled}
+                        className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                        <Download size={16} />
+                        {isExporting ? 'Export en cours...' : `Exporter en ${outputLabel}`}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 export default function RepartitionIndex({ examens, repartitions, inscriptions, selectedExamenId, salles }) {
     const [editingId, setEditingId] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
@@ -229,6 +583,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
     const [selectedNiveau, setSelectedNiveau] = useState('');
     const [selectedSemestre, setSelectedSemestre] = useState('');
     const [selectedElement, setSelectedElement] = useState('');
+    const [showExportModal, setShowExportModal] = useState(false);
     const [columns, setColumns] = useState({
         cne: true,
         etudiant: true,
@@ -652,14 +1007,14 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         }
     };
 
-    const handleExport = async () => {
+    const handleExport = async (options = {}) => {
         if (!selectedExamenId) {
             Swal.fire({ icon: 'info', title: 'Choisissez un examen' });
             return;
         }
-        const selectedColumns = Object.entries(columns)
-            .filter(([, checked]) => checked)
-            .map(([key]) => key);
+        const exportColumns = options.columns ?? columns;
+        const exportPresenceFilled = options.presenceFilled ?? presenceFilled;
+        const selectedColumns = selectedExportColumns(exportColumns);
 
         if (selectedColumns.length === 0) {
             Swal.fire({ icon: 'info', title: 'Choisissez au moins une colonne' });
@@ -669,7 +1024,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         const baseUrl = route('surveillance.repartition-etudiants.export', selectedExamenId);
         const params = new URLSearchParams();
         selectedColumns.forEach((col) => params.append('columns[]', col));
-        params.append('presence_filled', presenceFilled ? '1' : '0');
+        params.append('presence_filled', exportPresenceFilled ? '1' : '0');
         await downloadPdfPerSalle(baseUrl, params, 'repartition');
     };
 
@@ -691,6 +1046,121 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
 
         const baseUrl = route('surveillance.repartition-etudiants.export-salles-places', selectedExamenId);
         await downloadPdfPerSalle(baseUrl, new URLSearchParams(), 'repartition-salles-places');
+    };
+
+    const handleRepartitionExcelExport = (exportColumns = columns, exportPresenceFilled = presenceFilled) => {
+        if (!selectedExamen || !selectedExamenId) {
+            Swal.fire({ icon: 'info', title: 'Choisissez un examen' });
+            return;
+        }
+
+        if (!repartitions.length) {
+            Swal.fire({ icon: 'info', title: 'Aucune repartition pour cet examen' });
+            return;
+        }
+
+        const selectedColumns = selectedExportColumns(exportColumns);
+        if (selectedColumns.length === 0) {
+            Swal.fire({ icon: 'info', title: 'Choisissez au moins une colonne' });
+            return;
+        }
+
+        const orderedRows = [...repartitions].sort((left, right) => {
+            const leftSalle = salleIndexFromGrille(left.code_grille);
+            const rightSalle = salleIndexFromGrille(right.code_grille);
+            if (leftSalle !== rightSalle) {
+                return leftSalle - rightSalle;
+            }
+
+            const leftGrille = Number(left.code_grille ?? 0);
+            const rightGrille = Number(right.code_grille ?? 0);
+            if (leftGrille !== rightGrille) {
+                return leftGrille - rightGrille;
+            }
+
+            return repartitionStudentName(left).localeCompare(repartitionStudentName(right));
+        });
+
+        const rows = orderedRows.map((repartition, index) => {
+            const student = repartitionStudent(repartition);
+            const row = {
+                '#': index + 1,
+            };
+
+            if (selectedColumns.includes('cne')) {
+                row.CNE = student.cne ?? '';
+            }
+
+            if (selectedColumns.includes('etudiant')) {
+                row.Etudiant = repartitionStudentName(repartition);
+            }
+
+            if (selectedColumns.includes('grille')) {
+                row.Grille = repartition.code_grille ?? '';
+            }
+
+            if (selectedColumns.includes('place')) {
+                row.Place = repartition.numero_place ?? '';
+            }
+
+            if (selectedColumns.includes('anonymat')) {
+                row.Anonymat = repartition.code_anonymat ?? '';
+            }
+
+            if (selectedColumns.includes('presence')) {
+                row.Presence = exportPresenceFilled
+                    ? (repartition.present ? 'Present' : 'Absent')
+                    : '';
+            }
+
+            row['Heure arrivee'] = formatTime(repartition.heure_arrivee);
+            row['Heure sortie'] = formatTime(repartition.heure_sortie);
+            row.Observation = repartition.observation ?? '';
+
+            return row;
+        });
+
+        try {
+            const worksheet = XLSX.utils.json_to_sheet(rows);
+            const headers = Object.keys(rows[0] ?? {});
+            worksheet['!cols'] = headers.map((header) => ({
+                wch: Math.max(
+                    header.length,
+                    ...rows.map((row) => String(row[header] ?? '').length),
+                    10,
+                ),
+            }));
+
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, safeSheetName('Repartition'));
+
+            const filename = ensureXlsxExtension(
+                sanitizeFileName(
+                    [
+                        'repartition',
+                        formatSessionLabel(selectedExamen.session_examen),
+                        selectedExamen.module?.code_module,
+                        selectedExamen.element?.code_element,
+                    ].filter(Boolean).join('_'),
+                ) || 'repartition',
+            );
+
+            XLSX.writeFile(workbook, filename);
+
+            Swal.fire({
+                icon: 'success',
+                title: 'Fichier Excel genere',
+                timer: 1500,
+                showConfirmButton: false,
+            });
+        } catch (error) {
+            console.error(error);
+            Swal.fire({
+                icon: 'error',
+                title: 'Export Excel impossible',
+                text: 'Le fichier de repartition n a pas pu etre genere.',
+            });
+        }
     };
 
     const handleExcelTemplates = async () => {
@@ -832,6 +1302,30 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
 
             <ExamHeader />
 
+            {showExportModal && (
+                <RepartitionExportModal
+                    selectedExamen={selectedExamen}
+                    selectedExamenUsesElements={selectedExamenUsesElements}
+                    repartitions={repartitions}
+                    initialColumns={columns}
+                    initialPresenceFilled={presenceFilled}
+                    onClose={() => setShowExportModal(false)}
+                    onPdfRepartition={async (exportColumns, exportPresenceFilled) => {
+                        setColumns(exportColumns);
+                        setPresenceFilled(exportPresenceFilled);
+                        await handleExport({ columns: exportColumns, presenceFilled: exportPresenceFilled });
+                    }}
+                    onPdfCollective={handleCollectiveExport}
+                    onPdfSallesPlaces={handleSallesPlacesExport}
+                    onExcelRepartition={(exportColumns, exportPresenceFilled) => {
+                        setColumns(exportColumns);
+                        setPresenceFilled(exportPresenceFilled);
+                        handleRepartitionExcelExport(exportColumns, exportPresenceFilled);
+                    }}
+                    onExcelTemplates={handleExcelTemplates}
+                />
+            )}
+
             <div className="mb-6 grid gap-4 rounded-xl border border-gray-200 bg-white/90 p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900 md:grid-cols-3">
                 <div className="md:col-span-2 space-y-3">
                     <div className={`grid gap-3 sm:grid-cols-2 ${selectedExamenUsesElements ? 'xl:grid-cols-4' : 'xl:grid-cols-3'}`}>
@@ -940,91 +1434,19 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                     ))}
                                 </div>
                             )}
-                            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
-                                <Dropdown>
-                                    <Dropdown.Trigger>
-                                        <button
-                                            type="button"
-                                            disabled={!selectedExamenId}
-                                            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-                                        >
-                                            Exports PDF
-                                            <ChevronDown size={16} />
-                                        </button>
-                                    </Dropdown.Trigger>
-                                    <Dropdown.Content
-                                        align="left"
-                                        width="48"
-                                        contentClasses="py-2 bg-white dark:bg-gray-800"
-                                    >
-                                        <button
-                                            type="button"
-                                            onClick={handleExport}
-                                            className="block w-full px-4 py-2 text-left text-sm text-gray-700 transition hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
-                                        >
-                                            Exporter la repartition
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={handleCollectiveExport}
-                                            className="block w-full px-4 py-2 text-left text-sm text-gray-700 transition hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
-                                        >
-                                            Presence collective
-                                        </button>
-                                        <button
-                                            type="button"
-                                            onClick={handleSallesPlacesExport}
-                                            className="block w-full px-4 py-2 text-left text-sm text-gray-700 transition hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
-                                        >
-                                            Plan salles / places
-                                        </button>
-                                    </Dropdown.Content>
-                                </Dropdown>
+                            <div className="mt-3">
                                 <button
                                     type="button"
-                                    onClick={handleExcelTemplates}
-                                    className="inline-flex w-full items-center justify-center rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+                                    onClick={() => setShowExportModal(true)}
+                                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
                                     disabled={!selectedExamenId || repartitions.length === 0}
                                 >
-                                    <span className="inline-flex items-center gap-2">
-                                        <FileSpreadsheet size={16} />
-                                        {selectedExamenUsesElements
-                                            ? 'Excel correcteurs (module + elements)'
-                                            : 'Excel correcteurs (module)'}
-                                    </span>
+                                    <Download size={16} />
+                                    Exporter
                                 </button>
-                            </div>
-                            <div className="mt-3 space-y-1 text-xs text-gray-600 dark:text-gray-300">
-                                <div className="font-semibold text-gray-700 dark:text-gray-100">Colonnes</div>
-                                <div className="flex flex-wrap gap-3">
-                                    {[
-                                        { key: 'cne', label: 'CNE' },
-                                        { key: 'etudiant', label: 'Etudiant' },
-                                        { key: 'grille', label: 'Grille' },
-                                        { key: 'place', label: 'Place' },
-                                        { key: 'anonymat', label: 'Anonymat' },
-                                        { key: 'presence', label: 'Presence' },
-                                    ].map(({ key, label }) => (
-                                        <label key={key} className="inline-flex items-center gap-2">
-                                            <input
-                                                type="checkbox"
-                                                checked={columns[key]}
-                                                onChange={() =>
-                                                    setColumns((prev) => ({ ...prev, [key]: !prev[key] }))
-                                                }
-                                            />
-                                            <span>{label}</span>
-                                        </label>
-                                    ))}
-                                </div>
-                                <div className="mt-2 flex items-center gap-2">
-                                    <input
-                                        type="checkbox"
-                                        checked={presenceFilled}
-                                        onChange={() => setPresenceFilled((prev) => !prev)}
-                                    />
-                                    <span>Remplir la colonne presence</span>
-                                </div>
+                                <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">
+                                    Choisissez PDF ou Excel, puis le document et les colonnes depuis une seule fenetre.
+                                </p>
                             </div>
                         </>
                     ) : (
