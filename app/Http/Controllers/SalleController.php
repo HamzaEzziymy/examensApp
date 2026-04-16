@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Salle;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\DB;
 use Inertia\Inertia;
 
 class SalleController extends Controller
@@ -27,6 +28,12 @@ class SalleController extends Controller
      */
     public function store(Request $request)
     {
+        // Check if this is a bulk import request
+        if ($request->has('salles') && is_array($request->input('salles'))) {
+            return $this->bulkStore($request);
+        }
+
+        // Single salle creation
         $validator = Validator::make($request->all(), [
             'code_salle' => 'required|string|max:20|unique:salles,code_salle',
             'nom_salle' => 'required|string|max:100',
@@ -69,6 +76,73 @@ class SalleController extends Controller
             return redirect()->back()
                 ->withErrors(['error' => 'Erreur lors de la création de la salle.'])
                 ->withInput();
+        }
+    }
+
+    /**
+     * Bulk store salles from Excel import
+     */
+    protected function bulkStore(Request $request)
+    {
+        $sallesData = $request->input('salles', []);
+        
+        if (empty($sallesData)) {
+            return redirect()->back()
+                ->withErrors(['error' => 'Aucune salle à importer.']);
+        }
+
+        DB::beginTransaction();
+        try {
+            $created = 0;
+            $skipped = 0;
+            $errors = [];
+
+            foreach ($sallesData as $salleData) {
+                try {
+                    // Validate each salle data
+                    $validated = validator($salleData, [
+                        'code_salle' => 'required|string|max:20|unique:salles,code_salle',
+                        'nom_salle' => 'required|string|max:100',
+                        'capacite' => 'required|integer|min:1|max:1000',
+                        'capacite_examens' => 'nullable|integer|min:1|max:1000',
+                        'batiment' => 'nullable|string|max:100',
+                        'est_disponible' => 'nullable|boolean',
+                        'specificites' => 'nullable|string|max:500',
+                    ])->validate();
+
+                    // Check for duplicates
+                    $exists = Salle::where('code_salle', $validated['code_salle'])->exists();
+
+                    if ($exists) {
+                        $skipped++;
+                        continue;
+                    }
+
+                    Salle::create($validated);
+                    $created++;
+
+                } catch (\Exception $e) {
+                    $skipped++;
+                    $errors[] = "Erreur ligne: " . $e->getMessage();
+                }
+            }
+
+            DB::commit();
+
+            $message = "Import terminé: {$created} salles créées";
+            if ($skipped > 0) {
+                $message .= ", {$skipped} doublons ignorés";
+            }
+            if (!empty($errors)) {
+                $message .= ". Erreurs: " . implode(', ', array_slice($errors, 0, 3));
+            }
+
+            return redirect()->route('configuration.salles.index')
+                ->with('success', $message);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return back()->withErrors(['error' => 'Erreur lors de l\'import: ' . $e->getMessage()]);
         }
     }
 

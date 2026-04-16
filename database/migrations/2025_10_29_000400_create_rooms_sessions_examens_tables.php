@@ -11,7 +11,7 @@ return new class extends Migration {
             $table->string('code_salle', 20)->unique();
             $table->string('nom_salle', 100);
             $table->integer('capacite');
-            $table->integer('capacite_examens');
+            $table->integer('capacite_examens')->nullable();
             $table->string('batiment', 50)->nullable();
             $table->boolean('est_disponible')->default(true);
             $table->text('specificites')->nullable();

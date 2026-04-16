@@ -15,10 +15,21 @@ const EnseignantsDisplay = ({ enseignants = [], availableUsers = [] }) => {
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(25);
 
-    // Import state
     const [importFile, setImportFile] = useState(null);
     const [importPreview, setImportPreview] = useState([]);
     const [importErrors, setImportErrors] = useState([]);
+    const [sortKey, setSortKey] = useState(null);
+    const [sortDir, setSortDir] = useState('asc');
+
+    const handleSort = (key) => {
+        if (sortKey === key) {
+            setSortDir(d => d === 'asc' ? 'desc' : 'asc');
+        } else {
+            setSortKey(key);
+            setSortDir('asc');
+        }
+        setCurrentPage(1);
+    };
 
     // Form for adding new enseignant
     const addForm = useForm({
@@ -61,12 +72,24 @@ const EnseignantsDisplay = ({ enseignants = [], availableUsers = [] }) => {
 
         return filtered;
     }, [enseignants, searchTerm]);
+
+    const sortedEnseignants = useMemo(() => {
+        if (!sortKey) return filteredEnseignants;
+        return [...filteredEnseignants].sort((a, b) => {
+            const aVal = a[sortKey] ?? '';
+            const bVal = b[sortKey] ?? '';
+            const cmp = typeof aVal === 'number'
+                ? aVal - bVal
+                : String(aVal).localeCompare(String(bVal));
+            return sortDir === 'asc' ? cmp : -cmp;
+        });
+    }, [filteredEnseignants, sortKey, sortDir]);
     // Pagination
-    const totalPages = Math.ceil(filteredEnseignants.length / itemsPerPage);
+    const totalPages = Math.ceil(sortedEnseignants.length / itemsPerPage);
     const paginatedEnseignants = useMemo(() => {
         const start = (currentPage - 1) * itemsPerPage;
-        return filteredEnseignants.slice(start, start + itemsPerPage);
-    }, [filteredEnseignants, currentPage, itemsPerPage]);
+        return sortedEnseignants.slice(start, start + itemsPerPage);
+    }, [sortedEnseignants, currentPage, itemsPerPage]);
 
     // Download Excel template
     const downloadTemplate = () => {
@@ -570,6 +593,9 @@ const EnseignantsDisplay = ({ enseignants = [], availableUsers = [] }) => {
                     currentPage={currentPage}
                     setCurrentPage={setCurrentPage}
                     totalPages={totalPages}
+                    sortKey={sortKey}
+                    sortDir={sortDir}
+                    onSort={handleSort}
                 />
             </div>
 

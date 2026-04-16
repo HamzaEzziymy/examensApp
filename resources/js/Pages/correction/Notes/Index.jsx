@@ -759,12 +759,7 @@ function ExportModal({ group, onClose, onExcelExport }) {
             onClose();
         } else if (format === 'pdf-custom') {
             const selectedCols = ALL_FIELDS.filter(f => fields[f.key]).map(f => f.key);
-            const params = new URLSearchParams({
-                id_examen: group.id_examen,
-                id_element: group.id_element ?? '',
-                sort_by: sortBy,
-                sort_order: sortOrder,
-            });
+            const params = new URLSearchParams({ id_examen: group.id_examen, id_element: group.id_element ?? '', sort_by: sortBy, sort_order: sortOrder });
             selectedCols.forEach(c => params.append('columns[]', c));
             window.open(route('correction.notes.export-pdf-custom') + '?' + params.toString(), '_blank');
             onClose();
@@ -776,25 +771,30 @@ function ExportModal({ group, onClose, onExcelExport }) {
     const label = group.element_code ? `${group.module_code} — ${group.element_code}` : group.module_code;
 
     return (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-            <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col overflow-hidden">
 
                 {/* Header */}
-                <div className="flex items-start justify-between px-6 py-4 bg-gradient-to-r from-indigo-600 to-indigo-500 rounded-t-2xl">
+                <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between sticky top-0 bg-white dark:bg-gray-800 z-10">
                     <div>
-                        <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                            <ArrowDownToLine size={18} /> Exporter le relevé
+                        <h2 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                            <ArrowDownToLine size={20} className="text-indigo-600" />
+                            Exporter le relevé
                         </h2>
-                        <p className="text-indigo-200 text-xs mt-0.5">{label}{group.session_nom ? ` · ${group.session_nom}` : ''}</p>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                            {label}{group.session_nom ? ` · ${group.session_nom}` : ''}
+                        </p>
                     </div>
-                    <button onClick={onClose} className="text-indigo-200 hover:text-white"><X size={20} /></button>
+                    <button onClick={onClose} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
+                        <X size={24} />
+                    </button>
                 </div>
 
                 {/* Tabs */}
-                <div className="flex border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
+                <div className="flex border-b border-gray-200 dark:border-gray-700">
                     {[['config', 'Configuration'], ['preview', `Aperçu (${previewNotes.length})`]].map(([t, lbl]) => (
                         <button key={t} onClick={() => setActiveTab(t)}
-                            className={`px-6 py-3 text-sm font-medium border-b-2 transition ${activeTab === t ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'}`}>
+                            className={`px-6 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === t ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400' : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'}`}>
                             {lbl}
                         </button>
                     ))}
@@ -802,55 +802,62 @@ function ExportModal({ group, onClose, onExcelExport }) {
 
                 {/* Body */}
                 <div className="flex-1 overflow-y-auto">
+
+                    {/* CONFIG TAB */}
                     {activeTab === 'config' && (
                         <div className="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
-                            {/* Left */}
+
+                            {/* Left column */}
                             <div className="space-y-5">
-                                <section>
-                                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Format d'export</p>
-                                    <div className="grid grid-cols-3 gap-3">
+
+                                {/* Format */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Format d'export</label>
+                                    <div className="grid grid-cols-3 gap-2">
                                         {[
-                                            ['pdf',        '📄', 'PDF Standard',    'Relevé officiel 2 colonnes'],
-                                            ['pdf-custom', '🎨', 'PDF Personnalisé', 'Colonnes au choix, 1 colonne'],
-                                            ['excel',      '📊', 'Excel',            'Données brutes éditables'],
+                                            ['pdf',        '📄', 'PDF Standard',    'Format officiel 2 colonnes'],
+                                            ['pdf-custom', '🎨', 'PDF Personnalisé', 'Colonnes au choix'],
+                                            ['excel',      '📊', 'Excel',            'Données éditables'],
                                         ].map(([val, icon, lbl, desc]) => (
                                             <button key={val} onClick={() => setFormat(val)}
-                                                className={`p-3 rounded-xl border-2 text-left transition ${format === val ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/30' : 'border-gray-200 dark:border-gray-700 hover:border-gray-300'}`}>
-                                                <div className="text-xl mb-1">{icon}</div>
-                                                <div className={`text-sm font-semibold ${format === val ? 'text-indigo-700 dark:text-indigo-300' : 'text-gray-700 dark:text-gray-200'}`}>{lbl}</div>
-                                                <div className="text-xs text-gray-400 mt-0.5">{desc}</div>
+                                                className={`p-3 rounded-lg border-2 text-left transition-colors ${format === val ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20' : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'}`}>
+                                                <div className="text-lg mb-1">{icon}</div>
+                                                <div className={`text-xs font-semibold ${format === val ? 'text-indigo-700 dark:text-indigo-300' : 'text-gray-700 dark:text-gray-200'}`}>{lbl}</div>
+                                                <div className="text-xs text-gray-400 mt-0.5 leading-tight">{desc}</div>
                                             </button>
                                         ))}
                                     </div>
-                                </section>
+                                </div>
 
-                                <section>
-                                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Tri</p>
+                                {/* Sort */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Tri</label>
                                     <div className="space-y-2">
                                         {[
                                             { lbl: 'Primaire',   val: sortBy,  setVal: setSortBy,  order: sortOrder,  setOrder: setSortOrder,  hasNone: false },
                                             { lbl: 'Secondaire', val: sortBy2, setVal: setSortBy2, order: sortOrder2, setOrder: setSortOrder2, hasNone: true  },
                                         ].map(({ lbl, val, setVal, order, setOrder, hasNone }) => (
                                             <div key={lbl} className="flex items-center gap-2">
-                                                <span className="text-xs text-gray-500 w-20 shrink-0">{lbl}</span>
+                                                <span className="text-xs text-gray-500 dark:text-gray-400 w-20 shrink-0">{lbl}</span>
                                                 <select value={val} onChange={e => setVal(e.target.value)}
-                                                    className="flex-1 px-2.5 py-1.5 text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg">
+                                                    className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg text-sm">
                                                     {hasNone && <option value="none">— Aucun —</option>}
                                                     {SORT_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                                                 </select>
                                                 {(!hasNone || val !== 'none') && (
                                                     <button onClick={() => setOrder(o => o === 'asc' ? 'desc' : 'asc')}
-                                                        className="px-2.5 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 whitespace-nowrap">
+                                                        className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-xs font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 whitespace-nowrap">
                                                         {order === 'asc' ? '↑ Croiss.' : '↓ Décroiss.'}
                                                     </button>
                                                 )}
                                             </div>
                                         ))}
                                     </div>
-                                </section>
+                                </div>
 
-                                <section>
-                                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Filtres</p>
+                                {/* Filters */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Filtres</label>
                                     <div className="flex flex-wrap gap-1.5 mb-3">
                                         {[
                                             ['all',     'Tous',        group.notes.length],
@@ -859,50 +866,52 @@ function ExportModal({ group, onClose, onExcelExport }) {
                                             ['cap',     'Capitalisés', group.notes.filter(n => n.note === 'CAP').length],
                                         ].map(([val, lbl, count]) => (
                                             <button key={val} onClick={() => setFilterType(val)}
-                                                className={`px-3 py-1 rounded-full text-xs font-medium border transition flex items-center gap-1.5 ${filterType === val ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                                                className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors flex items-center gap-1.5 ${filterType === val ? 'bg-indigo-600 border-indigo-600 text-white' : 'border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
                                                 {lbl}
-                                                <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${filterType === val ? 'bg-white/25 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>{count}</span>
+                                                <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${filterType === val ? 'bg-white/20 text-white' : 'bg-gray-100 dark:bg-gray-600 text-gray-500 dark:text-gray-400'}`}>{count}</span>
                                             </button>
                                         ))}
                                     </div>
                                     {(filterType === 'all' || filterType === 'numeric') && (
-                                        <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-800 rounded-lg px-3 py-2">
-                                            <span className="text-xs text-gray-500 shrink-0">Note entre</span>
+                                        <div className="flex items-center gap-2 bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2">
+                                            <span className="text-xs text-gray-500 dark:text-gray-400 shrink-0">Note entre</span>
                                             <input type="number" value={filterMin} onChange={e => setFilterMin(e.target.value)} placeholder="min"
-                                                className="w-16 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md" />
+                                                className="w-16 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded" />
                                             <span className="text-xs text-gray-400">—</span>
                                             <input type="number" value={filterMax} onChange={e => setFilterMax(e.target.value)} placeholder="max"
-                                                className="w-16 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-md" />
+                                                className="w-16 px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded" />
                                             {(filterMin !== '' || filterMax !== '') && (
-                                                <button onClick={() => { setFilterMin(''); setFilterMax(''); }} className="text-xs text-red-400 hover:text-red-600 ml-auto">✕ Effacer</button>
+                                                <button onClick={() => { setFilterMin(''); setFilterMax(''); }} className="text-xs text-red-500 hover:text-red-700 ml-auto">✕ Effacer</button>
                                             )}
                                         </div>
                                     )}
-                                </section>
+                                </div>
                             </div>
 
-                            {/* Right */}
+                            {/* Right column */}
                             <div className="space-y-5">
-                                <section>
-                                    <div className="flex items-center justify-between mb-3">
-                                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest">Colonnes</p>
+
+                                {/* Columns */}
+                                <div>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Colonnes</label>
                                         {format !== 'pdf' && (
                                             <div className="flex gap-3">
-                                                <button onClick={() => toggleAll(true)} className="text-xs text-indigo-500 hover:text-indigo-700 font-medium">Tout</button>
-                                                <button onClick={() => toggleAll(false)} className="text-xs text-gray-400 hover:text-gray-600">Aucun</button>
+                                                <button onClick={() => toggleAll(true)} className="text-xs text-indigo-600 hover:text-indigo-800 dark:text-indigo-400 font-medium">Tout</button>
+                                                <button onClick={() => toggleAll(false)} className="text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400">Aucun</button>
                                             </div>
                                         )}
                                     </div>
                                     {format === 'pdf' ? (
-                                        <p className="text-xs text-gray-400 italic bg-gray-50 dark:bg-gray-800 rounded-lg px-3 py-2">
-                                            Le PDF Standard utilise un format fixe (CNE, Nom &amp; Prénom, Note). Choisissez <span className="font-semibold text-orange-600">PDF Personnalisé</span> pour choisir vos colonnes.
+                                        <p className="text-xs text-gray-500 dark:text-gray-400 italic bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2">
+                                            Le PDF Standard utilise un format fixe (CNE, Nom &amp; Prénom, Note). Choisissez <span className="font-semibold text-indigo-600 dark:text-indigo-400">PDF Personnalisé</span> pour choisir vos colonnes.
                                         </p>
                                     ) : (
-                                        <div className="grid grid-cols-2 gap-1">
+                                        <div className="grid grid-cols-2 gap-1.5">
                                             {ALL_FIELDS.map(({ key, label: lbl }) => (
                                                 <label key={key} onClick={() => toggleField(key)}
-                                                    className={`flex items-center gap-2.5 px-3 py-2 rounded-lg cursor-pointer border transition text-sm ${fields[key] ? 'border-indigo-300 bg-indigo-50 dark:bg-indigo-900/20 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300' : 'border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'}`}>
-                                                    <span className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition ${fields[key] ? 'bg-indigo-600 border-indigo-600' : 'border-gray-300 dark:border-gray-600'}`}>
+                                                    className={`flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer border transition-colors text-sm ${fields[key] ? 'border-indigo-300 dark:border-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300' : 'border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                                                    <span className={`w-4 h-4 rounded border-2 flex items-center justify-center shrink-0 transition-colors ${fields[key] ? 'bg-indigo-600 border-indigo-600' : 'border-gray-300 dark:border-gray-500'}`}>
                                                         {fields[key] && <span className="text-white text-[10px] font-bold leading-none">✓</span>}
                                                     </span>
                                                     {lbl}
@@ -910,71 +919,75 @@ function ExportModal({ group, onClose, onExcelExport }) {
                                             ))}
                                         </div>
                                     )}
-                                </section>
+                                </div>
 
+                                {/* Filename — Excel only */}
                                 {format === 'excel' && (
-                                    <section>
-                                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Nom du fichier</p>
-                                        <div className="flex items-center gap-1 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 px-3 py-1.5">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Nom du fichier</label>
+                                        <div className="flex items-center gap-1 px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg">
                                             <input type="text" value={filename} onChange={e => setFilename(e.target.value)}
                                                 className="flex-1 bg-transparent text-sm text-gray-900 dark:text-gray-100 outline-none" />
                                             <span className="text-xs text-gray-400 shrink-0">.xlsx</span>
                                         </div>
-                                    </section>
+                                    </div>
                                 )}
 
-                                <section>
-                                    <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-3">Résumé</p>
+                                {/* Summary */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Résumé</label>
                                     <div className="grid grid-cols-2 gap-2">
                                         {[
-                                            { lbl: 'Étudiants', val: previewNotes.length, color: 'text-indigo-600' },
-                                            { lbl: 'Moyenne',   val: avg,                 color: 'text-blue-600' },
-                                            { lbl: 'Admis',     val: numericNotes.length ? `${passing} (${Math.round(passing / numericNotes.length * 100)}%)` : '—', color: 'text-green-600' },
-                                            { lbl: 'Absents',   val: absCount,            color: 'text-orange-500' },
+                                            { lbl: 'Étudiants', val: previewNotes.length, color: 'text-indigo-600 dark:text-indigo-400' },
+                                            { lbl: 'Moyenne',   val: avg,                 color: 'text-blue-600 dark:text-blue-400' },
+                                            { lbl: 'Admis',     val: numericNotes.length ? `${passing} (${Math.round(passing / numericNotes.length * 100)}%)` : '—', color: 'text-green-600 dark:text-green-400' },
+                                            { lbl: 'Absents',   val: absCount,            color: 'text-orange-500 dark:text-orange-400' },
                                         ].map(({ lbl, val, color }) => (
-                                            <div key={lbl} className="bg-gray-50 dark:bg-gray-800 rounded-lg px-3 py-2.5">
-                                                <div className="text-xs text-gray-400">{lbl}</div>
+                                            <div key={lbl} className="bg-gray-50 dark:bg-gray-700/50 border border-gray-200 dark:border-gray-600 rounded-lg px-3 py-2.5">
+                                                <div className="text-xs text-gray-500 dark:text-gray-400">{lbl}</div>
                                                 <div className={`text-lg font-bold ${color}`}>{val}</div>
                                             </div>
                                         ))}
                                     </div>
-                                </section>
+                                </div>
                             </div>
                         </div>
                     )}
 
                     {/* PREVIEW TAB */}
                     {activeTab === 'preview' && (
-                        <div className="p-4">
+                        <div className="p-6">
                             {previewNotes.length === 0 ? (
-                                <div className="text-center py-12 text-gray-400 text-sm">Aucun étudiant ne correspond aux filtres sélectionnés.</div>
+                                <div className="text-center py-12 text-sm text-gray-500 dark:text-gray-400">
+                                    Aucun étudiant ne correspond aux filtres sélectionnés.
+                                </div>
                             ) : (
-                                <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
+                                <div className="overflow-x-auto rounded-lg border border-gray-200 dark:border-gray-700">
                                     <table className="w-full text-sm">
-                                        <thead className="bg-gray-50 dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+                                        <thead className="bg-gray-50 dark:bg-gray-700/50 border-b border-gray-200 dark:border-gray-700">
                                             <tr>
-                                                <th className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase">#</th>
-                                                <th className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase">Anonymat</th>
-                                                <th className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase">Étudiant</th>
-                                                <th className="px-3 py-2.5 text-left text-xs font-semibold text-gray-500 uppercase">CNE</th>
-                                                <th className="px-3 py-2.5 text-center text-xs font-semibold text-gray-500 uppercase">Note / {noteSur}</th>
-                                                <th className="px-3 py-2.5 text-center text-xs font-semibold text-gray-500 uppercase">Mention</th>
+                                                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">#</th>
+                                                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Anonymat</th>
+                                                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Étudiant</th>
+                                                <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">CNE</th>
+                                                <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Note / {noteSur}</th>
+                                                <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Mention</th>
                                             </tr>
                                         </thead>
-                                        <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                                        <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
                                             {previewNotes.map((n, i) => {
                                                 const badge = getMentionBadge(n.note, n.note_sur);
                                                 return (
-                                                    <tr key={n.id_note} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
-                                                        <td className="px-3 py-2 text-gray-400 text-xs">{i + 1}</td>
-                                                        <td className="px-3 py-2 font-mono text-gray-700 dark:text-gray-300">{n.code_anonymat}</td>
-                                                        <td className="px-3 py-2 text-gray-900 dark:text-gray-100">{n.etudiant_nom} {n.etudiant_prenom}</td>
-                                                        <td className="px-3 py-2 text-gray-500 text-xs font-mono">{n.etudiant_cne}</td>
-                                                        <td className="px-3 py-2 text-center font-bold text-gray-900 dark:text-gray-100">
+                                                    <tr key={n.id_note} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                                                        <td className="px-4 py-2.5 text-gray-400 text-xs">{i + 1}</td>
+                                                        <td className="px-4 py-2.5 font-mono text-gray-700 dark:text-gray-300">{n.code_anonymat}</td>
+                                                        <td className="px-4 py-2.5 text-gray-900 dark:text-gray-100">{n.etudiant_nom} {n.etudiant_prenom}</td>
+                                                        <td className="px-4 py-2.5 text-gray-500 dark:text-gray-400 text-xs font-mono">{n.etudiant_cne}</td>
+                                                        <td className="px-4 py-2.5 text-center font-bold text-gray-900 dark:text-gray-100">
                                                             {n.note === 'ABS' || n.note === 'CAP' ? n.note : parseFloat(n.note).toFixed(2)}
                                                         </td>
-                                                        <td className="px-3 py-2 text-center">
-                                                            <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${badge.color}`}>{badge.label}</span>
+                                                        <td className="px-4 py-2.5 text-center">
+                                                            <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${badge.color}`}>{badge.label}</span>
                                                         </td>
                                                     </tr>
                                                 );
@@ -988,19 +1001,20 @@ function ExportModal({ group, onClose, onExcelExport }) {
                 </div>
 
                 {/* Footer */}
-                <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50">
-                    <div className="flex items-center gap-3">
-                        <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium ${format === 'pdf' ? 'bg-red-100 text-red-700' : format === 'pdf-custom' ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
-                            {format === 'pdf' ? '📄 PDF Standard' : format === 'pdf-custom' ? '🎨 PDF Personnalisé' : '📊 Excel'}
+                <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 dark:border-gray-700">
+                    <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${format === 'pdf' ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' : format === 'pdf-custom' ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' : 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400'}`}>
+                            {format === 'pdf' ? 'PDF Standard' : format === 'pdf-custom' ? 'PDF Personnalisé' : 'Excel'}
                         </span>
-                        <span className="text-xs text-gray-500">{previewNotes.length} étudiant{previewNotes.length !== 1 ? 's' : ''}</span>
+                        <span>{previewNotes.length} étudiant{previewNotes.length !== 1 ? 's' : ''}</span>
                     </div>
                     <div className="flex gap-3">
-                        <button onClick={onClose} className="px-4 py-2 text-sm border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition">
+                        <button onClick={onClose}
+                            className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 text-sm transition-colors">
                             Annuler
                         </button>
                         <button onClick={handleExport} disabled={previewNotes.length === 0}
-                            className="px-5 py-2 text-sm bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg flex items-center gap-2 font-medium transition shadow-sm">
+                            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm flex items-center gap-2 transition-colors">
                             <ArrowDownToLine size={15} />
                             Exporter {previewNotes.length > 0 ? `(${previewNotes.length})` : ''}
                         </button>
