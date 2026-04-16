@@ -108,51 +108,53 @@
     .notes-table {
         width: 100%;
         border-collapse: collapse;
-        font-size: 11px;
-        font-weight: 900;
+        font-size: 13px;
+        font-weight: 500;
     }
     
     .notes-table thead th {
         background-color: #e8e8e8;
         color: #000;
         border: 1px solid #000;
-        padding: 4px 3px;
+        padding: 6px 8px;
         text-align: center;
         font-weight: 900;
-        font-size: 11px;
+        font-size: 12px;
+        text-transform: uppercase;
         text-shadow: 0.3px 0.3px 0px #000;
     }
     
     .notes-table tbody td {
         border: 1px solid #000;
-        padding: 3px 4px;
+        padding: 5px 8px;
         vertical-align: middle;
         background-color: #fff;
         line-height: 1.3;
-        font-weight: 900;
+        font-weight: 500;
+        text-transform: uppercase;
         text-shadow: 0.3px 0.3px 0px #000;
     }
     
     .col-cne {
         width: 23%;
-        font-size: 10px;
+        font-size: 12px;
         text-align: left;
-        font-weight: 900;
+        font-weight: bold;
     }
     
     .col-name {
         width: 62%;
-        font-size: 10px;
+        font-size: 12px;
         text-transform: uppercase;
         text-align: left;
-        font-weight: 900;
+        font-weight: bold;
     }
     
     .col-grade {
         width: 15%;
         text-align: center;
         font-weight: 900;
-        font-size: 11px;
+        font-size: 12px;
     }
     
     .grade-abs {
@@ -289,8 +291,8 @@
     $noteSur = $notesArr->isNotEmpty() ? ($notesArr->first()['note_sur'] ?? 20) : 20;
     
     // Split into pages of 60 students (30 per column)
-    $studentsPerPage = 60;
-    $studentsPerColumn = 30;
+    $studentsPerPage = 50;
+    $studentsPerColumn = 25;
     $pages = $notesArr->chunk($studentsPerPage);
 @endphp
 

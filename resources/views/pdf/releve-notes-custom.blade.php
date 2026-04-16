@@ -13,19 +13,19 @@
     .subtitle { text-align: center; font-size: 12px; font-weight: bold; margin-bottom: 2px; }
     .module-bar { background: #d4e9f7; border: 1px solid #999; text-align: center; font-size: 13px; font-weight: 900; padding: 4px 0; margin: 6px 0 8px; }
 
-    .notes-table { width: 100%; border-collapse: collapse; font-size: 10px; }
-    .notes-table thead th { background: #e8e8e8; border: 1px solid #000; padding: 4px 5px; font-weight: 900; font-size: 10px; text-align: center; }
-    .notes-table tbody td { border: 1px solid #000; padding: 3px 5px; vertical-align: middle; }
+    .notes-table { width: calc(100% - 40px); border-collapse: collapse; font-size: 13px; margin-left: 20px; margin-right: 20px; }
+    .notes-table thead th { background: #e8e8e8; border: 1px solid #000; padding: 6px 8px; font-weight: 900; font-size: 12px; text-align: center; text-transform: uppercase; }
+    .notes-table tbody td { border: 1px solid #000; padding: 5px 8px; vertical-align: middle; font-weight: 500; text-transform: uppercase; }
     .notes-table tbody tr:nth-child(even) td { background: #f9f9f9; }
 
-    .col-num      { width: 4%;  text-align: center; }
-    .col-anonymat { width: 8%;  text-align: center; }
-    .col-cne      { width: 16%; font-size: 9px; }
-    .col-nom      { width: 20%; font-weight: bold; text-transform: uppercase; }
-    .col-prenom   { width: 16%; text-transform: uppercase; }
-    .col-note     { width: 8%;  text-align: center; font-weight: 900; }
-    .col-mention  { width: 10%; text-align: center; }
-    .col-enseignant { width: 18%; font-size: 9px; }
+    .col-num      { width: 5%;  text-align: center; }
+    .col-anonymat { width: 10%; text-align: center; font-weight: bold; }
+    .col-cne      { width: 15%; font-weight: bold; }
+    .col-nom      { width: 18%; font-weight: bold; }
+    .col-prenom   { width: 18%; font-weight: bold; }
+    .col-note     { width: 10%; text-align: center; font-weight: 900; }
+    .col-mention  { width: 14%; text-align: center; font-weight: bold; }
+    .col-enseignant { width: 10%; font-weight: bold; }
 
     .grade-abs { color: #c00; font-weight: 900; }
     .grade-cap { color: #609; font-weight: 900; }
@@ -37,7 +37,8 @@
     .footer-cell { display: table-cell; width: 33.33%; vertical-align: bottom; }
     .footer-cell.center { text-align: center; }
     .footer-cell.right  { text-align: right; }
-    .page-content { margin-bottom: 100px; }
+    .page-content { margin-bottom: 120px; }
+    .page-break { page-break-after: always; }
 </style>
 </head>
 <body>
@@ -68,12 +69,14 @@
         return 'Insuffisant';
     }
 
-    $studentsPerPage = 40;
+    $studentsPerPage = 25;
     $pages = $notesArr->chunk($studentsPerPage);
 @endphp
 
 @foreach($pages as $pageIndex => $pageNotes)
-    @if($pageIndex > 0)<div style="page-break-before:always;"></div>@endif
+    @if($pageIndex > 0)
+        <div class="page-break"></div>
+    @endif
 
     <div class="header-top">
         @if($faculte && $faculte->entete)

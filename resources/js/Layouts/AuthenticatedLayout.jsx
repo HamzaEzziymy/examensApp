@@ -5,7 +5,13 @@ import Years_Sectors_Selecters from '@/Components/Years_Sectors_Selecters';
 import Sidebar from './Sidebar';
 
 export default function AuthenticatedLayout({ header, children }) {
-    const user = usePage().props.auth.user;
+    const user = usePage().props.auth?.user;
+
+    // Redirect to login if user is not authenticated
+    if (!user) {
+        window.location.href = route('login');
+        return null;
+    }
 
     const [sidebarOpen, setSidebarOpen] = useState(false);
     const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -93,11 +99,11 @@ export default function AuthenticatedLayout({ header, children }) {
                                 <Dropdown.Trigger>
                                     <button className="flex items-center gap-x-3 rounded-full p-1.5 text-sm hover:bg-gray-100 dark:hover:bg-gray-700">
                                         <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-indigo-600 text-sm font-medium text-white">
-                                            {user.name.charAt(0).toUpperCase()}
+                                            {user?.name?.charAt(0).toUpperCase() || 'U'}
                                         </span>
                                         <span className="hidden lg:flex lg:items-center">
                                             <span className="ml-2 text-sm font-semibold text-gray-900 dark:text-gray-100">
-                                                {user.name}
+                                                {user?.name || 'User'}
                                             </span>
                                             <svg className="ml-2 h-5 w-5 text-gray-400" viewBox="0 0 20 20" fill="currentColor">
                                                 <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
