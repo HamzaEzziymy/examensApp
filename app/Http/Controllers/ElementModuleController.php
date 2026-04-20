@@ -43,7 +43,7 @@ class ElementModuleController extends Controller
 
         $element = ElementModule::create($validated);
 
-        return Redirect()->route('academique.modules.index');
+        return redirect()->back();
     }
 
     public function show(ElementModule $elements_module)
@@ -69,7 +69,7 @@ class ElementModuleController extends Controller
 
         $elements_module->update($validated);
 
-        return Redirect()->route('academique.modules.index');
+        return redirect()->back();
     }
 
     public function destroy(ElementModule $elements_module)
@@ -80,6 +80,6 @@ class ElementModuleController extends Controller
         // Check if module now has zero elements and create self-referencing element if needed
         $this->moduleService->ensureModuleHasElement($module);
 
-        return Redirect()->route('academique.modules.index');
+        return redirect()->back();
     }
 }

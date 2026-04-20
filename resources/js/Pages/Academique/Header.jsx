@@ -26,18 +26,18 @@ export default function Header() {
         href: route("academique.niveaux.index"),
         current: route().current("academique.niveaux.index"),
     },
+    {
+        name: "Modules et Éléments",
+        icon: <FolderTree size={20} />, // Represents grouped academic modules
+        href: route("academique.modules.index"),
+        current: route().current("academique.modules.index"),
+    },
     // offer de formations
     {
         name: "Offres de Formation",
         icon: <GiCheckboxTree size={20} />, // Represents educational offerings
         href: route("academique.offres-formations.index"),
         current: route().current("academique.offres-formations.index"),
-    },
-    {
-        name: "Modules et Éléments",
-        icon: <FolderTree size={20} />, // Represents grouped academic modules
-        href: route("academique.modules.index"),
-        current: route().current("academique.modules.index"),
     },
     ];
 
