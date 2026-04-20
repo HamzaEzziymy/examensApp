@@ -9,9 +9,13 @@ use App\Models\InscriptionPedagogique;
 use App\Models\OffreFormation;
 use App\Models\RepartitionEtudiant;
 use App\Models\Salle;
+use App\Services\PointagePayloadBuilder;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Unique;
 use Inertia\Inertia;
@@ -186,6 +190,66 @@ class RepartitionEtudiantController extends Controller
 
         return $this->redirectToIndex($examenId)
             ->with('success', 'Ligne supprimee.');
+    }
+
+    public function pushPointage(Examen $examen, PointagePayloadBuilder $payloadBuilder): JsonResponse
+    {
+        if (! $examen->repartitions()->exists()) {
+            return response()->json([
+                'message' => 'Aucune repartition pour cet examen.',
+            ], 422);
+        }
+
+        $externalUrl = trim((string) config('pointage.external_url', ''));
+        if ($externalUrl === '') {
+            return response()->json([
+                'message' => 'POINTAGE_EXTERNAL_URL n est pas configure.',
+            ], 422);
+        }
+
+        $url = str_replace('{id_examen}', (string) $examen->id_examen, $externalUrl);
+        $payload = [
+            'data' => $payloadBuilder->build(
+                $examen,
+                config('pointage.push_include', ['exam', 'students'])
+            ),
+        ];
+
+        $request = Http::acceptJson()
+            ->asJson()
+            ->timeout(max(1, (int) config('pointage.external_timeout', 15)));
+
+        $externalToken = trim((string) config('pointage.external_token', ''));
+        if ($externalToken !== '') {
+            $request = $request->withToken($externalToken);
+        }
+
+        try {
+            $response = $request->post($url, $payload);
+        } catch (ConnectionException $exception) {
+            return response()->json([
+                'message' => 'Impossible de contacter l application pointage.',
+                'error' => $exception->getMessage(),
+            ], 502);
+        }
+
+        if ($response->failed()) {
+            return response()->json([
+                'message' => 'L application pointage a refuse la repartition.',
+                'external_status' => $response->status(),
+                'external_response' => mb_substr($response->body(), 0, 1000),
+            ], 502);
+        }
+
+        return response()->json([
+            'message' => 'Repartition envoyee au pointage.',
+            'external_status' => $response->status(),
+            'sent' => [
+                'id_examen' => $examen->id_examen,
+                'students' => count($payload['data']['students'] ?? []),
+                'repartitions' => count($payload['data']['repartitions'] ?? []),
+            ],
+        ]);
     }
 
     private function rules(Request $request, ?int $ignoreId = null): array
