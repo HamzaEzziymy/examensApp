@@ -696,65 +696,33 @@ class RepartitionEtudiantController extends Controller
             $salles = collect([$examen->salle]);
         }
 
-        $orderedSalleGroups = $this->buildSalleGroupsWithCollectiveOrder($examen, $repartitions, $salles);
-        if ($orderedSalleGroups && $orderedSalleGroups->isNotEmpty()) {
-            $salleGroups = $orderedSalleGroups
-                ->map(function ($group) {
-                    $salle = $group['salle'] ?? null;
-                    $salleIndex = (int) ($group['salle_index'] ?? 1);
-                    $rows = collect($group['rows'] ?? [])
-                        ->map(function ($rep) use ($salle, $salleIndex) {
-                            return [
-                                'cne'          => $rep->inscriptionPedagogique->inscriptionAdministrative->etudiant->cne ?? '',
-                                'nom'          => $rep->inscriptionPedagogique->inscriptionAdministrative->etudiant->nom ?? '',
-                                'prenom'       => $rep->inscriptionPedagogique->inscriptionAdministrative->etudiant->prenom ?? '',
-                                'is_credit'    => strtolower((string) ($rep->inscriptionPedagogique->type_inscription ?? '')) === 'credit',
-                                'salle'        => $salle->nom_salle ?? ('Salle '.$salleIndex),
-                                'code_salle'   => $salle->code_salle ?? null,
-                                'numero_place' => $rep->numero_place,
-                                'code_grille'  => $rep->code_grille,
-                                'salle_index'  => $salleIndex,
-                            ];
-                        })
-                        ->values();
-
+        $salleGroups = $repartitions
+            ->groupBy(fn ($rep) => $this->salleIndexFromGrille($rep->code_grille))
+            ->sortKeys()
+            ->map(function ($groupRows, $salleIndex) use ($salles) {
+                $salle = $salles[$salleIndex - 1] ?? null;
+                $rows = $groupRows->map(function ($rep) use ($salle, $salleIndex) {
                     return [
-                        'salle' => $salle,
-                        'rows' => $rows,
-                        'total' => $rows->count(),
-                        'salle_index' => $salleIndex,
+                        'cne'          => $rep->inscriptionPedagogique->inscriptionAdministrative->etudiant->cne ?? '',
+                        'nom'          => $rep->inscriptionPedagogique->inscriptionAdministrative->etudiant->nom ?? '',
+                        'prenom'       => $rep->inscriptionPedagogique->inscriptionAdministrative->etudiant->prenom ?? '',
+                        'is_credit'    => strtolower((string) ($rep->inscriptionPedagogique->type_inscription ?? '')) === 'credit',
+                        'salle'        => $salle->nom_salle ?? ('Salle '.$salleIndex),
+                        'code_salle'   => $salle->code_salle ?? null,
+                        'numero_place' => $rep->numero_place,
+                        'code_grille'  => $rep->code_grille,
+                        'salle_index'  => (int) $salleIndex,
                     ];
-                })
-                ->values();
-        } else {
-            $salleGroups = $repartitions
-                ->groupBy(fn ($rep) => $this->salleIndexFromGrille($rep->code_grille))
-                ->sortKeys()
-                ->map(function ($groupRows, $salleIndex) use ($salles) {
-                    $salle = $salles[$salleIndex - 1] ?? null;
-                    $rows = $groupRows->map(function ($rep) use ($salle, $salleIndex) {
-                        return [
-                            'cne'          => $rep->inscriptionPedagogique->inscriptionAdministrative->etudiant->cne ?? '',
-                            'nom'          => $rep->inscriptionPedagogique->inscriptionAdministrative->etudiant->nom ?? '',
-                            'prenom'       => $rep->inscriptionPedagogique->inscriptionAdministrative->etudiant->prenom ?? '',
-                            'is_credit'    => strtolower((string) ($rep->inscriptionPedagogique->type_inscription ?? '')) === 'credit',
-                            'salle'        => $salle->nom_salle ?? ('Salle '.$salleIndex),
-                            'code_salle'   => $salle->code_salle ?? null,
-                            'numero_place' => $rep->numero_place,
-                            'code_grille'  => $rep->code_grille,
-                            'salle_index'  => (int) $salleIndex,
-                        ];
-                    })->values();
+                })->values();
 
-                    return [
-                        'salle' => $salle,
-                        'rows' => $rows,
-                        'total' => $rows->count(),
-                        'salle_index' => (int) $salleIndex,
-                    ];
-                })
-                ->values();
-        }
+                return [
+                    'salle' => $salle,
+                    'rows' => $rows,
+                    'total' => $rows->count(),
+                    'salle_index' => (int) $salleIndex,
+                ];
+            })
+            ->values();
 
         $footerSalleLabel = $salles->pluck('nom_salle')->filter()->unique()->implode(' | ');
         if (empty($footerSalleLabel) && $examen->salle) {

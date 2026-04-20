@@ -174,7 +174,7 @@ class RepartitionEtudiantControllerTest extends TestCase
         $this->assertSame(1, collect($pdf->viewData['groups'])->sum('total'));
     }
 
-    public function test_salles_places_export_uses_the_same_order_as_the_main_repartition_pdf(): void
+    public function test_salles_places_export_keeps_the_repartition_seat_order(): void
     {
         $annee = AnneeUniversitaire::factory()->active()->create();
         $filiere = Filiere::factory()->create(['nom_filiere' => 'Medecine']);
@@ -222,9 +222,9 @@ class RepartitionEtudiantControllerTest extends TestCase
         $alphaRegistration = $this->createPedagogicalRegistration($annee, $niveau, $section, $offre, 'Alpha', 'Bravo');
         $betaRegistration = $this->createPedagogicalRegistration($annee, $niveau, $section, $offre, 'Beta', 'Alpha');
 
-        $this->createRepartition($exam, $zuluRegistration, '0001001', 'A101-003');
-        $this->createRepartition($exam, $alphaRegistration, '0001002', 'A101-001');
-        $this->createRepartition($exam, $betaRegistration, '0001003', 'A101-002');
+        $this->createRepartition($exam, $alphaRegistration, '0001001', 'A101-001');
+        $this->createRepartition($exam, $betaRegistration, '0001002', 'A101-002');
+        $this->createRepartition($exam, $zuluRegistration, '0001003', 'A101-003');
 
         $controller = app(RepartitionEtudiantController::class);
         $request = Request::create(
@@ -245,7 +245,7 @@ class RepartitionEtudiantControllerTest extends TestCase
         $this->assertCount(1, $pdf->viewData['groups']);
     }
 
-    public function test_salles_places_export_splits_each_salle_into_its_own_group(): void
+    public function test_salles_places_export_keeps_students_in_their_code_grille_salle(): void
     {
         $annee = AnneeUniversitaire::factory()->active()->create();
         $filiere = Filiere::factory()->create(['nom_filiere' => 'Medecine']);
@@ -296,11 +296,11 @@ class RepartitionEtudiantControllerTest extends TestCase
         $exam = $this->createExam($session, $module, $salleA, '2026-06-10');
         $exam->salles()->sync([$salleA->id_salle, $salleB->id_salle]);
 
-        $alphaRegistration = $this->createPedagogicalRegistration($annee, $niveau, $section, $offre, 'Alpha', 'Bravo');
-        $betaRegistration = $this->createPedagogicalRegistration($annee, $niveau, $section, $offre, 'Beta', 'Alpha');
+        $zuluRegistration = $this->createPedagogicalRegistration($annee, $niveau, $section, $offre, 'Zulu', 'Bravo');
+        $alphaRegistration = $this->createPedagogicalRegistration($annee, $niveau, $section, $offre, 'Alpha', 'Alpha');
 
-        $this->createRepartition($exam, $alphaRegistration, '0001001', 'A101-001');
-        $this->createRepartition($exam, $betaRegistration, '0002001', 'B202-001');
+        $this->createRepartition($exam, $zuluRegistration, '0001001', 'A101-001');
+        $this->createRepartition($exam, $alphaRegistration, '0002001', 'B202-001');
 
         $controller = app(RepartitionEtudiantController::class);
         $request = Request::create(
@@ -315,6 +315,12 @@ class RepartitionEtudiantControllerTest extends TestCase
         $this->assertSame(
             ['Salle A101', 'Salle B202'],
             collect($pdf->viewData['groups'])->map(fn ($group) => $group['salle']?->nom_salle)->all()
+        );
+        $this->assertSame(
+            [['Zulu'], ['Alpha']],
+            collect($pdf->viewData['groups'])
+                ->map(fn ($group) => collect($group['rows'])->pluck('nom')->all())
+                ->all()
         );
     }
 
@@ -459,6 +465,11 @@ class RepartitionEtudiantControllerTest extends TestCase
             sprintf('%s - %s', $module->code_module, $module->nom_module),
             $pdf->viewData['examLabel']
         );
+
+        $html = view($pdf->viewName, $pdf->viewData)->render();
+        $this->assertStringNotContainsString('N de place', $html);
+        $this->assertStringNotContainsString('nb place', $html);
+        $this->assertStringContainsString('<th>Place</th>', $html);
     }
 
     public function test_repartition_index_exposes_related_elements_for_biologie_cellulaire_moleculaire_et_genetique(): void

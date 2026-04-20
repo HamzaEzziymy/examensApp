@@ -41,7 +41,7 @@
         $presenceFilled = $presenceFilled ?? true;
         $sessionLabel = $sessionLabel ?? ($examen->sessionExamen->nom_session ?? '-');
         $displayLabel = $displayLabel ?? ($elementLabel ?? $moduleLabel ?? ($examen->module->nom_module ?? '-'));
-        $columnCount = 1 + ($showCne ? 1 : 0) + ($showEtudiant ? 1 : 0) + ($showGrille ? 1 : 0) + ($showPlace ? 1 : 0) + ($showAnonymat ? 1 : 0) + ($showPresence ? 1 : 0);
+        $columnCount = ($showCne ? 1 : 0) + ($showEtudiant ? 1 : 0) + ($showGrille ? 1 : 0) + ($showPlace ? 1 : 0) + ($showAnonymat ? 1 : 0) + ($showPresence ? 1 : 0);
         $groups = $salleGroups ?? collect([[
             'salle' => $examen->salle,
             'rows' => $repartitions,
@@ -77,7 +77,7 @@
                     <td class="label">Session</td>
                     <td class="value">{{ $sessionLabel }}</td>
                     <td class="label">Salle</td>
-                    <td class="value">{{ $group['salle']->nom_salle ?? ('nb place'.$group['salle_index']) }}</td>
+                    <td class="value">{{ $group['salle']->nom_salle ?? ('Salle '.$group['salle_index']) }}</td>
                 </tr>
                 <tr>
                     <td class="label">Examen</td>
@@ -98,7 +98,6 @@
             <table>
                 <thead>
                     <tr>
-                        <th>N de place</th>
                         @if($showCne)
                             <th>CNE</th>
                         @endif
@@ -120,9 +119,8 @@
                     </tr>
                 </thead>
                 <tbody>
-                    @foreach($normalRows as $index => $rep)
+                    @foreach($normalRows as $rep)
                         <tr>
-                            <td class="text-center">{{ $index + 1 }}</td>
                             @if($showCne)
                                 <td>{{ $rep->inscriptionPedagogique->etudiant->cne ?? '-' }}</td>
                             @endif
@@ -147,9 +145,8 @@
                         <tr class="section-row">
                             <td colspan="{{ $columnCount }}">Etudiants en credit</td>
                         </tr>
-                        @foreach($creditRows as $creditIndex => $rep)
+                        @foreach($creditRows as $rep)
                             <tr>
-                                <td class="text-center">{{ $normalRows->count() + $creditIndex + 1 }}</td>
                                 @if($showCne)
                                     <td>{{ $rep->inscriptionPedagogique->etudiant->cne ?? '-' }}</td>
                                 @endif
