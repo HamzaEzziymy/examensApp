@@ -17,7 +17,9 @@ use App\Models\Section;
 use App\Models\Semestre;
 use App\Models\SessionExamen;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\Client\Request as HttpRequest;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class PointageApiTest extends TestCase
@@ -46,6 +48,9 @@ class PointageApiTest extends TestCase
             'exam' => $exam,
             'student' => $student,
             'repartition' => $repartition,
+            'annee' => $annee,
+            'filiere' => $filiere,
+            'niveau' => $niveau,
         ] = $this->createPointageFixture([
             'present' => true,
             'heure_arrivee' => '08:05:00',
@@ -56,12 +61,32 @@ class PointageApiTest extends TestCase
             ->getJson("/api/pointage/examens/{$exam->id_examen}/repartitions")
             ->assertOk()
             ->assertJsonPath('data.exam.id_examen', $exam->id_examen)
+            ->assertJsonPath('data.exam.annee.id_annee', $annee->id_annee)
+            ->assertJsonPath('data.exam.filiere.id_filiere', $filiere->id_filiere)
+            ->assertJsonPath('data.exam.niveau.id_niveau', $niveau->id_niveau)
             ->assertJsonPath('data.exam.module.code_module', $exam->module->code_module)
+            ->assertJsonPath('data.students.0.id_repartition', $repartition->id_repartition)
+            ->assertJsonPath('data.students.0.cne', $student->cne)
             ->assertJsonPath('data.repartitions.0.id_repartition', $repartition->id_repartition)
             ->assertJsonPath('data.repartitions.0.student.cne', $student->cne)
             ->assertJsonPath('data.repartitions.0.present', true)
             ->assertJsonPath('data.repartitions.0.date_debut', '2026-06-10 08:05:00')
             ->assertJsonPath('data.repartitions.0.date_fin', '2026-06-10 10:00:00');
+    }
+
+    public function test_pointage_api_can_limit_the_payload_with_include(): void
+    {
+        [
+            'exam' => $exam,
+            'student' => $student,
+        ] = $this->createPointageFixture();
+
+        $this->withHeader('X-Pointage-Token', 'pointage-secret')
+            ->getJson("/api/pointage/examens/{$exam->id_examen}/repartitions?include=exam,students")
+            ->assertOk()
+            ->assertJsonPath('data.exam.id_examen', $exam->id_examen)
+            ->assertJsonPath('data.students.0.cne', $student->cne)
+            ->assertJsonMissingPath('data.repartitions');
     }
 
     public function test_pointage_api_updates_attendance_data(): void
@@ -115,6 +140,61 @@ class PointageApiTest extends TestCase
             ])
             ->assertUnprocessable()
             ->assertJsonValidationErrors('repartitions');
+    }
+
+    public function test_repartition_can_be_pushed_to_external_pointage_app(): void
+    {
+        [
+            'exam' => $exam,
+            'student' => $student,
+        ] = $this->createPointageFixture();
+
+        Config::set('pointage.external_url', "https://pointage.example/api/examens/{id_examen}/repartitions");
+        Config::set('pointage.external_token', 'external-secret');
+        Config::set('pointage.push_include', ['exam', 'students']);
+
+        $expectedUrl = "https://pointage.example/api/examens/{$exam->id_examen}/repartitions";
+
+        Http::fake([
+            $expectedUrl => Http::response(['ok' => true], 201),
+        ]);
+
+        $this->postJson(route('surveillance.repartition-etudiants.push-pointage', $exam))
+            ->assertOk()
+            ->assertJsonPath('message', 'Repartition envoyee au pointage.')
+            ->assertJsonPath('external_status', 201)
+            ->assertJsonPath('sent.id_examen', $exam->id_examen)
+            ->assertJsonPath('sent.students', 1)
+            ->assertJsonPath('sent.repartitions', 0);
+
+        Http::assertSent(function (HttpRequest $request) use ($expectedUrl, $exam, $student) {
+            $payload = $request->data();
+            $authorization = $request->header('Authorization');
+            $authorization = is_array($authorization) ? $authorization : [$authorization];
+
+            return strtoupper($request->method()) === 'POST'
+                && $request->url() === $expectedUrl
+                && in_array('Bearer external-secret', $authorization, true)
+                && data_get($payload, 'data.exam.id_examen') === $exam->id_examen
+                && data_get($payload, 'data.exam.module.nom_module') === 'Anatomie'
+                && data_get($payload, 'data.students.0.cne') === $student->cne
+                && ! array_key_exists('repartitions', data_get($payload, 'data', []));
+        });
+    }
+
+    public function test_repartition_push_requires_external_url(): void
+    {
+        ['exam' => $exam] = $this->createPointageFixture();
+
+        Config::set('pointage.external_url', '');
+
+        Http::fake();
+
+        $this->postJson(route('surveillance.repartition-etudiants.push-pointage', $exam))
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'POINTAGE_EXTERNAL_URL n est pas configure.');
+
+        Http::assertNothingSent();
     }
 
     private function createPointageFixture(array $repartitionOverrides = []): array
@@ -182,6 +262,9 @@ class PointageApiTest extends TestCase
 
         return [
             'exam' => $exam->fresh(['module']),
+            'annee' => $annee,
+            'filiere' => $filiere,
+            'niveau' => $niveau,
             'student' => $student,
             'repartition' => $repartition,
         ];

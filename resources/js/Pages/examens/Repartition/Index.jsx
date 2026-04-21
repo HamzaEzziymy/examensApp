@@ -4,7 +4,7 @@ import ExamHeader from '../Header';
 import { useEffect, useMemo, useState } from 'react';
 import InputError from '@/Components/InputError';
 import Swal from 'sweetalert2';
-import { CheckCircle2, Download, Edit3, FileSpreadsheet, FileText, Table2, Trash2, X, XCircle } from 'lucide-react';
+import { CheckCircle2, Download, Edit3, FileSpreadsheet, FileText, Table2, Trash2, UploadCloud, X, XCircle } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import XlsxPopulate from 'xlsx-populate/browser/xlsx-populate';
 
@@ -584,6 +584,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
     const [selectedSemestre, setSelectedSemestre] = useState('');
     const [selectedElement, setSelectedElement] = useState('');
     const [showExportModal, setShowExportModal] = useState(false);
+    const [isPushingPointage, setIsPushingPointage] = useState(false);
     const [columns, setColumns] = useState({
         cne: true,
         etudiant: true,
@@ -1004,6 +1005,55 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                 });
                 break;
             }
+        }
+    };
+
+    const handlePushPointage = async () => {
+        if (!selectedExamenId) {
+            Swal.fire({ icon: 'info', title: 'Choisissez un examen' });
+            return;
+        }
+
+        if (!repartitions.length) {
+            Swal.fire({ icon: 'info', title: 'Aucune repartition pour cet examen' });
+            return;
+        }
+
+        const confirmation = await Swal.fire({
+            icon: 'question',
+            title: 'Envoyer au pointage ?',
+            text: 'La repartition de cet examen sera envoyee a l application externe.',
+            showCancelButton: true,
+            confirmButtonText: 'Envoyer',
+            cancelButtonText: 'Annuler',
+        });
+
+        if (!confirmation.isConfirmed) {
+            return;
+        }
+
+        setIsPushingPointage(true);
+
+        try {
+            const response = await window.axios.post(
+                route('surveillance.repartition-etudiants.push-pointage', selectedExamenId),
+            );
+
+            Swal.fire({
+                icon: 'success',
+                title: 'Envoye au pointage',
+                text: response.data?.message || 'La repartition a ete envoyee.',
+                timer: 1800,
+                showConfirmButton: false,
+            });
+        } catch (error) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Envoi impossible',
+                text: error.response?.data?.message || 'Erreur lors de l envoi vers l application pointage.',
+            });
+        } finally {
+            setIsPushingPointage(false);
         }
     };
 
@@ -1434,7 +1484,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                     ))}
                                 </div>
                             )}
-                            <div className="mt-3">
+                            <div className="mt-3 space-y-2">
                                 <button
                                     type="button"
                                     onClick={() => setShowExportModal(true)}
@@ -1444,8 +1494,17 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                     <Download size={16} />
                                     Exporter
                                 </button>
+                                <button
+                                    type="button"
+                                    onClick={handlePushPointage}
+                                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+                                    disabled={!selectedExamenId || repartitions.length === 0 || isPushingPointage}
+                                >
+                                    <UploadCloud size={16} />
+                                    {isPushingPointage ? 'Envoi en cours...' : 'Envoyer au pointage'}
+                                </button>
                                 <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">
-                                    Choisissez PDF ou Excel, puis le document et les colonnes depuis une seule fenetre.
+                                    Choisissez PDF ou Excel, ou envoyez la repartition vers l application pointage.
                                 </p>
                             </div>
                         </>

@@ -218,6 +218,8 @@ Route::prefix('surveillance')->name('surveillance.')->group(function () {
         ->name('repartition-etudiants.export-collective');
     Route::get('repartition-etudiants/{examen}/export-salles-places', [RepartitionEtudiantController::class, 'exportSallesPlaces'])
         ->name('repartition-etudiants.export-salles-places');
+    Route::post('repartition-etudiants/{examen}/push-pointage', [RepartitionEtudiantController::class, 'pushPointage'])
+        ->name('repartition-etudiants.push-pointage');
 });
 
 /* =========================
