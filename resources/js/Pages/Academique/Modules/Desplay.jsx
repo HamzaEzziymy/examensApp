@@ -1,13 +1,118 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useForm, router } from '@inertiajs/react';
 import Swal from 'sweetalert2';
-import { Pencil, Trash2, Plus, ChevronDown, ChevronUp, Search, Upload, Download } from 'lucide-react';
+import { Pencil, Trash2, Plus, ChevronDown, ChevronUp, Search, Upload, Download, FileDown, X } from 'lucide-react';
 import * as XLSX from 'xlsx';
+
+const SortIcon = ({ col, sortKey, sortDir }) => (
+    <span className="inline-flex flex-col ml-1 align-middle leading-none">
+        <span className={`text-[10px] ${sortKey === col && sortDir === 'asc' ? 'text-blue-500' : 'text-gray-300 dark:text-gray-600'}`}>▲</span>
+        <span className={`text-[10px] ${sortKey === col && sortDir === 'desc' ? 'text-blue-500' : 'text-gray-300 dark:text-gray-600'}`}>▼</span>
+    </span>
+);
 
 export default function ModulesDisplay({ modules: paginatedModules, filters = {}, totalCount = 0 }) {
     const [expandedRows, setExpandedRows] = useState({});
     const [modalOpen, setModalOpen] = useState(false);
     const [modalType, setModalType] = useState(''); // 'add' or 'edit'
+
+    // Export state
+    const [showExportModal, setShowExportModal] = useState(false);
+    const [dragOverKey, setDragOverKey] = useState(null);
+    const [showActionsMenu, setShowActionsMenu] = useState(false);
+
+    const [exportFilename, setExportFilename] = useState('modules');
+    const [exportSortField, setExportSortField] = useState('code_module');
+    const [exportSortDir, setExportSortDir] = useState('asc');
+    const [exportSortField2, setExportSortField2] = useState('nom_module');
+    const [exportSortDir2, setExportSortDir2] = useState('asc');
+    const [exportColumns, setExportColumns] = useState([
+        { key: 'code_module', enabled: true },
+        { key: 'nom_module', enabled: true },
+        { key: 'type_module', enabled: true },
+        { key: 'credits', enabled: true },
+        { key: 'element_code', enabled: true },
+        { key: 'element_nom', enabled: true },
+        { key: 'element_type', enabled: true },
+        { key: 'element_coef', enabled: true },
+    ]);
+
+    const columnLabels = {
+        code_module: 'Code Module',
+        nom_module: 'Nom Module',
+        type_module: 'Type Module',
+        credits: 'Crédits',
+        element_code: 'Code Élément',
+        element_nom: 'Élément',
+        element_type: 'Type Élément',
+        element_coef: 'Coefficient',
+    };
+
+    const getExportValue = (row, col) => {
+        switch (col) {
+            case 'code_module': return row.code_module || '';
+            case 'nom_module': return row.nom_module || '';
+            case 'type_module': return row.type_module || '';
+            case 'credits': return row.credits ?? '';
+            case 'element_code': return row._element?.code_element || '';
+            case 'element_nom': return row._element?.nom_element || '';
+            case 'element_type': return row._element?.type_element || '';
+            case 'element_coef': return row._element?.coefficient ?? '';
+            default: return '';
+        }
+    };
+
+    const handleExport = () => {
+        const activeColumns = exportColumns.filter(c => c.enabled).map(c => c.key);
+        const activeModuleCols = activeColumns.filter(k => !k.startsWith('element_'));
+        const activeElementCols = activeColumns.filter(k => k.startsWith('element_'));
+
+        const sorted = [...modules].sort((a, b) => {
+            const aVal = String(getExportValue(a, exportSortField)).toLowerCase();
+            const bVal = String(getExportValue(b, exportSortField)).toLowerCase();
+            const cmp1 = exportSortDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+            if (cmp1 !== 0) return cmp1;
+            const aVal2 = String(getExportValue(a, exportSortField2)).toLowerCase();
+            const bVal2 = String(getExportValue(b, exportSortField2)).toLowerCase();
+            return exportSortDir2 === 'asc' ? aVal2.localeCompare(bVal2) : bVal2.localeCompare(aVal2);
+        });
+
+        const totalCols = Math.max(activeModuleCols.length, activeElementCols.length + 1, 1);
+        const aoa = [];
+
+        // Header
+        const headerRow = activeModuleCols.map(col => columnLabels[col]);
+        while (headerRow.length < totalCols) headerRow.push('');
+        aoa.push(headerRow);
+
+        sorted.forEach(module => {
+            const moduleRow = activeModuleCols.map(col => getExportValue(module, col));
+            while (moduleRow.length < totalCols) moduleRow.push('');
+            aoa.push(moduleRow);
+
+            if (activeElementCols.length > 0 && module.elements?.length > 0) {
+                const elHeader = ['  ↳', ...activeElementCols.map(col => columnLabels[col])];
+                while (elHeader.length < totalCols) elHeader.push('');
+                aoa.push(elHeader);
+
+                module.elements.forEach(el => {
+                    const elRow = ['    ', ...activeElementCols.map(col => getExportValue({ ...module, _element: el }, col))];
+                    while (elRow.length < totalCols) elRow.push('');
+                    aoa.push(elRow);
+                });
+            }
+            aoa.push(Array(totalCols).fill(''));
+        });
+
+        const wsData = XLSX.utils.aoa_to_sheet(aoa);
+        wsData['!cols'] = Array(totalCols).fill({ wch: 24 });
+        wsData['!freeze'] = { xSplit: 0, ySplit: 1 };
+
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, wsData, 'Modules');
+        XLSX.writeFile(wb, `${exportFilename || 'modules'}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+        setShowExportModal(false);
+    };
     const [entityType, setEntityType] = useState(''); // 'module' or 'element'
     const [selectedModule, setSelectedModule] = useState(null);
     
@@ -15,6 +120,21 @@ export default function ModulesDisplay({ modules: paginatedModules, filters = {}
     const [searchTerm, setSearchTerm] = useState(filters.search || '');
     const [typeFilter, setTypeFilter] = useState(filters.type || '');
     const [perPage, setPerPage] = useState(filters.per_page || 25);
+    const [sortKey, setSortKey] = useState(filters.sort || 'code_module');
+    const [sortDir, setSortDir] = useState(filters.dir || 'asc');
+
+    const handleSort = (key) => {
+        const newDir = sortKey === key && sortDir === 'asc' ? 'desc' : 'asc';
+        setSortKey(key);
+        setSortDir(newDir);
+        router.get(route('academique.modules.index'), {
+            search: searchTerm,
+            type: typeFilter,
+            per_page: perPage,
+            sort: key,
+            dir: newDir,
+        }, { preserveState: true, preserveScroll: true });
+    };
     
     // Excel import states
     const [importModalOpen, setImportModalOpen] = useState(false);
@@ -56,52 +176,28 @@ export default function ModulesDisplay({ modules: paginatedModules, filters = {}
     const handleSearch = (value) => {
         setSearchTerm(value);
         router.get(route('academique.modules.index'), {
-            search: value,
-            type: typeFilter,
-            per_page: perPage,
-        }, {
-            preserveState: true,
-            preserveScroll: true,
-        });
+            search: value, type: typeFilter, per_page: perPage, sort: sortKey, dir: sortDir,
+        }, { preserveState: true, preserveScroll: true });
     };
 
-    // Handle type filter with backend
     const handleTypeFilter = (value) => {
         setTypeFilter(value);
         router.get(route('academique.modules.index'), {
-            search: searchTerm,
-            type: value,
-            per_page: perPage,
-        }, {
-            preserveState: true,
-            preserveScroll: true,
-        });
+            search: searchTerm, type: value, per_page: perPage, sort: sortKey, dir: sortDir,
+        }, { preserveState: true, preserveScroll: true });
     };
 
-    // Handle per page change
     const handlePerPageChange = (value) => {
         setPerPage(value);
         router.get(route('academique.modules.index'), {
-            search: searchTerm,
-            type: typeFilter,
-            per_page: value,
-        }, {
-            preserveState: true,
-            preserveScroll: true,
-        });
+            search: searchTerm, type: typeFilter, per_page: value, sort: sortKey, dir: sortDir,
+        }, { preserveState: true, preserveScroll: true });
     };
 
-    // Handle pagination
     const goToPage = (page) => {
         router.get(route('academique.modules.index'), {
-            search: searchTerm,
-            type: typeFilter,
-            per_page: perPage,
-            page: page,
-        }, {
-            preserveState: true,
-            preserveScroll: true,
-        });
+            search: searchTerm, type: typeFilter, per_page: perPage, sort: sortKey, dir: sortDir, page,
+        }, { preserveState: true, preserveScroll: true });
     };
 
     const toggleRow = (id) => {
@@ -488,307 +584,399 @@ export default function ModulesDisplay({ modules: paginatedModules, filters = {}
     };
 
     return (
-        <div className="bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 p-6 rounded-md">
-            {/* Header with Search and Add Button */}
-            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 border-b border-gray-300 dark:border-gray-700 pb-4 mb-6">
-                <h2 className="text-2xl font-semibold">Modules et Éléments</h2>
-                
-                <div className="flex flex-col sm:flex-row gap-4 w-full lg:w-auto">
-                    {/* Search Input */}
-                    <div className="relative flex-1 sm:flex-none">
-                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <Search size={18} className="text-gray-400" />
+        <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-6">
+            <div className="mx-auto">
+                {/* Header */}
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 mb-6">
+                    <div className="flex items-center justify-between mb-6">
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
+                                <Search className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                            </div>
+                            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Modules et Éléments</h1>
                         </div>
-                        <input
-                            type="text"
-                            placeholder="Rechercher par nom ou code module..."
-                            value={searchTerm}
-                            onChange={(e) => handleSearch(e.target.value)}
-                            className="pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 w-full sm:w-80 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        />
-                    </div>
-                    
-                    {/* Action Buttons */}
-                    <div className="flex gap-2">
-                        <button
-                            onClick={downloadTemplate}
-                            className="flex items-center gap-2 bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded whitespace-nowrap"
-                            aria-label="Télécharger template"
-                        >
-                            <Download size={18} />
-                            <span>Template</span>
-                        </button>
-                        
-                        <button
-                            onClick={openImportModal}
-                            className="flex items-center gap-2 bg-orange-500 hover:bg-orange-600 text-white px-4 py-2 rounded whitespace-nowrap"
-                            aria-label="Importer Excel"
-                        >
-                            <Upload size={18} />
-                            <span>Importer</span>
-                        </button>
-                        
-                        <button
-                            onClick={openAddModuleModal}
-                            className="flex items-center gap-2 bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded whitespace-nowrap"
-                            aria-label="Ajouter un module"
-                        >
-                            <Plus size={18} />
-                            <span>Ajouter Module</span>
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            {/* Results Count and Filters */}
-            <div className="mb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                <div className="text-sm text-gray-600 dark:text-gray-400">
-                    {total} module(s) trouvé(s)
-                    {searchTerm && (
-                        <span> pour "{searchTerm}"</span>
-                    )}
-                </div>
-                
-                {/* Type Filter */}
-                <div className="flex items-center gap-2">
-                    <label className="text-sm text-gray-600 dark:text-gray-400">Type:</label>
-                    <select
-                        value={typeFilter}
-                        onChange={(e) => handleTypeFilter(e.target.value)}
-                        className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-blue-500"
-                    >
-                        <option value="">Tous</option>
-                        <option value="CONNAISSANCE">CONNAISSANCE</option>
-                        <option value="HORIZONTAL">HORIZONTAL</option>
-                        <option value="STAGE">STAGE</option>
-                        <option value="THESE">THESE</option>
-                    </select>
-                    
-                    <label className="text-sm text-gray-600 dark:text-gray-400 ml-4">Par page:</label>
-                    <select
-                        value={perPage}
-                        onChange={(e) => handlePerPageChange(Number(e.target.value))}
-                        className="px-5 py-1 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-blue-500"
-                    >
-                        <option value="10">10</option>
-                        <option value="25">25</option>
-                        <option value="50">50</option>
-                        <option value="100">100</option>
-                    </select>
-                </div>
-            </div>
-
-            {/* Modules Table */}
-            <div className="overflow-x-auto rounded shadow border dark:border-gray-700">
-                <table className="min-w-full table-auto">
-                    <thead className="bg-gray-100 dark:bg-gray-800">
-                        <tr>
-                            <th className="px-4 py-2 text-left w-12"></th>
-                            <th className="px-4 py-2 text-left">Code Module</th>
-                            <th className="px-4 py-2 text-left">Nom du Module</th>
-                            <th className="px-4 py-2 text-left">Type Module</th>
-                            <th className="px-4 py-2 text-left">Crédits</th>
-                            <th className="px-4 py-2 text-left">Éléments</th>
-                            <th className="px-4 py-2 text-left">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {modules.map((module) => (
-                            <React.Fragment key={module.id_module}>
-                                <tr className="border-t border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
-                                    <td className="px-4 py-2">
-                                        <button
-                                            onClick={() => toggleRow(module.id_module)}
-                                            className="text-blue-500 hover:text-blue-700"
-                                            aria-label="Toggle éléments"
-                                        >
-                                            {expandedRows[module.id_module] ? 
-                                                <ChevronUp size={20} /> : 
-                                                <ChevronDown size={20} />
-                                            }
-                                        </button>
-                                    </td>
-                                    <td className="px-4 py-2 font-medium">
-                                        {module.code_module}
-                                    </td>
-                                    <td className="px-4 py-2 font-medium">{module.nom_module}</td>
-                                    <td className="px-4 py-2 font-medium">{module.type_module}</td>
-                                    <td className="px-4 py-2">
-                                        <span className="bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 px-2 py-1 rounded text-sm">
-                                            {module.credits} crédits
-                                        </span>
-                                    </td>
-                                    <td className="px-4 py-2">
-                                        <span className="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-2 py-1 rounded text-sm">
-                                            {module.elements?.length || 0}
-                                        </span>
-                                    </td>
-                                    <td className="px-4 py-2">
-                                        <div className="flex gap-2">
-                                            <button
-                                                onClick={() => openAddElementModal(module)}
-                                                className="flex items-center gap-1 bg-green-500 hover:bg-green-600 text-white px-3 py-2 rounded"
-                                                aria-label="Ajouter un élément"
-                                            >
-                                                <Plus size={16} />
-                                                <span className="text-sm">Élément</span>
+                        <div className="flex items-center gap-3">
+                            <button onClick={() => setShowExportModal(true)}
+                                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition">
+                                <FileDown className="w-4 h-4" />
+                                Exporter
+                            </button>
+                            <div className="relative">
+                                <button onClick={() => setShowActionsMenu(prev => !prev)}
+                                    className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition">
+                                    <Plus className="w-4 h-4" />
+                                    Actions
+                                    <span className="text-xs opacity-70">▾</span>
+                                </button>
+                                {showActionsMenu && (
+                                    <>
+                                        <div className="fixed inset-0 z-10" onClick={() => setShowActionsMenu(false)} />
+                                        <div className="absolute right-0 mt-2 w-52 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 z-20 overflow-hidden">
+                                            <button onClick={() => { setShowActionsMenu(false); downloadTemplate(); }}
+                                                className="flex items-center gap-3 w-full px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                                                <Download className="w-4 h-4 text-green-600" />
+                                                Télécharger Template
                                             </button>
-                                            <button
-                                                onClick={() => openEditModuleModal(module)}
-                                                className="flex items-center gap-1 bg-blue-500 hover:bg-blue-600 text-white p-2 rounded"
-                                                aria-label="Modifier le module"
-                                            >
-                                                <Pencil size={16} />
+                                            <div className="border-t border-gray-100 dark:border-gray-700" />
+                                            <button onClick={() => { setShowActionsMenu(false); openImportModal(); }}
+                                                className="flex items-center gap-3 w-full px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                                                <Upload className="w-4 h-4 text-purple-600" />
+                                                Importer Excel
                                             </button>
-                                            <button
-                                                onClick={() => handleModuleDelete(module)}
-                                                className="flex items-center gap-1 bg-red-500 hover:bg-red-600 text-white p-2 rounded"
-                                                aria-label="Supprimer le module"
-                                            >
-                                                <Trash2 size={16} />
+                                            <div className="border-t border-gray-100 dark:border-gray-700" />
+                                            <button onClick={() => { setShowActionsMenu(false); openAddModuleModal(); }}
+                                                className="flex items-center gap-3 w-full px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                                                <Plus className="w-4 h-4 text-blue-600" />
+                                                Ajouter Module
                                             </button>
                                         </div>
-                                    </td>
-                                </tr>
-
-                                {expandedRows[module.id_module] && (
-                                    <tr className="border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900">
-                                        <td colSpan="6" className="px-4 py-4">
-                                            <div className="ml-8">
-                                                <h3 className="text-lg font-semibold mb-3 text-blue-700 dark:text-blue-400">
-                                                    Éléments du module:
-                                                </h3>
-                                                {module.elements && module.elements.length > 0 ? (
-                                                    <div className="space-y-3">
-                                                        {module.elements.map((element) => (
-                                                            <div
-                                                                key={element.id_element}
-                                                                className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700"
-                                                            >
-                                                                <div className="flex items-center justify-between">
-                                                                    <div className="flex items-center gap-4">
-                                                                        <div>
-                                                                            <div className="flex items-center gap-2">
-                                                                                <span className="font-semibold text-gray-800 dark:text-gray-200 block">
-                                                                                    {element.nom_element}
-                                                                                </span>
-                                                                                {isSelfReferencingElement(element, module) && (
-                                                                                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200">
-                                                                                        Auto-généré
-                                                                                    </span>
-                                                                                )}
-                                                                            </div>
-                                                                            <span className="text-sm text-gray-600 dark:text-gray-400 font-mono">
-                                                                                {element.code_element}
-                                                                            </span>
-                                                                        </div>
-                                                                        <span className={`px-2 py-1 rounded text-xs font-medium ${getTypeElementColor(element.type_element)}`}>
-                                                                            {getTypeElementLabel(element.type_element)}
-                                                                        </span>
-                                                                        <span className="bg-yellow-100 dark:bg-yellow-900 text-yellow-800 dark:text-yellow-200 px-2 py-1 rounded text-xs font-medium">
-                                                                            Coef: {element.coefficient}
-                                                                        </span>
-                                                                    </div>
-                                                                    <div className="flex gap-2">
-                                                                        <button
-                                                                            onClick={() => openEditElementModal(element, module)}
-                                                                            className="flex items-center gap-1 bg-blue-500 hover:bg-blue-600 text-white p-2 rounded"
-                                                                            aria-label="Modifier l'élément"
-                                                                        >
-                                                                            <Pencil size={16} />
-                                                                        </button>
-                                                                        <button
-                                                                            onClick={() => handleElementDelete(element)}
-                                                                            className="flex items-center gap-1 bg-red-500 hover:bg-red-600 text-white p-2 rounded"
-                                                                            aria-label="Supprimer l'élément"
-                                                                        >
-                                                                            <Trash2 size={16} />
-                                                                        </button>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        ))}
-                                                    </div>
-                                                ) : (
-                                                    <p className="text-gray-500 dark:text-gray-400 italic">
-                                                        Aucun élément disponible pour ce module
-                                                    </p>
-                                                )}
-                                            </div>
-                                        </td>
-                                    </tr>
+                                    </>
                                 )}
-                            </React.Fragment>
-                        ))}
-                    </tbody>
-                </table>
-            </div>
-
-            {/* Pagination */}
-            {lastPage > 1 && (
-                <div className="flex flex-col sm:flex-row justify-between items-center gap-4 mt-6 pt-4 border-t border-gray-200 dark:border-gray-700">
-                    {/* Page info */}
-                    <div className="text-sm text-gray-600 dark:text-gray-400">
-                        Page {currentPage} sur {lastPage} - {total} module(s)
-                    </div>
-
-                    {/* Pagination controls */}
-                    <div className="flex items-center gap-2">
-                        <button
-                            onClick={() => goToPage(currentPage - 1)}
-                            disabled={currentPage === 1}
-                            className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-700"
-                        >
-                            Précédent
-                        </button>
-                        
-                        {/* Page numbers */}
-                        <div className="flex gap-1">
-                            {Array.from({ length: Math.min(lastPage, 10) }, (_, i) => {
-                                let page;
-                                if (lastPage <= 10) {
-                                    page = i + 1;
-                                } else if (currentPage <= 5) {
-                                    page = i + 1;
-                                } else if (currentPage >= lastPage - 4) {
-                                    page = lastPage - 9 + i;
-                                } else {
-                                    page = currentPage - 5 + i;
-                                }
-                                return (
-                                    <button
-                                        key={page}
-                                        onClick={() => goToPage(page)}
-                                        className={`w-8 h-8 rounded text-sm ${
-                                            currentPage === page
-                                                ? 'bg-blue-500 text-white'
-                                                : 'border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
-                                        }`}
-                                    >
-                                        {page}
-                                    </button>
-                                );
-                            })}
+                            </div>
                         </div>
-
-                        <button
-                            onClick={() => goToPage(currentPage + 1)}
-                            disabled={currentPage === lastPage}
-                            className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded disabled:opacity-50 disabled:cursor-not-allowed hover:bg-gray-50 dark:hover:bg-gray-700"
-                        >
-                            Suivant
-                        </button>
+                    </div>
+                    {/* Search & Filters */}
+                    <div className="flex flex-col sm:flex-row gap-4">
+                        <div className="flex-1 relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500 w-5 h-5" />
+                            <input type="text" placeholder="Rechercher par nom ou code module..."
+                                value={searchTerm} onChange={e => handleSearch(e.target.value)}
+                                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white dark:bg-gray-700 text-gray-900 dark:text-white" />
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <label className="text-sm text-gray-600 dark:text-gray-400">Type:</label>
+                            <select value={typeFilter} onChange={e => handleTypeFilter(e.target.value)}
+                                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500">
+                                <option value="">Tous</option>
+                                <option value="CONNAISSANCE">CONNAISSANCE</option>
+                                <option value="HORIZONTAL">HORIZONTAL</option>
+                                <option value="STAGE">STAGE</option>
+                                <option value="THESE">THESE</option>
+                            </select>
+                            <select value={perPage} onChange={e => handlePerPageChange(Number(e.target.value))}
+                                className="px-5 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-blue-500">
+                                <option value="15">15</option>
+                                <option value="25">25</option>
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                                <option value={total}>Tout ({total})</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
-            )}
 
-            {/* No results message */}
-            {modules.length === 0 && (
-                <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                    <p>Aucun module trouvé</p>
-                    {searchTerm && (
-                        <p className="text-sm mt-2">Essayez de modifier vos termes de recherche</p>
-                    )}
+                {/* Stats */}
+                <div className="grid grid-cols-3 gap-4 mb-6">
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
+                        <div className="text-sm text-gray-600 dark:text-gray-400">Total Modules</div>
+                        <div className="text-2xl font-bold text-gray-900 dark:text-white">{total}</div>
+                    </div>
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
+                        <div className="text-sm text-gray-600 dark:text-gray-400">Page</div>
+                        <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{currentPage}/{lastPage}</div>
+                    </div>
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4">
+                        <div className="text-sm text-gray-600 dark:text-gray-400">Filtre actif</div>
+                        <div className="text-2xl font-bold text-purple-600 dark:text-purple-400">{typeFilter || 'Tous'}</div>
+                    </div>
+                </div>
+
+                {/* Table */}
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm overflow-hidden">
+                    <div className="overflow-x-auto">
+                        <table className="w-full">
+                            <thead className="bg-gray-50 dark:bg-gray-700 border-b border-gray-200 dark:border-gray-600">
+                                <tr>
+                                    <th className="px-4 py-2 text-left w-10"></th>
+                                    {[
+                                        { key: 'code_module', label: 'Code Module' },
+                                        { key: 'nom_module', label: 'Nom du Module' },
+                                        { key: 'type_module', label: 'Type' },
+                                        { key: 'credits', label: 'Crédits' },
+                                    ].map(({ key, label }) => (
+                                        <th key={key} onClick={() => handleSort(key)}
+                                            className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider cursor-pointer select-none hover:text-gray-700 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">
+                                            {label}<SortIcon col={key} sortKey={sortKey} sortDir={sortDir} />
+                                        </th>
+                                    ))}
+                                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Éléments</th>
+                                    <th className="px-4 py-2 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                                {modules.map((module) => (
+                                    <React.Fragment key={module.id_module}>
+                                        <tr className="hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                                            <td className="px-4 py-2">
+                                                <button onClick={() => toggleRow(module.id_module)}
+                                                    className="text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors">
+                                                    {expandedRows[module.id_module] ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+                                                </button>
+                                            </td>
+                                            <td className="px-4 py-2 text-sm font-mono font-medium text-gray-900 dark:text-white">{module.code_module}</td>
+                                            <td className="px-4 py-2 text-sm font-medium text-gray-900 dark:text-white">{module.nom_module}</td>
+                                            <td className="px-4 py-2">
+                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300">
+                                                    {module.type_module}
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-2">
+                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300">
+                                                    {module.credits} crédits
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-2">
+                                                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300">
+                                                    {module.elements?.length || 0} élément(s)
+                                                </span>
+                                            </td>
+                                            <td className="px-4 py-2 text-right">
+                                                <div className="flex justify-end gap-2">
+                                                    <button onClick={() => openAddElementModal(module)}
+                                                        className="flex items-center gap-1 px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white rounded-lg text-xs font-medium transition-colors">
+                                                        <Plus size={14} />
+                                                        Élément
+                                                    </button>
+                                                    <button onClick={() => openEditModuleModal(module)}
+                                                        className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors">
+                                                        <Pencil size={16} />
+                                                    </button>
+                                                    <button onClick={() => handleModuleDelete(module)}
+                                                        className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors">
+                                                        <Trash2 size={16} />
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+
+                                        {expandedRows[module.id_module] && (
+                                            <tr className="bg-gray-50 dark:bg-gray-900/50">
+                                                <td colSpan="7" className="px-4 py-2">
+                                                    <div className="ml-6 border-l-2 border-blue-200 dark:border-blue-800 pl-4">
+                                                        <h3 className="text-sm font-semibold text-blue-700 dark:text-blue-400 mb-3 uppercase tracking-wide">
+                                                            Éléments du module
+                                                        </h3>
+                                                        {module.elements && module.elements.length > 0 ? (
+                                                            <div className="space-y-2">
+                                                                {module.elements.map((element) => (
+                                                                    <div key={element.id_element}
+                                                                        className="flex items-center justify-between bg-white dark:bg-gray-800 rounded-lg px-4 py-3 border border-gray-200 dark:border-gray-700 shadow-sm">
+                                                                        <div className="flex items-center gap-4">
+                                                                            <div>
+                                                                                <div className="flex items-center gap-2">
+                                                                                    <span className="text-sm font-medium text-gray-900 dark:text-white">{element.nom_element}</span>
+                                                                                    {isSelfReferencingElement(element, module) && (
+                                                                                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-200">Auto-généré</span>
+                                                                                    )}
+                                                                                </div>
+                                                                                <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">{element.code_element}</span>
+                                                                            </div>
+                                                                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTypeElementColor(element.type_element)}`}>
+                                                                                {getTypeElementLabel(element.type_element)}
+                                                                            </span>
+                                                                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300">
+                                                                                Coef: {element.coefficient}
+                                                                            </span>
+                                                                        </div>
+                                                                        <div className="flex gap-2">
+                                                                            <button onClick={() => openEditElementModal(element, module)}
+                                                                                className="p-1.5 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors">
+                                                                                <Pencil size={15} />
+                                                                            </button>
+                                                                            <button onClick={() => handleElementDelete(element)}
+                                                                                className="p-1.5 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors">
+                                                                                <Trash2 size={15} />
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        ) : (
+                                                            <p className="text-sm text-gray-400 dark:text-gray-500 italic">Aucun élément disponible pour ce module</p>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        )}
+                                    </React.Fragment>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {/* Pagination */}
+                    <div className="px-4 py-2 border-t border-gray-200 dark:border-gray-700">
+                        <div className="flex items-center justify-between">
+                            <div className="text-sm text-gray-600 dark:text-gray-400">
+                                Page {currentPage} sur {lastPage} — {total} module(s)
+                            </div>
+                            {lastPage > 1 && (
+                                <div className="flex items-center gap-2">
+                                    <button onClick={() => goToPage(currentPage - 1)} disabled={currentPage === 1}
+                                        className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                                        Précédent
+                                    </button>
+                                    <div className="flex gap-1">
+                                        {Array.from({ length: Math.min(lastPage, 10) }, (_, i) => {
+                                            let page;
+                                            if (lastPage <= 10) page = i + 1;
+                                            else if (currentPage <= 5) page = i + 1;
+                                            else if (currentPage >= lastPage - 4) page = lastPage - 9 + i;
+                                            else page = currentPage - 5 + i;
+                                            return (
+                                                <button key={page} onClick={() => goToPage(page)}
+                                                    className={`w-8 h-8 rounded-lg text-sm transition-colors ${
+                                                        currentPage === page
+                                                            ? 'bg-blue-600 text-white'
+                                                            : 'border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'
+                                                    }`}>
+                                                    {page}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+                                    <button onClick={() => goToPage(currentPage + 1)} disabled={currentPage === lastPage}
+                                        className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                                        Suivant
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                {modules.length === 0 && (
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-12 text-center">
+                        <p className="text-gray-500 dark:text-gray-400">Aucun module trouvé</p>
+                        {searchTerm && <p className="text-sm text-gray-400 mt-2">Essayez de modifier vos termes de recherche</p>}
+                    </div>
+                )}
+
+            {/* Export Modal */}
+            {showExportModal && (
+                <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl">
+                        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+                            <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg flex items-center justify-center">
+                                    <FileDown className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                                </div>
+                                <div>
+                                    <h2 className="text-base font-bold text-gray-900 dark:text-white">Exporter les Modules</h2>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">Personnalisez votre export Excel</p>
+                                </div>
+                            </div>
+                            <button onClick={() => setShowExportModal(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                                <X className="w-4 h-4" />
+                            </button>
+                        </div>
+
+                        <div className="px-6 py-5 space-y-5">
+                            {/* Columns */}
+                            <div>
+                                <div className="flex items-center justify-between mb-2">
+                                    <label className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">Colonnes <span className="normal-case font-normal text-gray-400">(glisser pour réordonner)</span></label>
+                                    <div className="flex gap-2">
+                                        <button onClick={() => setExportColumns(prev => prev.map(c => ({ ...c, enabled: true })))} className="text-xs text-emerald-600 hover:underline">Tout</button>
+                                        <span className="text-gray-300">|</span>
+                                        <button onClick={() => setExportColumns(prev => prev.map(c => ({ ...c, enabled: false })))} className="text-xs text-red-500 hover:underline">Aucun</button>
+                                    </div>
+                                </div>
+                                <div className="space-y-1">
+                                    {exportColumns.map((col, index) => (
+                                        <div key={col.key} draggable
+                                            onDragStart={e => e.dataTransfer.setData('text/plain', index)}
+                                            onDragOver={e => { e.preventDefault(); setDragOverKey(col.key); }}
+                                            onDragLeave={() => setDragOverKey(null)}
+                                            onDrop={e => {
+                                                e.preventDefault();
+                                                const from = parseInt(e.dataTransfer.getData('text/plain'));
+                                                if (from === index) return;
+                                                setExportColumns(prev => {
+                                                    const next = [...prev];
+                                                    const [moved] = next.splice(from, 1);
+                                                    next.splice(index, 0, moved);
+                                                    return next;
+                                                });
+                                                setDragOverKey(null);
+                                            }}
+                                            className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-grab active:cursor-grabbing transition-all select-none ${
+                                                col.enabled ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20' : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700'
+                                            } ${dragOverKey === col.key ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                                        >
+                                            <span className="text-gray-300 dark:text-gray-500 text-sm">⠿</span>
+                                            <input type="checkbox" checked={col.enabled}
+                                                onChange={e => setExportColumns(prev => prev.map(c => c.key === col.key ? { ...c, enabled: e.target.checked } : c))}
+                                                className="w-3.5 h-3.5 rounded text-emerald-600 border-gray-300 focus:ring-emerald-500"
+                                                onClick={e => e.stopPropagation()}
+                                            />
+                                            <span className="text-xs text-gray-700 dark:text-gray-300 flex-1">{columnLabels[col.key]}</span>
+                                            <span className="text-xs text-gray-300 dark:text-gray-600">#{index + 1}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Sort */}
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-2">Trier par</label>
+                                <div className="space-y-2">
+                                    {[
+                                        { field: exportSortField, setField: setExportSortField, dir: exportSortDir, setDir: setExportSortDir, label: '1er critère' },
+                                        { field: exportSortField2, setField: setExportSortField2, dir: exportSortDir2, setDir: setExportSortDir2, label: '2ème critère' },
+                                    ].map((row, i) => (
+                                        <div key={i} className="flex items-center gap-2">
+                                            <span className="text-xs text-gray-400 w-20 shrink-0">{row.label}</span>
+                                            <select value={row.field} onChange={e => row.setField(e.target.value)}
+                                                className="flex-1 px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500">
+                                                {Object.entries(columnLabels).map(([key, label]) => (
+                                                    <option key={key} value={key}>{label}</option>
+                                                ))}
+                                            </select>
+                                            <div className="flex rounded-lg border border-gray-300 dark:border-gray-600 overflow-hidden shrink-0">
+                                                <button onClick={() => row.setDir('asc')}
+                                                    className={`px-2.5 py-1.5 text-xs font-medium transition-colors ${row.dir === 'asc' ? 'bg-emerald-600 text-white' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600'}`}>
+                                                    ▲ ASC
+                                                </button>
+                                                <button onClick={() => row.setDir('desc')}
+                                                    className={`px-2.5 py-1.5 text-xs font-medium transition-colors ${row.dir === 'desc' ? 'bg-emerald-600 text-white' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600'}`}>
+                                                    ▼ DESC
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Filename */}
+                            <div>
+                                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-2">Nom du fichier</label>
+                                <div className="flex items-center gap-2">
+                                    <input type="text" value={exportFilename} onChange={e => setExportFilename(e.target.value)}
+                                        className="flex-1 px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500"
+                                        placeholder="modules" />
+                                    <span className="text-xs text-gray-400 whitespace-nowrap">_{new Date().toISOString().slice(0,10)}.xlsx</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-between px-5 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 rounded-b-2xl">
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                                {exportColumns.filter(c => c.enabled).length} col · {modules.length} module(s)
+                            </p>
+                            <div className="flex gap-2">
+                                <button onClick={() => setShowExportModal(false)}
+                                    className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg text-sm hover:bg-gray-100 dark:hover:bg-gray-700">
+                                    Annuler
+                                </button>
+                                <button onClick={handleExport} disabled={exportColumns.every(c => !c.enabled)}
+                                    className="flex items-center gap-2 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50 transition-colors">
+                                    <FileDown className="w-4 h-4" />
+                                    Exporter
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             )}
 
@@ -1129,5 +1317,6 @@ export default function ModulesDisplay({ modules: paginatedModules, filters = {}
                 </div>
             )}
         </div>
+    </div>
     );
 }

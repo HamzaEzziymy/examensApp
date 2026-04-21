@@ -34,7 +34,12 @@ class ModuleController extends Controller
         }
         
         // Order and paginate
-        $modulesQuery->orderBy('code_module');
+        $sortField = $request->input('sort', 'code_module');
+        $sortDir = $request->input('dir', 'asc');
+        $allowedSorts = ['code_module', 'nom_module', 'type_module', 'credits'];
+        if (!in_array($sortField, $allowedSorts)) $sortField = 'code_module';
+        if (!in_array($sortDir, ['asc', 'desc'])) $sortDir = 'asc';
+        $modulesQuery->orderBy($sortField, $sortDir);
         
         // Get total count before pagination
         $totalCount = $modulesQuery->count();
@@ -48,6 +53,8 @@ class ModuleController extends Controller
                 'search' => $search,
                 'type' => $filterType,
                 'per_page' => $perPage,
+                'sort' => $sortField,
+                'dir' => $sortDir,
             ],
             'totalCount' => $totalCount,
         ]);
