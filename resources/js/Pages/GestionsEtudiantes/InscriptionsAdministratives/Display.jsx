@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { router, useForm } from '@inertiajs/react';
-import { Search, Plus, Upload, Download, Trash2, X, FileSpreadsheet, Users, ChevronLeft, ChevronRight, Eye, Edit, Filter, Loader2, RefreshCw } from 'lucide-react';
+import { Search, Plus, Upload, Download, Trash2, X, FileSpreadsheet, Users, ChevronLeft, ChevronRight, Eye, Edit, Filter, Loader2, RefreshCw, FileDown } from 'lucide-react';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import * as XLSX from 'xlsx';
@@ -26,6 +26,27 @@ const Display = ({
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showActionsMenu, setShowActionsMenu] = useState(false);
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [exportScope, setExportScope] = useState('all');
+  const [exportFilename, setExportFilename] = useState('inscriptions_administratives');
+  const [exportSortField, setExportSortField] = useState('nom');
+  const [exportSortDir, setExportSortDir] = useState('asc');
+  const [exportSortField2, setExportSortField2] = useState('prenom');
+  const [exportSortDir2, setExportSortDir2] = useState('asc');
+  const [exportColumns, setExportColumns] = useState({
+    cne: true,
+    nom: true,
+    prenom: true,
+    email: false,
+    annee: true,
+    niveau: true,
+    section: true,
+    filiere: false,
+    date_inscription: true,
+    statut: true,
+    type_inscription: true,
+  });
   const [selectedInscriptions, setSelectedInscriptions] = useState([]);
   const [editingInscription, setEditingInscription] = useState(null);
   const [filterAnnee, setFilterAnnee] = useState(initialFilters.annee || '');
@@ -647,27 +668,66 @@ const Display = ({
     });
   };
 
-  // Export to Excel
-  const handleExport = () => {
-    const dataToExport = inscriptionsData.map(inscription => ({
-      'ID': inscription.id_inscription_admin || '',
-      'CNE': inscription.etudiant?.cne || '',
-      'Nom': inscription.etudiant?.nom || '',
-      'Prénom': inscription.etudiant?.prenom || '',
-      'Email': inscription.etudiant?.mail_academique || '',
-      'Année Universitaire': inscription.annee_universitaire?.annee_univ || '',
-      'Niveau': inscription.niveau?.nom_niveau || '',
-      'Section': inscription.section?.nom_section || '',
-      'Filière': inscription.section?.filiere?.nom_filiere || '',
-      'Date Inscription': inscription.date_inscription,
-      'Statut': inscription.statut,
-      'Type': inscription.type_inscription
-    }));
+  const exportColumnLabels = {
+    cne: 'CNE',
+    nom: 'Nom',
+    prenom: 'Prénom',
+    email: 'Email',
+    annee: 'Année Univ.',
+    niveau: 'Niveau',
+    section: 'Section',
+    filiere: 'Filière',
+    date_inscription: 'Date Inscription',
+    statut: 'Statut',
+    type_inscription: 'Type',
+  };
 
-    const ws = XLSX.utils.json_to_sheet(dataToExport);
+  const getExportValue = (ins, col) => {
+    switch (col) {
+      case 'cne': return ins.etudiant?.cne || '';
+      case 'nom': return ins.etudiant?.nom || '';
+      case 'prenom': return ins.etudiant?.prenom || '';
+      case 'email': return ins.etudiant?.mail_academique || '';
+      case 'annee': return ins.annee_universitaire?.annee_univ || '';
+      case 'niveau': return ins.niveau?.nom_niveau || '';
+      case 'section': return ins.section?.nom_section || '';
+      case 'filiere': return ins.section?.filiere?.nom_filiere || '';
+      case 'date_inscription': return ins.date_inscription || '';
+      case 'statut': return ins.statut || '';
+      case 'type_inscription': return ins.type_inscription || '';
+      default: return '';
+    }
+  };
+
+  const handleExport = () => {
+    const scopeData = exportScope === 'selected'
+      ? inscriptionsData.filter(i => selectedInscriptions.includes(i.id_inscription_admin))
+      : inscriptionsData;
+
+    const activeColumns = Object.entries(exportColumns).filter(([, v]) => v).map(([k]) => k);
+
+    const sorted = [...scopeData].sort((a, b) => {
+      const aVal = getExportValue(a, exportSortField).toLowerCase();
+      const bVal = getExportValue(b, exportSortField).toLowerCase();
+      const cmp1 = exportSortDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+      if (cmp1 !== 0) return cmp1;
+      const aVal2 = getExportValue(a, exportSortField2).toLowerCase();
+      const bVal2 = getExportValue(b, exportSortField2).toLowerCase();
+      return exportSortDir2 === 'asc' ? aVal2.localeCompare(bVal2) : bVal2.localeCompare(aVal2);
+    });
+
+    const headers = activeColumns.map(col => exportColumnLabels[col]);
+    const rows = sorted.map(ins => activeColumns.map(col => getExportValue(ins, col)));
+
+    const wsData = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    wsData['!cols'] = activeColumns.map(() => ({ wch: 20 }));
+    wsData['!freeze'] = { xSplit: 0, ySplit: 1 };
+
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Inscriptions');
-    XLSX.writeFile(wb, `inscriptions_administratives_${new Date().toISOString().split('T')[0]}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, wsData, 'Inscriptions');
+    XLSX.writeFile(wb, `${exportFilename || 'inscriptions'}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    setShowExportModal(false);
+    toast.success(`Export réussi — ${sorted.length} inscription(s) exportée(s)`, { icon: '📥', autoClose: 3000 });
   };
 
   // Clear filters - moved to earlier in the component
@@ -694,33 +754,52 @@ const Display = ({
                 </button>
               )}
               <button
-                onClick={handleExport}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+                onClick={() => setShowExportModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition-colors"
               >
-                <Download className="w-4 h-4" />
+                <FileDown className="w-4 h-4" />
                 <span className="hidden sm:inline">Exporter</span>
               </button>
-              <button
-                onClick={downloadTemplate}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-              >
-                <Download className="w-4 h-4" />
-                <span className="hidden sm:inline">Template</span>
-              </button>
-              <button
-                onClick={() => setShowImportModal(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg transition-colors"
-              >
-                <Upload className="w-4 h-4" />
-                <span className="hidden sm:inline">Importer</span>
-              </button>
-              <button
-                onClick={() => setShowAddModal(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white rounded-lg transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-                <span className="hidden sm:inline">Ajouter</span>
-              </button>
+              <div className="relative">
+                <button
+                  onClick={() => setShowActionsMenu(prev => !prev)}
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition-colors"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span className="hidden sm:inline">Actions</span>
+                  <span className="text-xs opacity-70">▾</span>
+                </button>
+                {showActionsMenu && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setShowActionsMenu(false)} />
+                    <div className="absolute right-0 mt-2 w-52 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 z-20 overflow-hidden">
+                      <button
+                        onClick={() => { setShowActionsMenu(false); downloadTemplate(); }}
+                        className="flex items-center gap-3 w-full px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                      >
+                        <Download className="w-4 h-4 text-green-600" />
+                        Télécharger Template
+                      </button>
+                      <div className="border-t border-gray-100 dark:border-gray-700" />
+                      <button
+                        onClick={() => { setShowActionsMenu(false); setShowImportModal(true); }}
+                        className="flex items-center gap-3 w-full px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                      >
+                        <Upload className="w-4 h-4 text-purple-600" />
+                        Importer Excel
+                      </button>
+                      <div className="border-t border-gray-100 dark:border-gray-700" />
+                      <button
+                        onClick={() => { setShowActionsMenu(false); setShowAddModal(true); }}
+                        className="flex items-center gap-3 w-full px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                      >
+                        <Plus className="w-4 h-4 text-blue-600" />
+                        Ajouter Inscription
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           </div>
 
@@ -1415,6 +1494,136 @@ const Display = ({
                   </button>
                 </div>
               </form>
+            </div>
+          </div>
+        )}
+
+        {/* Export Excel Modal */}
+        {showExportModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl">
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg flex items-center justify-center">
+                    <FileDown className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-bold text-gray-900 dark:text-white">Exporter les Inscriptions</h2>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Personnalisez votre export Excel</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowExportModal(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="px-6 py-5 space-y-5">
+                {/* Scope */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-2">Données à exporter</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { value: 'all', label: 'Toutes', count: inscriptionsData.length, icon: '📋' },
+                      { value: 'selected', label: 'Sélectionnées', count: selectedInscriptions.length, icon: '✅' },
+                    ].map(opt => (
+                      <button key={opt.value} onClick={() => setExportScope(opt.value)}
+                        disabled={opt.value === 'selected' && selectedInscriptions.length === 0}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-lg border-2 transition-all ${
+                          exportScope === opt.value ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'border-gray-200 dark:border-gray-600 hover:border-gray-300'
+                        } disabled:opacity-40 disabled:cursor-not-allowed`}>
+                        <span>{opt.icon}</span>
+                        <div className="text-left">
+                          <div className="text-xs font-semibold text-gray-700 dark:text-gray-300">{opt.label}</div>
+                          <div className={`text-sm font-bold ${exportScope === opt.value ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500'}`}>{opt.count}</div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Columns */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">Colonnes</label>
+                    <div className="flex gap-2">
+                      <button onClick={() => setExportColumns(Object.fromEntries(Object.keys(exportColumns).map(k => [k, true])))} className="text-xs text-emerald-600 hover:underline">Tout</button>
+                      <span className="text-gray-300">|</span>
+                      <button onClick={() => setExportColumns(Object.fromEntries(Object.keys(exportColumns).map(k => [k, false])))} className="text-xs text-red-500 hover:underline">Aucun</button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {Object.entries(exportColumnLabels).map(([key, label]) => (
+                      <label key={key} className={`flex items-center gap-2 px-2 py-1.5 rounded-lg border cursor-pointer transition-all ${
+                        exportColumns[key] ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20' : 'border-gray-200 dark:border-gray-600 hover:border-gray-300'
+                      }`}>
+                        <input type="checkbox" checked={exportColumns[key]}
+                          onChange={e => setExportColumns(prev => ({ ...prev, [key]: e.target.checked }))}
+                          className="w-3.5 h-3.5 rounded text-emerald-600 border-gray-300 focus:ring-emerald-500" />
+                        <span className="text-xs text-gray-700 dark:text-gray-300">{label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Sort */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-2">Trier par</label>
+                  <div className="space-y-2">
+                    {[
+                      { field: exportSortField, setField: setExportSortField, dir: exportSortDir, setDir: setExportSortDir, label: '1er critère' },
+                      { field: exportSortField2, setField: setExportSortField2, dir: exportSortDir2, setDir: setExportSortDir2, label: '2ème critère' },
+                    ].map((row, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <span className="text-xs text-gray-400 w-20 shrink-0">{row.label}</span>
+                        <select value={row.field} onChange={e => row.setField(e.target.value)}
+                          className="flex-1 px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500">
+                          {Object.entries(exportColumnLabels).map(([key, label]) => (
+                            <option key={key} value={key}>{label}</option>
+                          ))}
+                        </select>
+                        <div className="flex rounded-lg border border-gray-300 dark:border-gray-600 overflow-hidden shrink-0">
+                          <button onClick={() => row.setDir('asc')}
+                            className={`px-2.5 py-1.5 text-xs font-medium transition-colors ${row.dir === 'asc' ? 'bg-emerald-600 text-white' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600'}`}>
+                            ▲ ASC
+                          </button>
+                          <button onClick={() => row.setDir('desc')}
+                            className={`px-2.5 py-1.5 text-xs font-medium transition-colors ${row.dir === 'desc' ? 'bg-emerald-600 text-white' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600'}`}>
+                            ▼ DESC
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Filename */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-2">Nom du fichier</label>
+                  <div className="flex items-center gap-2">
+                    <input type="text" value={exportFilename} onChange={e => setExportFilename(e.target.value)}
+                      className="flex-1 px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500"
+                      placeholder="inscriptions_administratives" />
+                    <span className="text-xs text-gray-400 whitespace-nowrap">_{new Date().toISOString().slice(0,10)}.xlsx</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between px-5 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 rounded-b-2xl">
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {Object.values(exportColumns).filter(Boolean).length} col · {exportScope === 'all' ? inscriptionsData.length : selectedInscriptions.length} inscription(s)
+                </p>
+                <div className="flex gap-2">
+                  <button onClick={() => setShowExportModal(false)}
+                    className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg text-sm hover:bg-gray-100 dark:hover:bg-gray-700">
+                    Annuler
+                  </button>
+                  <button onClick={handleExport} disabled={Object.values(exportColumns).every(v => !v)}
+                    className="flex items-center gap-2 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50 transition-colors">
+                    <FileDown className="w-4 h-4" />
+                    Exporter
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}

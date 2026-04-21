@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { router, usePage } from '@inertiajs/react';
-import { Search, Plus, Upload, Download, Edit, Trash2, Filter, X, FileSpreadsheet, Users, ChevronLeft, ChevronRight, Eye, Loader2 } from 'lucide-react';
+import { Search, Plus, Upload, Download, Edit, Trash2, Filter, X, FileSpreadsheet, Users, ChevronLeft, ChevronRight, Eye, Loader2, FileDown } from 'lucide-react';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import * as XLSX from 'xlsx';
@@ -49,6 +49,28 @@ const StudentDataTable = ({
   const [selectedImportSection, setSelectedImportSection] = useState('');
   const [backendErrors, setBackendErrors] = useState([]); // Errors from backend validation
   const [isImporting, setIsImporting] = useState(false); // Loading state for import
+
+  // Export state
+  const [showExportModal, setShowExportModal] = useState(false);
+  const [showActionsMenu, setShowActionsMenu] = useState(false);
+  const [exportColumns, setExportColumns] = useState([
+    { key: 'cne', enabled: true },
+    { key: 'nom', enabled: true },
+    { key: 'prenom', enabled: true },
+    { key: 'mail_academique', enabled: true },
+    { key: 'mail_personnel', enabled: false },
+    { key: 'date_naissance', enabled: false },
+    { key: 'telephone', enabled: false },
+    { key: 'section', enabled: true },
+    { key: 'filiere', enabled: false },
+  ]);
+  const [dragOverKey, setDragOverKey] = useState(null);
+  const [exportScope, setExportScope] = useState('all'); // 'all' | 'filtered' | 'selected'
+  const [exportFilename, setExportFilename] = useState('etudiants');
+  const [exportSortField, setExportSortField] = useState('nom');
+  const [exportSortDir, setExportSortDir] = useState('asc');
+  const [exportSortField2, setExportSortField2] = useState('prenom');
+  const [exportSortDir2, setExportSortDir2] = useState('asc');
 
   // Server flash messages and import errors
   const { flash } = usePage().props;
@@ -729,6 +751,64 @@ const StudentDataTable = ({
     });
   };
 
+  // Export Excel
+  const columnLabels = {
+    cne: 'CNE',
+    nom: 'Nom',
+    prenom: 'Prénom',
+    mail_academique: 'Email Académique',
+    mail_personnel: 'Email Personnel',
+    date_naissance: 'Date de Naissance',
+    telephone: 'Téléphone',
+    section: 'Section',
+    filiere: 'Filière',
+  };
+
+  const handleExport = () => {
+    const scopeData = exportScope === 'all'
+      ? students
+      : exportScope === 'filtered'
+        ? filteredStudents
+        : students.filter(s => selectedStudents.includes(s.id_etudiant));
+
+    const activeColumns = exportColumns.filter(c => c.enabled).map(c => c.key);
+
+    // Sort
+    const getValue = (s, field) => {
+      if (field === 'section') return s.section?.nom_section || '';
+      if (field === 'filiere') return s.section?.filiere?.nom_filiere || '';
+      return s[field] || '';
+    };
+    const sorted = [...scopeData].sort((a, b) => {
+      const aVal = getValue(a, exportSortField).toString().toLowerCase();
+      const bVal = getValue(b, exportSortField).toString().toLowerCase();
+      const cmp1 = exportSortDir === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+      if (cmp1 !== 0) return cmp1;
+      const aVal2 = getValue(a, exportSortField2).toString().toLowerCase();
+      const bVal2 = getValue(b, exportSortField2).toString().toLowerCase();
+      return exportSortDir2 === 'asc' ? aVal2.localeCompare(bVal2) : bVal2.localeCompare(aVal2);
+    });
+
+    const wb = XLSX.utils.book_new();
+
+    // ── Data sheet ─────────────────────────────────────────────────────────
+    const headers = activeColumns.map(col => columnLabels[col]);
+    const rows = sorted.map(s => activeColumns.map(col => getValue(s, col)));
+
+    const wsData = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    wsData['!cols'] = activeColumns.map(col => ({
+      wch: col === 'mail_academique' || col === 'mail_personnel' ? 32 : col === 'nom' || col === 'prenom' ? 20 : 18
+    }));
+    wsData['!freeze'] = { xSplit: 0, ySplit: 1 };
+
+    XLSX.utils.book_append_sheet(wb, wsData, 'Étudiants');
+
+    const filename = `${exportFilename || 'etudiants'}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    XLSX.writeFile(wb, filename);
+    setShowExportModal(false);
+    toast.success(`Export réussi — ${sorted.length} étudiant(s) exporté(s)`, { icon: '📥', autoClose: 3000 });
+  };
+
   // Download Excel template
   const downloadTemplate = () => {
     const template = [
@@ -784,26 +864,52 @@ const StudentDataTable = ({
             </div>
             <div className="flex gap-3">
               <button
-                onClick={downloadTemplate}
-                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
+                onClick={() => setShowExportModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 transition"
               >
-                <Download className="w-4 h-4" />
-                Télécharger Template
+                <FileDown className="w-4 h-4" />
+                Exporter Excel
               </button>
-              <button
-                onClick={() => setShowImportModal(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition"
-              >
-                <Upload className="w-4 h-4" />
-                Import Excel
-              </button>
-              <button
-                onClick={() => { setFormErrors({}); setShowAddModal(true); }}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
-              >
-                <Plus className="w-4 h-4" />
-                Ajouter Étudiant
-              </button>
+              <div className="relative">
+                <button
+                  onClick={() => setShowActionsMenu(prev => !prev)}
+                  className="flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition"
+                >
+                  <Plus className="w-4 h-4" />
+                  Actions
+                  <span className="text-xs opacity-70">▾</span>
+                </button>
+                {showActionsMenu && (
+                  <>
+                    <div className="fixed inset-0 z-10" onClick={() => setShowActionsMenu(false)} />
+                    <div className="absolute right-0 mt-2 w-52 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-200 dark:border-gray-700 z-20 overflow-hidden">
+                      <button
+                        onClick={() => { setShowActionsMenu(false); downloadTemplate(); }}
+                        className="flex items-center gap-3 w-full px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                      >
+                        <Download className="w-4 h-4 text-green-600" />
+                        Télécharger Template
+                      </button>
+                      <div className="border-t border-gray-100 dark:border-gray-700" />
+                      <button
+                        onClick={() => { setShowActionsMenu(false); setShowImportModal(true); }}
+                        className="flex items-center gap-3 w-full px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                      >
+                        <Upload className="w-4 h-4 text-purple-600" />
+                        Import Excel
+                      </button>
+                      <div className="border-t border-gray-100 dark:border-gray-700" />
+                      <button
+                        onClick={() => { setShowActionsMenu(false); setFormErrors({}); setShowAddModal(true); }}
+                        className="flex items-center gap-3 w-full px-4 py-3 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                      >
+                        <Plus className="w-4 h-4 text-blue-600" />
+                        Ajouter Étudiant
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
             </div>
           </div>
 
@@ -927,12 +1033,6 @@ const StudentDataTable = ({
                         title="Voir les détails"
                       >
                         <Eye className="w-4 h-4 inline" />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(student.id_etudiant)}
-                        className="text-red-600 dark:text-red-400 hover:text-red-900 dark:hover:text-red-300"
-                      >
-                        <Trash2 className="w-4 h-4 inline" />
                       </button>
                     </td>
                   </tr>
@@ -1234,6 +1334,163 @@ const StudentDataTable = ({
                     className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
                   >
                     Ajouter
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Export Excel Modal */}
+        {showExportModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-2xl">
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg flex items-center justify-center">
+                    <FileDown className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-bold text-gray-900 dark:text-white">Exporter les Étudiants</h2>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Personnalisez votre export Excel</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowExportModal(false)} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="px-6 py-5 space-y-5">
+                {/* Scope */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-2">Données à exporter</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { value: 'all', label: 'Tous', count: students.length, icon: '👥' },
+                      { value: 'filtered', label: 'Filtrés', count: filteredStudents.length, icon: '🔍' },
+                      { value: 'selected', label: 'Sélectionnés', count: selectedStudents.length, icon: '✅' },
+                    ].map(opt => (
+                      <button key={opt.value} onClick={() => setExportScope(opt.value)}
+                        disabled={opt.value === 'selected' && selectedStudents.length === 0}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-lg border-2 transition-all ${
+                          exportScope === opt.value ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20' : 'border-gray-200 dark:border-gray-600 hover:border-gray-300'
+                        } disabled:opacity-40 disabled:cursor-not-allowed`}>
+                        <span>{opt.icon}</span>
+                        <div className="text-left">
+                          <div className="text-xs font-semibold text-gray-700 dark:text-gray-300">{opt.label}</div>
+                          <div className={`text-sm font-bold ${exportScope === opt.value ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500'}`}>{opt.count}</div>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Columns */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">Colonnes <span className="normal-case font-normal text-gray-400">(glisser pour réordonner)</span></label>
+                    <div className="flex gap-2">
+                      <button onClick={() => setExportColumns(prev => prev.map(c => ({ ...c, enabled: true })))} className="text-xs text-emerald-600 hover:underline">Tout</button>
+                      <span className="text-gray-300">|</span>
+                      <button onClick={() => setExportColumns(prev => prev.map(c => ({ ...c, enabled: false })))} className="text-xs text-red-500 hover:underline">Aucun</button>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    {exportColumns.map((col, index) => (
+                      <div
+                        key={col.key}
+                        draggable
+                        onDragStart={e => e.dataTransfer.setData('text/plain', index)}
+                        onDragOver={e => { e.preventDefault(); setDragOverKey(col.key); }}
+                        onDragLeave={() => setDragOverKey(null)}
+                        onDrop={e => {
+                          e.preventDefault();
+                          const from = parseInt(e.dataTransfer.getData('text/plain'));
+                          const to = index;
+                          if (from === to) return;
+                          setExportColumns(prev => {
+                            const next = [...prev];
+                            const [moved] = next.splice(from, 1);
+                            next.splice(to, 0, moved);
+                            return next;
+                          });
+                          setDragOverKey(null);
+                        }}
+                        className={`flex items-center gap-2 px-3 py-2 rounded-lg border cursor-grab active:cursor-grabbing transition-all select-none ${
+                          col.enabled ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20' : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-700'
+                        } ${dragOverKey === col.key ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                      >
+                        <span className="text-gray-300 dark:text-gray-500 text-sm">⠿</span>
+                        <input type="checkbox" checked={col.enabled}
+                          onChange={e => setExportColumns(prev => prev.map(c => c.key === col.key ? { ...c, enabled: e.target.checked } : c))}
+                          className="w-3.5 h-3.5 rounded text-emerald-600 border-gray-300 focus:ring-emerald-500"
+                          onClick={e => e.stopPropagation()}
+                        />
+                        <span className="text-xs text-gray-700 dark:text-gray-300 flex-1">{columnLabels[col.key]}</span>
+                        <span className="text-xs text-gray-300 dark:text-gray-600">#{index + 1}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Sort */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-2">Trier par</label>
+                  <div className="space-y-2">
+                    {[
+                      { field: exportSortField, setField: setExportSortField, dir: exportSortDir, setDir: setExportSortDir, label: '1er critère' },
+                      { field: exportSortField2, setField: setExportSortField2, dir: exportSortDir2, setDir: setExportSortDir2, label: '2ème critère' },
+                    ].map((row, i) => (
+                      <div key={i} className="flex items-center gap-2">
+                        <span className="text-xs text-gray-400 w-20 shrink-0">{row.label}</span>
+                        <select value={row.field} onChange={e => row.setField(e.target.value)}
+                          className="flex-1 px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500">
+                          {Object.entries(columnLabels).map(([key, label]) => (
+                            <option key={key} value={key}>{label}</option>
+                          ))}
+                        </select>
+                        <div className="flex rounded-lg border border-gray-300 dark:border-gray-600 overflow-hidden shrink-0">
+                          <button onClick={() => row.setDir('asc')}
+                            className={`px-2.5 py-1.5 text-xs font-medium transition-colors ${row.dir === 'asc' ? 'bg-emerald-600 text-white' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600'}`}>
+                            ▲ ASC
+                          </button>
+                          <button onClick={() => row.setDir('desc')}
+                            className={`px-2.5 py-1.5 text-xs font-medium transition-colors ${row.dir === 'desc' ? 'bg-emerald-600 text-white' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600'}`}>
+                            ▼ DESC
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Filename */}
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-2">Nom du fichier</label>
+                  <div className="flex items-center gap-2">
+                    <input type="text" value={exportFilename} onChange={e => setExportFilename(e.target.value)}
+                      className="flex-1 px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500"
+                      placeholder="etudiants" />
+                    <span className="text-xs text-gray-400 whitespace-nowrap">_{new Date().toISOString().slice(0,10)}.xlsx</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="flex items-center justify-between px-5 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 rounded-b-2xl">
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {exportColumns.filter(c => c.enabled).length} col · {exportScope === 'all' ? students.length : exportScope === 'filtered' ? filteredStudents.length : selectedStudents.length} étudiant(s)
+                </p>
+                <div className="flex gap-2">
+                  <button onClick={() => setShowExportModal(false)}
+                    className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg text-sm hover:bg-gray-100 dark:hover:bg-gray-700">
+                    Annuler
+                  </button>
+                  <button onClick={handleExport} disabled={exportColumns.every(c => !c.enabled)}
+                    className="flex items-center gap-2 px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50 transition-colors">
+                    <FileDown className="w-4 h-4" />
+                    Exporter
                   </button>
                 </div>
               </div>
