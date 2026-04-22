@@ -329,7 +329,7 @@ class InscriptionPedagogiqueController extends Controller
             
             if (!$forceDelete) {
                 // Check if inscription has related records that would prevent deletion
-                $capitalisationsCount = $inscription->capitalisations()->count();
+                $capitalisationsCount = 0; // Capitalisations are not directly linked to pedagogical inscriptions
                 $stagesCount = $inscription->stages()->count();
                 $anonymatsCount = $inscription->anonymats()->count();
                 $repartitionsCount = $inscription->repartitions()->count();
@@ -494,8 +494,7 @@ class InscriptionPedagogiqueController extends Controller
                 }
 
                 // Check for related records
-                $hasRelatedData = $inscription->capitalisations()->exists() ||
-                                $inscription->stages()->exists() ||
+                $hasRelatedData = $inscription->stages()->exists() ||
                                 $inscription->anonymats()->exists() ||
                                 $inscription->resultatsElements()->exists() ||
                                 $inscription->resultatsModules()->exists();
