@@ -152,11 +152,25 @@ class OffreFormationController extends Controller
             'id_semestre' => ['required', 'exists:semestres,id_semestre'],
             'id_section' => ['required', 'exists:sections,id_section'],
             'id_annee' => ['required', 'exists:annees_universitaires,id_annee'],
-            'id_coordinateur' => ['required', 'exists:enseignants,id_enseignant'],
+            'id_coordinateur' => ['nullable', 'exists:enseignants,id_enseignant'],
+            'nom_affiche' => ['nullable', 'string', 'max:255'],
         ]);
 
+        // Check unique combo (module + semestre + section + annee)
+        $exists = OffreFormation::where('id_module', $validated['id_module'])
+            ->where('id_semestre', $validated['id_semestre'])
+            ->where('id_section', $validated['id_section'])
+            ->where('id_annee', $validated['id_annee'])
+            ->exists();
+
+        if ($exists) {
+            return redirect()->back()
+                ->withErrors(['id_module' => 'Cette offre (module + section + année) existe déjà.'])
+                ->withInput();
+        }
+
         $offreFormation = OffreFormation::create($validated);
-        return redirect()->route('academique.offres-formations.index');
+        return redirect()->back()->with('success', 'Offre de formation créée avec succès.');
     }
 
     /**
@@ -186,11 +200,26 @@ class OffreFormationController extends Controller
             'id_semestre' => ['required', 'exists:semestres,id_semestre'],
             'id_section' => ['required', 'exists:sections,id_section'],
             'id_annee' => ['required', 'exists:annees_universitaires,id_annee'],
-            'id_coordinateur' => ['required', 'exists:enseignants,id_enseignant'],
+            'id_coordinateur' => ['nullable', 'exists:enseignants,id_enseignant'],
+            'nom_affiche' => ['nullable', 'string', 'max:255'],
         ]);
 
+        // Check unique combo excluding current record
+        $exists = OffreFormation::where('id_module', $validated['id_module'])
+            ->where('id_semestre', $validated['id_semestre'])
+            ->where('id_section', $validated['id_section'])
+            ->where('id_annee', $validated['id_annee'])
+            ->where('id_offre', '!=', $id)
+            ->exists();
+
+        if ($exists) {
+            return redirect()->back()
+                ->withErrors(['id_module' => 'Cette offre (module + section + année) existe déjà.'])
+                ->withInput();
+        }
+
         $offreFormation->update($validated);
-        return redirect()->route('academique.offres-formations.index');
+        return redirect()->back()->with('success', 'Offre de formation mise à jour avec succès.');
     }
 
     /**

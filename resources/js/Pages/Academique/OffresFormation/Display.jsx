@@ -292,26 +292,33 @@ export default function Display({
     };
 
     // Filter available modules based on what's already used
+    // A module is unavailable only if it's already used with the SAME section AND same année
     const getAvailableModules = () => {
-        // Get all module IDs that are already used in existing offres
-        const usedModuleIds = offres.map(offre => offre.id_module);
-        
+        const selectedSection = offreForm.data.id_section;
+        const selectedAnnee = offreForm.data.id_annee;
+
+        // Build a set of (id_module + id_section + id_annee) combos already used
+        const usedCombos = new Set(
+            offres.map(o => `${o.id_module}_${o.id_section}_${o.id_annee}`)
+        );
+
         let availableModules = [];
-        
+
         if (modalType === 'add') {
-            // For adding new offre, exclude all used modules
-            availableModules = modules.filter(module => !usedModuleIds.includes(module.id_module));
+            availableModules = modules.filter(module => {
+                const combo = `${module.id_module}_${selectedSection}_${selectedAnnee}`;
+                return !usedCombos.has(combo);
+            });
         } else if (modalType === 'edit' && selectedOffre) {
-            // For editing, include the current module plus all unused modules
-            availableModules = modules.filter(module => 
-                module.id_module === selectedOffre.id_module || 
-                !usedModuleIds.includes(module.id_module)
-            );
+            availableModules = modules.filter(module => {
+                if (module.id_module === selectedOffre.id_module) return true;
+                const combo = `${module.id_module}_${selectedSection}_${selectedAnnee}`;
+                return !usedCombos.has(combo);
+            });
         } else {
             availableModules = modules;
         }
-        
-        // Sort modules by code_module
+
         return availableModules.sort((a, b) => {
             const codeA = a.code_module || '';
             const codeB = b.code_module || '';
