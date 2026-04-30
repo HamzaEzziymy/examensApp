@@ -5,7 +5,8 @@ import { Pencil, Trash2, Plus, Search, ChevronDown, ChevronUp, Filter, Download,
 import * as XLSX from 'xlsx';
 
 export default function Display({ 
-    offresFormation: paginatedOffres, 
+    offresFormation: paginatedOffres,
+    allOffresFormation = [],
     sections = [], 
     semestres = [], 
     modules = [], 
@@ -106,7 +107,7 @@ export default function Display({
             .filter(([k, v]) => v && k.startsWith('element_'))
             .map(([k]) => k);
 
-        const sorted = [...offres]
+        const sorted = [...allOffresFormation]
             .filter(o => exportSemestre === 'all' || String(o.id_semestre) === String(exportSemestre))
             .sort((a, b) => {
             const aVal = String(getExportValue(a, exportSortField)).toLowerCase();
@@ -808,9 +809,9 @@ export default function Display({
                                     onChange={e => setExportSemestre(e.target.value)}
                                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500"
                                 >
-                                    <option value="all">Tous les semestres ({offres.length})</option>
-                                    {semestres.filter(s => offres.some(o => o.id_semestre === s.id_semestre)).map(s => {
-                                        const count = offres.filter(o => o.id_semestre === s.id_semestre).length;
+                                    <option value="all">Tous les semestres ({allOffresFormation.length})</option>
+                                    {semestres.map(s => {
+                                        const count = allOffresFormation.filter(o => o.id_semestre === s.id_semestre).length;
                                         return (
                                             <option key={s.id_semestre} value={String(s.id_semestre)}>
                                                 {s.nom_semestre || s.code_semestre} ({count})
@@ -889,7 +890,7 @@ export default function Display({
 
                         <div className="flex items-center justify-between px-5 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 rounded-b-2xl">
                             <p className="text-xs text-gray-500 dark:text-gray-400">
-                                {Object.values(exportColumns).filter(Boolean).length} col · {exportSemestre === 'all' ? offres.length : offres.filter(o => String(o.id_semestre) === String(exportSemestre)).length} offre(s)
+                                {Object.values(exportColumns).filter(Boolean).length} col · {exportSemestre === 'all' ? allOffresFormation.length : allOffresFormation.filter(o => String(o.id_semestre) === String(exportSemestre)).length} offre(s)
                             </p>
                             <div className="flex gap-2">
                                 <button onClick={() => setShowExportModal(false)}

@@ -95,6 +95,15 @@ class OffreFormationController extends Controller
         // Paginate results
         $offresFormation = $offresQuery->paginate($perPage)->withQueryString();
 
+        // All offres (same filters, no pagination) — used for export
+        $allOffresFormation = $offresQuery->with([
+            'module.elements',
+            'semestre.niveau',
+            'section.filiere',
+            'anneeUniversitaire',
+            'coordinateur'
+        ])->get();
+
         // Get all sections (no filiere filter)
         $sections = Section::with('filiere')->get();
 
@@ -116,6 +125,7 @@ class OffreFormationController extends Controller
             'Academique/OffresFormation/Index',
             [
                 'offresFormation' => $offresFormation,
+                'allOffresFormation' => $allOffresFormation,
                 'sections' => $sections,
                 'semestres' => $Semestres,
                 'modules' => $modules,

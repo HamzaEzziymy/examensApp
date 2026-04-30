@@ -97,15 +97,14 @@ class DocumentController extends Controller
 
     public function destroyPv(Document $document)
     {
-        // Delete the document record
+        $filePath = public_path($document->url);
+
         $document->delete();
 
-        // Optionally, delete the associated file from storage
-        if (file_exists($document->url)) {
-            unlink($document->url);
+        if (File::exists($filePath)) {
+            File::delete($filePath);
         }
 
-        // Redirect or return a response
         return Redirect()->back();
     }
 
@@ -120,13 +119,16 @@ class DocumentController extends Controller
         $request->validate([
             'id_session' => 'required|exists:sessions_examen,id_session_examen',
             'id_filiere' => 'required|exists:filieres,id_filiere',
+            'id_section' => 'required|exists:sections,id_section',
             'nomDoc'     => 'nullable|string|max:255',
         ]);
 
-        $sessionId = $request->id_session;
-        $filiereId = $request->id_filiere;
-        $session   = \App\Models\SessionExamen::findOrFail($sessionId);
-        $filiere   = \App\Models\Filiere::findOrFail($filiereId);
+        $sessionId  = $request->id_session;
+        $filiereId  = $request->id_filiere;
+        $sectionId  = $request->id_section;
+        $session    = \App\Models\SessionExamen::findOrFail($sessionId);
+        $filiere    = \App\Models\Filiere::findOrFail($filiereId);
+        $section    = \App\Models\Section::findOrFail($sectionId);
 
         // Load all planned exams for this session + filière
         // Load both the direct salle (id_salle) and the pivot salles (exam_salle)
@@ -135,18 +137,17 @@ class DocumentController extends Controller
             'offreFormation.semestre.niveau',
             'offreFormation.section.filiere',
             'salle',
-            'salles', // many-to-many via exam_salle pivot
+            'salles',
         ])
         ->where('id_session_examen', $sessionId)
-        ->whereHas('offreFormation.section.filiere', fn($q) => $q->where('id_filiere', $filiereId))
+        ->whereHas('offreFormation', fn($q) => $q->where('id_section', $sectionId))
         ->where(function ($q) {
-            $q->whereNotNull('id_salle')
-              ->orWhereHas('salles');
+            $q->whereNotNull('id_salle')->orWhereHas('salles');
         })
         ->get();
 
         if ($examens->isEmpty()) {
-            return redirect()->back()->withErrors(['error' => 'Aucun examen planifié pour cette session et filière.']);
+            return redirect()->back()->withErrors(['error' => 'Aucun examen planifié pour cette session et section.']);
         }
 
         // Expand exams: if an exam has multiple salles (via pivot), create one entry per salle
@@ -215,17 +216,17 @@ class DocumentController extends Controller
             ->margins(12, 10, 14, 10)
             ->save($savePath);
 
-            $docName = ($request->nomDoc ?? 'PV') . ' — ' . $filiere->nom_filiere . ' — ' . $niveauNom . ' — ' . $session->nom_session;
+            $docName = ($request->nomDoc ?? 'PV') . ' — ' . $filiere->nom_filiere . ' — ' . $section->nom_section . ' — ' . $niveauNom . ' — ' . $session->nom_session;
 
             Document::create([
                 'nomDoc'     => $docName,
-                'descripDoc' => 'Filière: ' . $filiere->nom_filiere . ' | Niveau: ' . $niveauNom . ' | Session: ' . $session->nom_session . ' | ' . count($pvPages) . ' examen(s)',
+                'descripDoc' => 'Filière: ' . $filiere->nom_filiere . ' | Section: ' . $section->nom_section . ' | Niveau: ' . $niveauNom . ' | Session: ' . $session->nom_session . ' | ' . count($pvPages) . ' examen(s)',
                 'url'        => $filePath,
             ]);
 
             $created++;
         }
 
-        return redirect()->back()->with('success', "{$created} PV(s) générés — {$filiere->nom_filiere}.");
+        return redirect()->back()->with('success', "{$created} PV(s) générés — {$filiere->nom_filiere} / {$section->nom_section}.");
     }
 }
