@@ -85,6 +85,7 @@ Route::middleware('auth')->group(function () {
 Route::middleware('auth')->group(function () {
     Route::get('/documents/proces-v', [DocumentController::class, 'indexPv'])->name('proces-v');
     Route::post('/documents/proces-v', [DocumentController::class, 'storePv'])->name('proces-v.store');
+    Route::post('/documents/proces-v/generate', [DocumentController::class, 'generateFromPlanification'])->name('proces-v.generate');
     Route::post('/documents/{document}', [DocumentController::class, 'destroyPv'])->name('documents.destroy');
 });
 
@@ -170,6 +171,8 @@ Route::prefix('inscriptions')->name('inscriptions.')->group(function () {
         ->name('pedagogiques.bulk-store');
     Route::post('pedagogiques/bulk-destroy', [InscriptionPedagogiqueController::class, 'bulkDestroy'])
         ->name('pedagogiques.bulk-destroy');
+    Route::post('pedagogiques/bulk-update', [InscriptionPedagogiqueController::class, 'bulkUpdate'])
+        ->name('pedagogiques.bulk-update');
     
     // Bulk operations for capitalisations
     Route::post('capitalisations/bulk-destroy', [CapitalisationController::class, 'bulkDestroy'])

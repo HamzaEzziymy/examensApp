@@ -28,6 +28,7 @@ const InscriptionPedagogiqueDataTable = ({
   const [selectedModuleFilter, setSelectedModuleFilter] = useState(initialFilters.module || '');
   const [selectedNiveauFilter, setSelectedNiveauFilter] = useState(initialFilters.niveau || '');
   const [selectedSectionFilter, setSelectedSectionFilter] = useState(initialFilters.section || '');
+  const [selectedSemestreFilter, setSelectedSemestreFilter] = useState(initialFilters.semestre || '');
   const [itemsPerPage, setItemsPerPage] = useState(initialFilters.per_page || 25);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingInscription, setEditingInscription] = useState(null);
@@ -66,6 +67,13 @@ const InscriptionPedagogiqueDataTable = ({
   const [importType, setImportType] = useState('Normal');
   const [importCredits, setImportCredits] = useState(0);
 
+  // Bulk update state
+  const [showBulkUpdateModal, setShowBulkUpdateModal] = useState(false);
+  const [bulkUpdateFile, setBulkUpdateFile] = useState(null);
+  const [bulkUpdatePreview, setBulkUpdatePreview] = useState([]);
+  const [bulkUpdateErrors, setBulkUpdateErrors] = useState([]);
+  const [bulkUpdateFields, setBulkUpdateFields] = useState({ type_inscription: '', credits_acquis: '' });
+
   // Backend filtering function with debounce
   const applyFilters = useCallback((params = {}) => {
     setIsFiltering(true);
@@ -75,6 +83,7 @@ const InscriptionPedagogiqueDataTable = ({
       module: params.module !== undefined ? params.module : selectedModuleFilter,
       niveau: params.niveau !== undefined ? params.niveau : selectedNiveauFilter,
       section: params.section !== undefined ? params.section : selectedSectionFilter,
+      semestre: params.semestre !== undefined ? params.semestre : selectedSemestreFilter,
       per_page: params.per_page !== undefined ? params.per_page : itemsPerPage,
     };
 
@@ -84,7 +93,7 @@ const InscriptionPedagogiqueDataTable = ({
       only: ['inscriptions_pedagogiques', 'filters', 'totalCount'],
       onFinish: () => setIsFiltering(false),
     });
-  }, [searchTerm, selectedTypeFilter, selectedModuleFilter, selectedNiveauFilter, selectedSectionFilter, itemsPerPage]);
+  }, [searchTerm, selectedTypeFilter, selectedModuleFilter, selectedNiveauFilter, selectedSectionFilter, selectedSemestreFilter, itemsPerPage]);
 
   // Debounced search
   const debouncedSearch = useMemo(
@@ -112,11 +121,17 @@ const InscriptionPedagogiqueDataTable = ({
         break;
       case 'niveau':
         setSelectedNiveauFilter(value);
-        applyFilters({ niveau: value });
+        setSelectedSemestreFilter('');
+        setSelectedModuleFilter('');
+        applyFilters({ niveau: value, semestre: '', module: '' });
         break;
       case 'section':
         setSelectedSectionFilter(value);
         applyFilters({ section: value });
+        break;
+      case 'semestre':
+        setSelectedSemestreFilter(value);
+        applyFilters({ semestre: value });
         break;
     }
   };
@@ -146,6 +161,7 @@ const InscriptionPedagogiqueDataTable = ({
     setSelectedModuleFilter('');
     setSelectedNiveauFilter('');
     setSelectedSectionFilter('');
+    setSelectedSemestreFilter('');
     setItemsPerPage(25);
     setIsFiltering(true);
     router.get(route('inscriptions.pedagogiques.index'), { per_page: 25 }, {
@@ -428,115 +444,80 @@ const InscriptionPedagogiqueDataTable = ({
   const handleFileSelect = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-
     setImportFile(file);
     const reader = new FileReader();
-
     reader.onload = (event) => {
       try {
         const workbook = XLSX.read(event.target.result, { type: 'binary' });
-        const sheetName = workbook.SheetNames[0];
-        const sheet = workbook.Sheets[sheetName];
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
         const data = XLSX.utils.sheet_to_json(sheet);
-
-        // Validate and format data
         const errors = [];
         const preview = data.map((row, index) => {
           const rowErrors = [];
           const rowNumber = index + 2;
-          
-          // Check for required CNE
-          if (!row.cne) {
-            rowErrors.push('CNE requis');
-          }
-          
-          // Check for required id_offre
-          if (!row.id_offre) {
-            rowErrors.push('ID Offre requis');
-          }
+          const cne = String(row.cne || row.CNE || '').trim();
+          const nom_module = String(row.nom_module || row['Nom Module'] || row['nom module'] || '').trim();
+          const type_inscription = String(row.type_inscription || row['Type Inscription'] || '').trim() || 'Normal';
+          const credits_acquis = row.credits_acquis !== undefined && row.credits_acquis !== '' ? parseInt(row.credits_acquis) : 0;
 
-          // Find student by CNE
+          if (!cne) rowErrors.push('CNE requis');
+          if (!nom_module) rowErrors.push('Nom module requis');
+
+          // Find student
           let student = null;
           let adminInscription = null;
-          if (row.cne) {
-            student = etudiants.find(e => e.cne === String(row.cne).trim());
+          if (cne) {
+            student = etudiants.find(e => e.cne === cne);
             if (!student) {
-              rowErrors.push(`Étudiant avec CNE "${row.cne}" non trouvé`);
+              rowErrors.push(`Étudiant CNE "${cne}" non trouvé`);
             } else {
-              // Find admin inscription for this student
               adminInscription = inscriptions_administratives.find(i => i.id_etudiant === student.id_etudiant);
-              if (!adminInscription) {
-                rowErrors.push(`Inscription administrative non trouvée pour CNE "${row.cne}"`);
+              if (!adminInscription) rowErrors.push(`Inscription administrative non trouvée pour CNE "${cne}"`);
+            }
+          }
+
+          // Resolve offre: find offre matching nom_module AND student's section
+          let offre = null;
+          if (nom_module && adminInscription) {
+            const studentSectionId = adminInscription.id_section;
+            offre = offres_formation.find(o =>
+              (o.module?.nom_module?.toLowerCase() === nom_module.toLowerCase() ||
+               o.module?.code_module?.toLowerCase() === nom_module.toLowerCase()) &&
+              String(o.id_section) === String(studentSectionId)
+            );
+            if (!offre) {
+              // Try without section constraint as fallback
+              offre = offres_formation.find(o =>
+                o.module?.nom_module?.toLowerCase() === nom_module.toLowerCase() ||
+                o.module?.code_module?.toLowerCase() === nom_module.toLowerCase()
+              );
+              if (offre) {
+                rowErrors.push(`Module "${nom_module}" trouvé mais pas dans la section de l'étudiant`);
+              } else {
+                rowErrors.push(`Module "${nom_module}" non trouvé dans les offres disponibles`);
               }
             }
           }
 
-          // Validate id_offre exists
-          let offre = null;
-          if (row.id_offre) {
-            offre = offres_formation.find(o => o.id_offre == row.id_offre);
-            if (!offre) {
-              rowErrors.push(`Offre de formation avec ID "${row.id_offre}" non trouvée`);
-            }
-          }
-
-          // Validate type_inscription if provided
           const validTypes = ['Normal', 'Credit', 'Anticipe', 'Capitalisation'];
-          if (row.type_inscription && !validTypes.includes(row.type_inscription)) {
-            rowErrors.push(`Type d'inscription invalide: "${row.type_inscription}"`);
-          }
+          if (!validTypes.includes(type_inscription)) rowErrors.push(`Type "${type_inscription}" invalide`);
+          if (isNaN(credits_acquis) || credits_acquis < 0 || credits_acquis > 30) rowErrors.push('Crédits invalides (0-30)');
 
-          // Validate credits_acquis if provided
-          if (row.credits_acquis !== undefined && row.credits_acquis !== '') {
-            const credits = parseInt(row.credits_acquis);
-            if (isNaN(credits) || credits < 0 || credits > 30) {
-              rowErrors.push('Crédits acquis invalides (0-30)');
-            }
-          }
-
-          if (rowErrors.length > 0) {
-            errors.push({ row: rowNumber, errors: rowErrors });
-          }
+          if (rowErrors.length > 0) errors.push({ row: rowNumber, errors: rowErrors });
 
           return {
-            cne: row.cne ? String(row.cne).trim() : '',
-            id_offre: row.id_offre,
-            type_inscription: row.type_inscription || 'Normal',
-            credits_acquis: row.credits_acquis || 0,
-            adminInscription: adminInscription,
-            student: student,
-            offre: offre,
-            hasError: rowErrors.length > 0
+            cne, nom_module, type_inscription, credits_acquis,
+            student, adminInscription, offre,
+            hasError: rowErrors.length > 0,
           };
         });
 
         setImportPreview(preview);
         setImportErrors(errors);
-
-        if (errors.length > 0) {
-          Swal.fire({
-            icon: 'warning',
-            title: 'Erreurs détectées',
-            text: `${errors.length} erreur(s) sur ${data.length} lignes. Corrigez les erreurs avant d'importer.`
-          });
-        } else {
-          Swal.fire({
-            icon: 'success',
-            title: 'Fichier valide',
-            text: `${data.length} inscription(s) prête(s) à importer.`,
-            showConfirmButton: false,
-            timer: 1500
-          });
-        }
-      } catch (error) {
-        Swal.fire({
-          icon: 'error',
-          title: 'Erreur',
-          text: 'Erreur lors de la lecture du fichier Excel'
-        });
+      } catch {
+        Swal.fire({ icon: 'error', title: 'Erreur', text: 'Erreur lors de la lecture du fichier Excel' });
       }
     };
-
     reader.readAsBinaryString(file);
   };
 
@@ -567,7 +548,7 @@ const InscriptionPedagogiqueDataTable = ({
 
     const inscriptionsToImport = validInscriptions.map(item => ({
       id_inscription_admin: parseInt(item.adminInscription.id_inscription_admin),
-      id_offre: parseInt(item.id_offre),
+      id_offre: parseInt(item.offre.id_offre),
       type_inscription: item.type_inscription || importType || 'Normal',
       credits_acquis: parseInt(item.credits_acquis) || parseInt(importCredits) || 0
     }));
@@ -702,54 +683,26 @@ const InscriptionPedagogiqueDataTable = ({
     });
   };
 
-  // Download Excel template with all available offres
+  // Download Excel template with new format (cne + nom_module)
   const downloadTemplate = () => {
-    // Create template with example data
     const template = [
-      {
-        'cne': 'G123456789',
-        'id_offre': offres_formation[0]?.id_offre || '1',
-        'type_inscription': 'Normal',
-        'credits_acquis': '6'
-      },
-      {
-        'cne': 'G987654321',
-        'id_offre': offres_formation[1]?.id_offre || '2',
-        'type_inscription': 'Credit',
-        'credits_acquis': '3'
-      }
+      { cne: 'R123456789', nom_module: 'Anatomie', type_inscription: 'Normal', credits_acquis: 6 },
+      { cne: 'G987654321', nom_module: 'Physiologie', type_inscription: 'Normal', credits_acquis: 6 },
     ];
-
     const ws = XLSX.utils.json_to_sheet(template);
+    ws['!cols'] = [{ wch: 15 }, { wch: 30 }, { wch: 20 }, { wch: 15 }];
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'Template');
-    
-    // Add instructions
-    const instruction = [
-      ['Instructions:'],
-      ['1. "cne" est requis pour identifier l\'étudiant'],
-      ['2. "id_offre" est requis - utilisez un ID de la feuille "Offres_Formation"'],
-      ['3. "type_inscription" peut être: Normal, Credit, Anticipe ou Capitalisation'],
-      ['4. "credits_acquis" est optionnel (défaut: 0)'],
-      [''],
-      ['Note: Consultez la feuille "Offres_Formation" pour les IDs disponibles']
+    const instructions = [
+      ['COLONNES REQUISES:'],
+      ['cne', 'CNE de l\'étudiant (obligatoire)'],
+      ['nom_module', 'Nom du module (obligatoire) — l\'offre sera trouvée automatiquement selon la section de l\'étudiant'],
+      ['type_inscription', 'Normal | Credit | Anticipe | Capitalisation (optionnel, défaut: Normal)'],
+      ['credits_acquis', 'Nombre entier 0-30 (optionnel, défaut: 0)'],
     ];
-    const ws2 = XLSX.utils.aoa_to_sheet(instruction);
-    XLSX.utils.book_append_sheet(wb, ws2, 'Instructions');
-    
-    // Add offres formation sheet with all available offres
-    const offresData = offres_formation.map(offre => ({
-      'id_offre': offre.id_offre,
-      'module': offre.module?.nom_module || 'N/A',
-      'code_module': offre.module?.code_module || 'N/A',
-      'niveau': offre.semestre?.niveau?.nom_niveau || 'N/A',
-      'semestre': offre.semestre?.nom_semestre || 'N/A',
-      'filiere': offre.section?.filiere?.nom_filiere || 'N/A',
-      'section': offre.section?.nom_section || 'N/A'
-    }));
-    const ws3 = XLSX.utils.json_to_sheet(offresData);
-    XLSX.utils.book_append_sheet(wb, ws3, 'Offres_Formation');
-    
+    const wsInstr = XLSX.utils.aoa_to_sheet(instructions);
+    wsInstr['!cols'] = [{ wch: 20 }, { wch: 70 }];
+    XLSX.utils.book_append_sheet(wb, wsInstr, 'Instructions');
     XLSX.writeFile(wb, 'template_inscriptions_pedagogiques.xlsx');
   };
 
@@ -780,6 +733,116 @@ const InscriptionPedagogiqueDataTable = ({
     return { total: totalStats, normal, credit, anticipe, capitalisation, totalCredits };
   }, [inscriptionsData, totalCount, total]);
 
+  const downloadBulkUpdateTemplate = () => {
+    const template = [{ cne: 'R123456789', nom_module: 'Anatomie', type_inscription: 'Normal', credits_acquis: 6 }];
+    const ws = XLSX.utils.json_to_sheet(template);
+    ws['!cols'] = [{ wch: 15 }, { wch: 30 }, { wch: 20 }, { wch: 15 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Modification');
+    const instructions = [
+      ['COLONNES REQUISES:'],
+      ['cne', 'CNE de l\'étudiant (obligatoire)'],
+      ['nom_module', 'Nom du module (obligatoire)'],
+      ['type_inscription', 'Normal | Credit | Anticipe | Capitalisation (optionnel)'],
+      ['credits_acquis', 'Nombre entier 0-30 (optionnel)'],
+      [],
+      ['Laissez type_inscription ou credits_acquis vide pour ne pas modifier ce champ.'],
+    ];
+    const wsInstr = XLSX.utils.aoa_to_sheet(instructions);
+    wsInstr['!cols'] = [{ wch: 20 }, { wch: 60 }];
+    XLSX.utils.book_append_sheet(wb, wsInstr, 'Instructions');
+    XLSX.writeFile(wb, 'template_modification_inscriptions.xlsx');
+  };
+
+  const handleBulkUpdateFileSelect = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setBulkUpdateFile(file);
+    setBulkUpdateErrors([]);
+    setBulkUpdatePreview([]);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const wb = XLSX.read(ev.target.result, { type: 'binary' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const data = XLSX.utils.sheet_to_json(ws);
+        const errors = [];
+        const preview = data.map((row, i) => {
+          const rowNum = i + 2;
+          const cne = String(row.cne || row.CNE || '').trim();
+          const nom_module = String(row.nom_module || row['Nom Module'] || row['nom module'] || '').trim();
+          const type_inscription = String(row.type_inscription || row['Type Inscription'] || '').trim() || null;
+          const credits_acquis = row.credits_acquis !== undefined && row.credits_acquis !== '' ? parseInt(row.credits_acquis) : null;
+          const rowErrors = [];
+          if (!cne) rowErrors.push('CNE manquant');
+          if (!nom_module) rowErrors.push('Nom module manquant');
+          if (type_inscription && !['Normal','Credit','Anticipe','Capitalisation'].includes(type_inscription))
+            rowErrors.push(`Type '${type_inscription}' invalide`);
+          if (credits_acquis !== null && (isNaN(credits_acquis) || credits_acquis < 0 || credits_acquis > 30))
+            rowErrors.push('Crédits invalide (0-30)');
+          if (!type_inscription && credits_acquis === null) rowErrors.push('Au moins un champ à modifier requis');
+          // Try to find the module in the available modules list
+          const foundModule = modules.find(m =>
+            m.nom_module?.toLowerCase() === nom_module.toLowerCase() ||
+            m.code_module?.toLowerCase() === nom_module.toLowerCase()
+          );
+          if (rowErrors.length) errors.push({ row: rowNum, cne, errors: rowErrors });
+          return {
+            rowNum, cne, nom_module,
+            resolved_nom_module: foundModule ? foundModule.nom_module : null,
+            moduleNotFound: !foundModule && nom_module,
+            type_inscription, credits_acquis,
+            hasError: rowErrors.length > 0,
+          };
+        });
+        setBulkUpdatePreview(preview);
+        setBulkUpdateErrors(errors);
+      } catch {
+        setBulkUpdateErrors([{ row: 0, cne: '', errors: ['Erreur lecture fichier Excel'] }]);
+      }
+    };
+    reader.readAsBinaryString(file);
+  };
+
+  const handleBulkUpdateModuleOverride = (rowNum, nom_module) => {
+    setBulkUpdatePreview(prev => prev.map(r => {
+      if (r.rowNum !== rowNum) return r;
+      const foundModule = modules.find(m =>
+        m.nom_module?.toLowerCase() === nom_module.toLowerCase() ||
+        m.code_module?.toLowerCase() === nom_module.toLowerCase()
+      );
+      return {
+        ...r,
+        nom_module,
+        resolved_nom_module: foundModule ? foundModule.nom_module : null,
+        moduleNotFound: !foundModule && nom_module,
+      };
+    }));
+  };
+
+  const handleBulkUpdate = () => {
+    const validRows = bulkUpdatePreview.filter(r => !r.hasError);
+    if (!validRows.length) return;
+    router.post(route('inscriptions.pedagogiques.bulk-update'), {
+      rows: validRows.map(({ rowNum, hasError, resolved_nom_module, moduleNotFound, ...rest }) => ({
+        ...rest,
+        nom_module: resolved_nom_module || rest.nom_module,
+      })),
+    }, {
+      onSuccess: () => {
+        setShowBulkUpdateModal(false);
+        setBulkUpdateFile(null);
+        setBulkUpdatePreview([]);
+        setBulkUpdateErrors([]);
+        Swal.fire({ icon: 'success', title: 'Mise à jour réussie', showConfirmButton: false, timer: 1500 });
+        router.reload({ only: ['inscriptions_pedagogiques'] });
+      },
+      onError: (errors) => {
+        Swal.fire({ icon: 'error', title: 'Erreur', text: errors.error || 'Erreur lors de la mise à jour' });
+      },
+    });
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
       <div className="p-4">
@@ -795,18 +858,18 @@ const InscriptionPedagogiqueDataTable = ({
             </div>
             <div className="flex items-center gap-3 flex-wrap">
               <button
-                onClick={downloadTemplate}
-                className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-              >
-                <Download className="w-4 h-4" />
-                <span className="hidden sm:inline">Template</span>
-              </button>
-              <button
                 onClick={() => setShowImportModal(true)}
                 className="flex items-center gap-2 px-4 py-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
               >
                 <Upload className="w-4 h-4" />
                 <span className="hidden sm:inline">Importer</span>
+              </button>
+              <button
+                onClick={() => setShowBulkUpdateModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-lg transition-colors"
+              >
+                <Edit className="w-4 h-4" />
+                <span className="hidden sm:inline">Modifier en masse</span>
               </button>
               <button
                 onClick={() => setShowAddModal(true)}
@@ -859,9 +922,9 @@ const InscriptionPedagogiqueDataTable = ({
               >
                 <Filter className="w-4 h-4" />
                 <span>Plus de filtres</span>
-                {(selectedModuleFilter || selectedNiveauFilter || selectedSectionFilter) && (
+                {(selectedModuleFilter || selectedNiveauFilter || selectedSectionFilter || selectedSemestreFilter) && (
                   <span className="bg-blue-500 text-white text-xs px-1.5 py-0.5 rounded-full">
-                    {[selectedModuleFilter, selectedNiveauFilter, selectedSectionFilter].filter(Boolean).length}
+                    {[selectedModuleFilter, selectedNiveauFilter, selectedSectionFilter, selectedSemestreFilter].filter(Boolean).length}
                   </span>
                 )}
               </button>
@@ -870,51 +933,129 @@ const InscriptionPedagogiqueDataTable = ({
 
           {/* Extended Filters */}
           {showFilters && (
-            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Module</label>
-                <select
-                  value={selectedModuleFilter}
-                  onChange={(e) => handleFilterChange('module', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Tous les modules</option>
-                  {modules.map(module => (
-                    <option key={module.id_module} value={module.id_module}>
-                      {module.nom_module} ({module.code_module})
-                    </option>
-                  ))}
-                </select>
+            <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+
+                {/* 1. Section */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    1. Section
+                  </label>
+                  <select
+                    value={selectedSectionFilter}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSelectedSectionFilter(val);
+                      setSelectedNiveauFilter('');
+                      setSelectedModuleFilter('');
+                      setSelectedSemestreFilter('');
+                      applyFilters({ section: val, niveau: '', module: '', semestre: '' });
+                    }}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Toutes les sections</option>
+                    {sections.map(s => (
+                      <option key={s.id_section} value={s.id_section}>
+                        {s.filiere?.nom_filiere} ({s.nom_section})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* 2. Niveau — filtered by section via offres */}
+                <div>
+                  <label className={`block text-sm font-medium mb-2 ${selectedSectionFilter ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-gray-500'}`}>
+                    2. Niveau
+                  </label>
+                  <select
+                    value={selectedNiveauFilter}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSelectedNiveauFilter(val);
+                      setSelectedModuleFilter('');
+                      setSelectedSemestreFilter('');
+                      applyFilters({ niveau: val, module: '', semestre: '' });
+                    }}
+                    disabled={!selectedSectionFilter}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <option value="">{selectedSectionFilter ? 'Tous les niveaux' : '— Choisir section —'}</option>
+                    {[...new Map(
+                      offres_formation
+                        .filter(o => !selectedSectionFilter || String(o.id_section) === String(selectedSectionFilter))
+                        .filter(o => o.semestre?.niveau)
+                        .map(o => [o.semestre.niveau.id_niveau, o.semestre.niveau])
+                    ).values()]
+                      .sort((a, b) => (a.nom_niveau || '').localeCompare(b.nom_niveau || ''))
+                      .map(n => (
+                        <option key={n.id_niveau} value={n.id_niveau}>{n.nom_niveau}</option>
+                      ))
+                    }
+                  </select>
+                </div>
+
+                {/* 3. Semestre — filtered by section + niveau via offres */}
+                <div>
+                  <label className={`block text-sm font-medium mb-2 ${selectedNiveauFilter ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-gray-500'}`}>
+                    3. Semestre
+                  </label>
+                  <select
+                    value={selectedSemestreFilter}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setSelectedSemestreFilter(val);
+                      setSelectedModuleFilter('');
+                      applyFilters({ semestre: val, module: '' });
+                    }}
+                    disabled={!selectedNiveauFilter}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <option value="">{selectedNiveauFilter ? 'Tous les semestres' : '— Choisir niveau —'}</option>
+                    {[...new Map(
+                      offres_formation
+                        .filter(o => !selectedSectionFilter || String(o.id_section) === String(selectedSectionFilter))
+                        .filter(o => !selectedNiveauFilter || String(o.semestre?.id_niveau) === String(selectedNiveauFilter))
+                        .filter(o => o.semestre)
+                        .map(o => [o.semestre.id_semestre, o.semestre])
+                    ).values()]
+                      .sort((a, b) => (a.nom_semestre || '').localeCompare(b.nom_semestre || ''))
+                      .map(s => (
+                        <option key={s.id_semestre} value={s.id_semestre}>{s.nom_semestre}</option>
+                      ))
+                    }
+                  </select>
+                </div>
+
+                {/* 4. Module — filtered by section + niveau + semestre via offres */}
+                <div>
+                  <label className={`block text-sm font-medium mb-2 ${selectedSemestreFilter ? 'text-gray-700 dark:text-gray-300' : 'text-gray-400 dark:text-gray-500'}`}>
+                    4. Module
+                  </label>
+                  <select
+                    value={selectedModuleFilter}
+                    onChange={(e) => handleFilterChange('module', e.target.value)}
+                    disabled={!selectedSemestreFilter}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    <option value="">{selectedSemestreFilter ? 'Tous les modules' : '— Choisir semestre —'}</option>
+                    {[...new Map(
+                      offres_formation
+                        .filter(o => !selectedSectionFilter || String(o.id_section) === String(selectedSectionFilter))
+                        .filter(o => !selectedNiveauFilter || String(o.semestre?.id_niveau) === String(selectedNiveauFilter))
+                        .filter(o => !selectedSemestreFilter || String(o.id_semestre) === String(selectedSemestreFilter))
+                        .filter(o => o.module)
+                        .map(o => [o.module.id_module, o.module])
+                    ).values()]
+                      .sort((a, b) => (a.nom_module || '').localeCompare(b.nom_module || ''))
+                      .map(m => (
+                        <option key={m.id_module} value={m.id_module}>{m.nom_module}</option>
+                      ))
+                    }
+                  </select>
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Niveau</label>
-                <select
-                  value={selectedNiveauFilter}
-                  onChange={(e) => handleFilterChange('niveau', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Tous les niveaux</option>
-                  {niveaux.map(niveau => (
-                    <option key={niveau.id_niveau} value={niveau.id_niveau}>{niveau.nom_niveau}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Section</label>
-                <select
-                  value={selectedSectionFilter}
-                  onChange={(e) => handleFilterChange('section', e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500"
-                >
-                  <option value="">Toutes les sections</option>
-                  {sections.map(section => (
-                    <option key={section.id_section} value={section.id_section}>
-                      {section.filiere?.nom_filiere} ({section.nom_section})
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div className="sm:col-span-2 lg:col-span-3 flex justify-end">
+
+              <div className="mt-3 flex justify-end">
                 <button
                   onClick={clearFilters}
                   className="px-4 py-2 text-sm text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white flex items-center gap-2"
@@ -1552,121 +1693,81 @@ const InscriptionPedagogiqueDataTable = ({
 
         {/* Import Modal */}
         {showImportModal && (
-          <div className="fixed inset-0 bg-black bg-opacity-50 dark:bg-opacity-70 flex items-center justify-center z-50 p-4">
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-5xl max-h-[90vh] overflow-y-auto">
-              <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between sticky top-0 bg-white dark:bg-gray-800">
-                <h2 className="text-xl font-bold text-gray-900 dark:text-white">Import Excel - Inscriptions Pédagogiques</h2>
-                <button onClick={() => { setShowImportModal(false); setImportFile(null); setImportPreview([]); setImportErrors([]); }} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300">
-                  <X className="w-6 h-6" />
+          <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col">
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-blue-100 dark:bg-blue-900/30 rounded-lg flex items-center justify-center">
+                    <Upload className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-bold text-gray-900 dark:text-white">Import Excel - Inscriptions Pédagogiques</h2>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Importez un fichier Excel (CNE + Nom Module) pour créer des inscriptions</p>
+                  </div>
+                </div>
+                <button onClick={() => { setShowImportModal(false); setImportFile(null); setImportPreview([]); setImportErrors([]); }}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                  <X className="w-4 h-4" />
                 </button>
               </div>
-              <div className="p-6">
-                <div className="mb-6">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Sélectionner un fichier Excel
-                  </label>
-                  <input
-                    type="file"
-                    accept=".xlsx,.xls"
-                    onChange={handleFileSelect}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg"
-                  />
-                  <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                    Colonnes requises: <strong>cne</strong>, <strong>id_offre</strong><br />
-                    Colonnes optionnelles: type_inscription, credits_acquis<br />
-                    <span className="text-blue-600 dark:text-blue-400">Téléchargez le template pour voir la liste des offres disponibles</span>
-                  </p>
+
+              {/* Body */}
+              <div className="px-6 py-5 overflow-y-auto space-y-5 flex-1">
+                {/* File + template */}
+                <div className="flex items-center justify-between p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                  <div>
+                    <p className="text-sm font-medium text-blue-800 dark:text-blue-300">Colonnes requises: <code className="bg-blue-100 dark:bg-blue-900/40 px-1 rounded">cne</code>, <code className="bg-blue-100 dark:bg-blue-900/40 px-1 rounded">nom_module</code></p>
+                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">Optionnelles: <code className="bg-blue-100 dark:bg-blue-900/40 px-1 rounded">type_inscription</code>, <code className="bg-blue-100 dark:bg-blue-900/40 px-1 rounded">credits_acquis</code> — L'offre est trouvée automatiquement selon la section de l'étudiant</p>
+                  </div>
+                  <button onClick={downloadTemplate}
+                    className="flex items-center gap-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm whitespace-nowrap ml-4">
+                    <Download className="w-4 h-4" />
+                    Template
+                  </button>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Type d'inscription par défaut
-                    </label>
-                    <select
-                      value={importType}
-                      onChange={(e) => setImportType(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
-                    >
-                      <option value="Normal">Normal</option>
-                      <option value="Credit">Crédit</option>
-                      <option value="Anticipe">Anticipé</option>
-                      <option value="Capitalisation">Capitalisation</option>
-                    </select>
-                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Utilisé si non spécifié dans le fichier</p>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                      Crédits Acquis par défaut
-                    </label>
-                    <input
-                      type="number"
-                      value={importCredits}
-                      onChange={(e) => setImportCredits(parseInt(e.target.value) || 0)}
-                      min="0"
-                      max="30"
-                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-lg focus:ring-2 focus:ring-blue-500 dark:focus:ring-blue-400"
-                    />
-                    <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">Utilisé si non spécifié dans le fichier</p>
-                  </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-2">Fichier Excel</label>
+                  <input type="file" accept=".xlsx,.xls" onChange={handleFileSelect}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" />
                 </div>
-
                 {importErrors.length > 0 && (
-                  <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg max-h-40 overflow-y-auto">
-                    <h3 className="text-red-800 dark:text-red-400 font-medium mb-2">Erreurs détectées ({importErrors.length}):</h3>
+                  <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg max-h-36 overflow-y-auto">
+                    <p className="text-sm font-medium text-red-800 dark:text-red-300 mb-2">Erreurs ({importErrors.length}) :</p>
                     {importErrors.slice(0, 10).map((error, i) => (
-                      <div key={i} className="text-sm text-red-700 dark:text-red-300">
+                      <div key={i} className="text-xs text-red-700 dark:text-red-400">
                         Ligne {error.row}: {error.errors.join(', ')}
                       </div>
                     ))}
                     {importErrors.length > 10 && (
-                      <p className="text-sm text-red-500 mt-2">... et {importErrors.length - 10} autres erreurs</p>
+                      <p className="text-xs text-red-500 mt-1">... et {importErrors.length - 10} autres erreurs</p>
                     )}
                   </div>
                 )}
 
                 {importPreview.length > 0 && (
-                  <div className="mb-6">
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="font-medium text-gray-900 dark:text-white">
-                        Aperçu ({importPreview.length} lignes)
-                      </h3>
-                      <div className="flex items-center gap-2">
-                        <span className={`px-2 py-1 text-xs rounded-full ${importErrors.length === 0 ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300'}`}>
-                          {importPreview.filter(p => !p.hasError).length} valide(s)
-                        </span>
-                        <span className="px-2 py-1 text-xs rounded-full bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">
-                          {importPreview.filter(p => p.hasError).length} invalide(s)
-                        </span>
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+                        Aperçu — {importPreview.filter(p => !p.hasError).length} valide(s) / {importPreview.length} total
+                      </p>
+                      <div className="flex gap-2">
+                        <button onClick={() => exportImportPreview('all')}
+                          className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600">
+                          <Download className="w-3 h-3" /> Tout
+                        </button>
+                        <button onClick={() => exportImportPreview('valid')}
+                          disabled={importPreview.filter(p => !p.hasError).length === 0}
+                          className="flex items-center gap-1 px-2 py-1 text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-lg hover:bg-green-200 disabled:opacity-50">
+                          <Download className="w-3 h-3" /> Valides
+                        </button>
+                        <button onClick={() => exportImportPreview('invalid')}
+                          disabled={importPreview.filter(p => p.hasError).length === 0}
+                          className="flex items-center gap-1 px-2 py-1 text-xs bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-lg hover:bg-red-200 disabled:opacity-50">
+                          <Download className="w-3 h-3" /> Invalides
+                        </button>
                       </div>
-                    </div>
-                    
-                    {/* Export buttons */}
-                    <div className="flex gap-2 mb-3">
-                      <button
-                        onClick={() => exportImportPreview('all')}
-                        className="flex items-center gap-1 px-3 py-1.5 text-sm bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600"
-                      >
-                        <Download className="w-4 h-4" />
-                        Exporter tout ({importPreview.length})
-                      </button>
-                      <button
-                        onClick={() => exportImportPreview('valid')}
-                        disabled={importPreview.filter(p => !p.hasError).length === 0}
-                        className="flex items-center gap-1 px-3 py-1.5 text-sm bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-lg hover:bg-green-200 dark:hover:bg-green-900/50 disabled:opacity-50"
-                      >
-                        <Download className="w-4 h-4" />
-                        Exporter valides ({importPreview.filter(p => !p.hasError).length})
-                      </button>
-                      <button
-                        onClick={() => exportImportPreview('invalid')}
-                        disabled={importPreview.filter(p => p.hasError).length === 0}
-                        className="flex items-center gap-1 px-3 py-1.5 text-sm bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300 rounded-lg hover:bg-red-200 dark:hover:bg-red-900/50 disabled:opacity-50"
-                      >
-                        <Download className="w-4 h-4" />
-                        Exporter invalides ({importPreview.filter(p => p.hasError).length})
-                      </button>
                     </div>
 
                     <div className="border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden">
@@ -1677,8 +1778,8 @@ const InscriptionPedagogiqueDataTable = ({
                               <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">#</th>
                               <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">CNE</th>
                               <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Étudiant</th>
-                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">ID Offre</th>
                               <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Module</th>
+                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Offre trouvée</th>
                               <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Type</th>
                               <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Crédits</th>
                               <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Statut</th>
@@ -1698,24 +1799,20 @@ const InscriptionPedagogiqueDataTable = ({
                                     <span className="text-red-500">Non trouvé</span>
                                   }
                                 </td>
-                                <td className="px-3 py-2 text-gray-900 dark:text-gray-100">{item.id_offre || '-'}</td>
+                                <td className="px-3 py-2 text-gray-900 dark:text-gray-100 text-xs">{item.nom_module || '-'}</td>
                                 <td className="px-3 py-2 text-gray-900 dark:text-gray-100">
-                                  {item.offre ? 
-                                    <span className="text-xs">{item.offre.module?.nom_module}</span> :
-                                    <span className="text-red-500 text-xs">Non trouvée</span>
+                                  {item.offre
+                                    ? <span className="text-xs text-green-700 dark:text-green-400">{item.offre.module?.nom_module} <span className="text-gray-400">(#{item.offre.id_offre})</span><br/><span className="text-gray-500 dark:text-gray-400">{item.offre.section?.nom_section}</span></span>
+                                    : <span className="text-red-500 text-xs">Non trouvée</span>
                                   }
                                 </td>
                                 <td className="px-3 py-2 text-gray-900 dark:text-gray-100">{item.type_inscription}</td>
                                 <td className="px-3 py-2 text-gray-900 dark:text-gray-100">{item.credits_acquis}</td>
                                 <td className="px-3 py-2">
                                   {!item.hasError && item.adminInscription && item.offre ? (
-                                    <span className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">
-                                      Valide
-                                    </span>
+                                    <span className="px-2 py-1 text-xs rounded-full bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">Valide</span>
                                   ) : (
-                                    <span className="px-2 py-1 text-xs rounded-full bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">
-                                      Erreur
-                                    </span>
+                                    <span className="px-2 py-1 text-xs rounded-full bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">Erreur</span>
                                   )}
                                 </td>
                                 <td className="px-3 py-2 text-xs text-red-600 dark:text-red-400 max-w-xs truncate">
@@ -1730,19 +1827,151 @@ const InscriptionPedagogiqueDataTable = ({
                   </div>
                 )}
 
-                <div className="flex justify-end gap-3">
-                  <button
-                    onClick={() => { setShowImportModal(false); setImportFile(null); setImportPreview([]); setImportErrors([]); }}
-                    className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700"
-                  >
+              </div>
+
+              {/* Footer */}
+              <div className="flex items-center justify-between px-6 py-3 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 rounded-b-2xl">
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {importPreview.filter(p => !p.hasError).length} inscription(s) valide(s) sur {importPreview.length} ligne(s)
+                </p>
+                <div className="flex gap-2">
+                  <button onClick={() => { setShowImportModal(false); setImportFile(null); setImportPreview([]); setImportErrors([]); }}
+                    className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg text-sm hover:bg-gray-100 dark:hover:bg-gray-700">
                     Annuler
                   </button>
-                  <button
-                    onClick={handleBulkImport}
-                    disabled={importPreview.length === 0 || importErrors.length > 0 || importPreview.filter(p => !p.hasError).length === 0}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 text-white rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Importer {importPreview.filter(item => item.adminInscription || item.student).length} Inscriptions
+                  <button onClick={handleBulkImport}
+                    disabled={importPreview.length === 0 || importPreview.filter(p => !p.hasError).length === 0}
+                    className="flex items-center gap-2 px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50 transition-colors">
+                    <Upload className="w-4 h-4" />
+                    Importer ({importPreview.filter(p => !p.hasError).length})
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Bulk Update Modal */}
+        {showBulkUpdateModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 bg-amber-100 dark:bg-amber-900/30 rounded-lg flex items-center justify-center">
+                    <Edit className="w-4 h-4 text-amber-600 dark:text-amber-400" />
+                  </div>
+                  <div>
+                    <h2 className="text-base font-bold text-gray-900 dark:text-white">Modifier en masse</h2>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Importez un fichier Excel (CNE + Code Module) pour modifier les inscriptions</p>
+                  </div>
+                </div>
+                <button onClick={() => { setShowBulkUpdateModal(false); setBulkUpdateFile(null); setBulkUpdatePreview([]); setBulkUpdateErrors([]); }}
+                  className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="px-6 py-5 overflow-y-auto space-y-5">
+                <div className="flex items-center justify-between p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg">
+                  <div>
+                    <p className="text-sm font-medium text-amber-800 dark:text-amber-300">Colonnes requises: <code className="bg-amber-100 dark:bg-amber-900/40 px-1 rounded">cne</code>, <code className="bg-amber-100 dark:bg-amber-900/40 px-1 rounded">nom_module</code></p>
+                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">Optionnelles: <code className="bg-amber-100 dark:bg-amber-900/40 px-1 rounded">type_inscription</code>, <code className="bg-amber-100 dark:bg-amber-900/40 px-1 rounded">credits_acquis</code> — laissez vide pour ne pas modifier</p>
+                  </div>
+                  <button onClick={downloadBulkUpdateTemplate}
+                    className="flex items-center gap-2 px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm whitespace-nowrap">
+                    <Download className="w-4 h-4" />
+                    Template
+                  </button>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-2">Fichier Excel</label>
+                  <input type="file" accept=".xlsx,.xls" onChange={handleBulkUpdateFileSelect}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100" />
+                </div>
+
+                {bulkUpdateErrors.length > 0 && (
+                  <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg max-h-36 overflow-y-auto">
+                    <p className="text-sm font-medium text-red-800 dark:text-red-300 mb-2">Erreurs ({bulkUpdateErrors.length}) :</p>
+                    {bulkUpdateErrors.map((e, i) => (
+                      <div key={i} className="text-xs text-red-700 dark:text-red-400">Ligne {e.row} {e.cne ? `(${e.cne})` : ''}: {e.errors.join(', ')}</div>
+                    ))}
+                  </div>
+                )}
+
+                {bulkUpdatePreview.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-2">
+                      Aperçu — {bulkUpdatePreview.filter(r => !r.hasError).length} valide(s) / {bulkUpdatePreview.length} total
+                    </p>
+                    <div className="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden max-h-64 overflow-y-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50 dark:bg-gray-700/50 sticky top-0">
+                          <tr>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">CNE</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Module</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Type</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Crédits</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Statut</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                          {bulkUpdatePreview.map((row, i) => (
+                            <tr key={i} className={row.hasError ? 'bg-red-50 dark:bg-red-900/10' : row.moduleNotFound ? 'bg-yellow-50 dark:bg-yellow-900/10' : ''}>
+                              <td className="px-3 py-2 text-gray-900 dark:text-gray-100">{row.cne}</td>
+                              <td className="px-3 py-2">
+                                {row.moduleNotFound ? (
+                                  <div className="flex flex-col gap-1">
+                                    <span className="text-xs text-yellow-600 dark:text-yellow-400">"{row.nom_module}" non trouvé</span>
+                                    <input
+                                      type="text"
+                                      placeholder="Chercher module..."
+                                      list={`modules-list-${i}`}
+                                      defaultValue=""
+                                      onChange={e => handleBulkUpdateModuleOverride(row.rowNum, e.target.value)}
+                                      className="px-2 py-1 text-xs border border-yellow-300 dark:border-yellow-600 rounded bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-1 focus:ring-amber-500 w-full"
+                                    />
+                                    <datalist id={`modules-list-${i}`}>
+                                      {modules.map(m => <option key={m.id_module} value={m.nom_module}>{m.nom_module} ({m.code_module})</option>)}
+                                    </datalist>
+                                  </div>
+                                ) : (
+                                  <span className="text-gray-900 dark:text-gray-100 text-sm">{row.resolved_nom_module || row.nom_module}</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-gray-600 dark:text-gray-300">{row.type_inscription || <span className="text-gray-400 italic text-xs">inchangé</span>}</td>
+                              <td className="px-3 py-2 text-gray-600 dark:text-gray-300">{row.credits_acquis !== null ? row.credits_acquis : <span className="text-gray-400 italic text-xs">inchangé</span>}</td>
+                              <td className="px-3 py-2">
+                                {row.hasError
+                                  ? <span className="px-2 py-0.5 text-xs rounded-full bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300">Erreur</span>
+                                  : row.moduleNotFound
+                                    ? <span className="px-2 py-0.5 text-xs rounded-full bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300">Module ?</span>
+                                    : <span className="px-2 py-0.5 text-xs rounded-full bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300">Valide</span>
+                                }
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 rounded-b-2xl">
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {bulkUpdatePreview.filter(r => !r.hasError).length} inscription(s) à mettre à jour
+                </p>
+                <div className="flex gap-2">
+                  <button onClick={() => { setShowBulkUpdateModal(false); setBulkUpdateFile(null); setBulkUpdatePreview([]); setBulkUpdateErrors([]); }}
+                    className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg text-sm hover:bg-gray-100 dark:hover:bg-gray-700">
+                    Annuler
+                  </button>
+                  <button onClick={handleBulkUpdate}
+                    disabled={bulkUpdatePreview.filter(r => !r.hasError).length === 0}
+                    className="flex items-center gap-2 px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50 transition-colors">
+                    <Edit className="w-4 h-4" />
+                    Mettre à jour ({bulkUpdatePreview.filter(r => !r.hasError).length})
                   </button>
                 </div>
               </div>

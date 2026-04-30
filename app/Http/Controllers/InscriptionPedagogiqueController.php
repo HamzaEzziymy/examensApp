@@ -31,6 +31,7 @@ class InscriptionPedagogiqueController extends Controller
         $filterModule = $request->input('module', '');
         $filterNiveau = $request->input('niveau', '');
         $filterSection = $request->input('section', '');
+        $filterSemestre = $request->input('semestre', '');
         $perPage = $request->input('per_page', 25);
         
         // Build query for pedagogical inscriptions with backend filtering
@@ -95,6 +96,13 @@ class InscriptionPedagogiqueController extends Controller
         if (!empty($filterSection)) {
             $inscriptionsQuery->whereHas('offreFormation', function ($q) use ($filterSection) {
                 $q->where('id_section', $filterSection);
+            });
+        }
+
+        // Apply semestre filter
+        if (!empty($filterSemestre)) {
+            $inscriptionsQuery->whereHas('offreFormation', function ($q) use ($filterSemestre) {
+                $q->where('id_semestre', $filterSemestre);
             });
         }
         
@@ -176,6 +184,7 @@ class InscriptionPedagogiqueController extends Controller
                 'module' => $filterModule,
                 'niveau' => $filterNiveau,
                 'section' => $filterSection,
+                'semestre' => $filterSemestre,
                 'per_page' => $perPage,
             ],
             'totalCount' => $totalCount,
@@ -522,5 +531,92 @@ class InscriptionPedagogiqueController extends Controller
             return redirect()->back()
                 ->withErrors(['error' => 'Erreur lors de la suppression: ' . $e->getMessage()]);
         }
+    }
+
+    /**
+     * Bulk update pedagogical inscriptions by CNE + module code.
+     * Finds the inscription by (CNE + module code) and updates the specified fields.
+     */
+    public function bulkUpdate(Request $request)
+    {
+        $rows = $request->input('rows', []);
+
+        if (empty($rows)) {
+            return redirect()->back()->withErrors(['error' => 'Aucune donnée à mettre à jour.']);
+        }
+
+        $updated = 0;
+        $failed  = [];
+
+        foreach ($rows as $index => $row) {
+            $rowNum = $index + 2; // Excel row number
+
+            $cne         = trim($row['cne'] ?? '');
+            $nomModule   = trim($row['nom_module'] ?? '');
+            $newType     = $row['type_inscription'] ?? null;
+            $newCredits  = isset($row['credits_acquis']) && $row['credits_acquis'] !== '' ? (int) $row['credits_acquis'] : null;
+
+            if (empty($cne) || empty($nomModule)) {
+                $failed[] = ['row' => $rowNum, 'cne' => $cne, 'errors' => ['CNE et Nom Module sont requis']];
+                continue;
+            }
+
+            // Find the student
+            $etudiant = \App\Models\Etudiant::where('cne', $cne)->first();
+            if (!$etudiant) {
+                $failed[] = ['row' => $rowNum, 'cne' => $cne, 'errors' => ["Étudiant avec CNE '{$cne}' introuvable"]];
+                continue;
+            }
+
+            // Find the inscription pédagogique via etudiant → inscription_admin → inscription_peda → offre → module
+            $inscription = InscriptionPedagogique::whereHas('inscriptionAdministrative', function ($q) use ($etudiant) {
+                    $q->where('id_etudiant', $etudiant->id_etudiant);
+                })
+                ->whereHas('offreFormation.module', function ($q) use ($nomModule) {
+                    $q->where('nom_module', $nomModule)
+                      ->orWhere('code_module', $nomModule);
+                })
+                ->first();
+
+            if (!$inscription) {
+                $failed[] = ['row' => $rowNum, 'cne' => $cne, 'errors' => ["Inscription introuvable pour CNE '{$cne}' et module '{$nomModule}'"]];
+                continue;
+            }
+
+            // Validate new values
+            $updateData = [];
+            if ($newType !== null && $newType !== '') {
+                if (!in_array($newType, ['Normal', 'Credit', 'Anticipe', 'Capitalisation'])) {
+                    $failed[] = ['row' => $rowNum, 'cne' => $cne, 'errors' => ["Type '{$newType}' invalide (Normal, Credit, Anticipe, Capitalisation)"]];
+                    continue;
+                }
+                $updateData['type_inscription'] = $newType;
+            }
+            if ($newCredits !== null) {
+                if ($newCredits < 0 || $newCredits > 30) {
+                    $failed[] = ['row' => $rowNum, 'cne' => $cne, 'errors' => ["Crédits '{$newCredits}' invalide (0-30)"]];
+                    continue;
+                }
+                $updateData['credits_acquis'] = $newCredits;
+            }
+
+            if (empty($updateData)) {
+                $failed[] = ['row' => $rowNum, 'cne' => $cne, 'errors' => ['Aucune valeur à mettre à jour (type_inscription ou credits_acquis requis)']];
+                continue;
+            }
+
+            $inscription->update($updateData);
+            $updated++;
+        }
+
+        $message = "{$updated} inscription(s) mise(s) à jour";
+        if (!empty($failed)) {
+            $message .= ", " . count($failed) . " échec(s)";
+        }
+
+        return redirect()->back()->with([
+            'success' => $message,
+            'bulk_update_errors' => $failed,
+        ]);
     }
 }
