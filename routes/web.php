@@ -184,6 +184,9 @@ Route::prefix('inscriptions')->name('inscriptions.')->group(function () {
 |  Examens (Sessions, Salles, Examens)
 |=========================*/
 Route::prefix('examens')->name('examens.')->group(function () {
+    Route::get('planning/student-count', [ExamenController::class, 'eligibleStudentCount'])
+        ->name('planning.student-count');
+
     Route::resources([
         'sessions' => SessionExamenController::class, // sessions_examen
         'examens' => ExamenController::class,
@@ -216,6 +219,10 @@ Route::prefix('surveillance')->name('surveillance.')->group(function () {
         ->name('repartition-etudiants.export');
     Route::get('repartition-etudiants/{examen}/export-collective', [RepartitionEtudiantController::class, 'exportCollective'])
         ->name('repartition-etudiants.export-collective');
+    Route::get('repartition-etudiants/{examen}/export-pv-absence', [RepartitionEtudiantController::class, 'exportPvAbsence'])
+        ->name('repartition-etudiants.export-pv-absence');
+    Route::get('repartition-etudiants/{examen}/export-pv-absence-collective', [RepartitionEtudiantController::class, 'exportCollectivePvAbsence'])
+        ->name('repartition-etudiants.export-pv-absence-collective');
     Route::get('repartition-etudiants/{examen}/export-salles-places', [RepartitionEtudiantController::class, 'exportSallesPlaces'])
         ->name('repartition-etudiants.export-salles-places');
     Route::post('repartition-etudiants/{examen}/push-pointage', [RepartitionEtudiantController::class, 'pushPointage'])

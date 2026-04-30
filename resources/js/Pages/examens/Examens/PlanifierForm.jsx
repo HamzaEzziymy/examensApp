@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useForm } from '@inertiajs/react';
 import Swal from 'sweetalert2';
 import InputError from '@/Components/InputError';
+import { studentOrderOptions } from './studentOrderOptions';
+import { combineDateAndTime } from './dateTimeFields';
 
 export default function PlanifierForm({
     sessions,
@@ -15,12 +17,6 @@ export default function PlanifierForm({
     asCard = true,
     hideTitle = false,
 }) {
-    const isSelfReferencingElement = (module, element) =>
-        module &&
-        element &&
-        element.code_element === module.code_module &&
-        element.nom_element === module.nom_module;
-
     const formatSessionLabel = (session) => {
         const parts = [session.nom_session];
 
@@ -37,7 +33,6 @@ export default function PlanifierForm({
         return parts.join(' - ');
     };
     const formatModuleLabel = (module) => [module.code_module, module.nom_module].filter(Boolean).join(' - ');
-    const formatElementLabel = (element) => [element?.code_element, element?.nom_element].filter(Boolean).join(' - ');
 
     const { data, setData, post, processing, errors, reset, transform } = useForm({
         id_session_examen: '',
@@ -51,6 +46,7 @@ export default function PlanifierForm({
         repartition_salles: [],
         anonymat_start: '',
         anonymat_end: '',
+        student_order: 'alphabetic',
         date_examen: '',
         date_debut: '',
         date_fin: '',
@@ -61,6 +57,14 @@ export default function PlanifierForm({
     const [selectedSemestre, setSelectedSemestre] = useState('');
     const [allocations, setAllocations] = useState({});
     const [pendingSalleId, setPendingSalleId] = useState('');
+    const [eligibleStudentCount, setEligibleStudentCount] = useState(null);
+    const [studentCountLoading, setStudentCountLoading] = useState(false);
+    const [studentCountError, setStudentCountError] = useState('');
+    const [studentCountCache, setStudentCountCache] = useState({});
+    const [bulkStudentStats, setBulkStudentStats] = useState(null);
+    const [bulkStudentCountLoading, setBulkStudentCountLoading] = useState(false);
+    const [bulkStudentCountError, setBulkStudentCountError] = useState('');
+    const [bulkStudentCountCache, setBulkStudentCountCache] = useState({});
 
     const filteredSemestres = useMemo(
         () => semestres.filter((sem) => !selectedNiveau || String(sem.id_niveau) === String(selectedNiveau)),
@@ -80,24 +84,44 @@ export default function PlanifierForm({
     const isBulkPlanning = Boolean(data.plan_all_filtered_modules);
     const canPlanFilteredModules = Boolean(selectedNiveau && selectedSemestre && filteredModules.length > 0);
     const bulkModulePreview = useMemo(() => filteredModules.slice(0, 4), [filteredModules]);
-    const totalBulkExamCount = useMemo(
+    const bulkStudentCountModuleIds = useMemo(
         () =>
-            filteredModules.reduce((sum, module) => {
-                const extraElements = (module.elements || []).filter(
-                    (element) => !isSelfReferencingElement(module, element),
-                ).length;
-
-                return sum + 1 + extraElements;
-            }, 0),
+            filteredModules
+                .map((module) => Number(module.id_module))
+                .filter((moduleId) => Number.isInteger(moduleId) && moduleId > 0)
+                .sort((left, right) => left - right),
         [filteredModules],
     );
-    const totalBulkElementCount = Math.max(0, totalBulkExamCount - filteredModules.length);
-    const selectedModule = useMemo(
-        () => filteredModules.find((module) => String(module.id_module) === String(data.id_module)),
-        [data.id_module, filteredModules],
-    );
-    const availableElements = selectedModule?.elements || [];
+    const totalBulkExamCount = filteredModules.length;
+    const bulkStudentCountsByModuleId = useMemo(() => {
+        const counts = {};
 
+        (bulkStudentStats?.modules || []).forEach((entry) => {
+            counts[String(entry.id_module)] = Number(entry.count ?? 0);
+        });
+
+        return counts;
+    }, [bulkStudentStats]);
+    const bulkAffectedStudentCount = bulkStudentStats?.unique_count ?? null;
+    const bulkMaxStudentCount = useMemo(
+        () =>
+            Object.values(bulkStudentCountsByModuleId).reduce(
+                (max, current) => Math.max(max, Number(current) || 0),
+                0,
+            ),
+        [bulkStudentCountsByModuleId],
+    );
+    const bulkMinStudentCount = useMemo(() => {
+        const counts = Object.values(bulkStudentCountsByModuleId)
+            .map((count) => Number(count) || 0)
+            .filter((count) => count > 0);
+
+        if (!counts.length) {
+            return null;
+        }
+
+        return counts.reduce((min, current) => Math.min(min, current), counts[0]);
+    }, [bulkStudentCountsByModuleId]);
     const selectedSalles = useMemo(
         () => salles.filter((salle) => data.salles.includes(String(salle.id_salle))),
         [salles, data.salles],
@@ -110,31 +134,59 @@ export default function PlanifierForm({
         () => sessions.find((session) => String(session.id_session_examen) === String(data.id_session_examen)),
         [sessions, data.id_session_examen],
     );
-    const plannedAnonymatCount = useMemo(() => {
-        const start = Number.parseInt(data.anonymat_start, 10);
-        const end = Number.parseInt(data.anonymat_end, 10);
-
-        if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end < start) {
+    const anonymatStartValue = Number.parseInt(data.anonymat_start, 10);
+    const hasCustomAnonymatStart = Number.isInteger(anonymatStartValue) && anonymatStartValue > 0;
+    const normalizedAnonymatStart = hasCustomAnonymatStart ? anonymatStartValue : 1;
+    const anonymatPreviewEnd = useMemo(() => {
+        if (!eligibleStudentCount || eligibleStudentCount < 1) {
             return null;
         }
 
-        return (end - start) + 1;
-    }, [data.anonymat_end, data.anonymat_start]);
+        return ((normalizedAnonymatStart + eligibleStudentCount - 2) % eligibleStudentCount) + 1;
+    }, [eligibleStudentCount, normalizedAnonymatStart]);
+    const anonymatPreviewSequence = useMemo(() => {
+        if (!eligibleStudentCount || eligibleStudentCount < 1) {
+            return [];
+        }
+
+        if (hasCustomAnonymatStart && anonymatStartValue > eligibleStudentCount) {
+            return [];
+        }
+
+        return Array.from({ length: Math.min(6, eligibleStudentCount) }, (_, index) =>
+            ((normalizedAnonymatStart + index - 1) % eligibleStudentCount) + 1,
+        );
+    }, [anonymatStartValue, eligibleStudentCount, hasCustomAnonymatStart, normalizedAnonymatStart]);
+    const targetStudentCount = eligibleStudentCount;
+    const totalSelectedCapacity = useMemo(
+        () =>
+            selectedSalles.reduce(
+                (sum, salle) => sum + Number(salle.capacite_examens ?? salle.capacite ?? 0),
+                0,
+            ),
+        [selectedSalles],
+    );
+    const remainingStudentsForCapacity = useMemo(() => {
+        if (targetStudentCount === null) {
+            return null;
+        }
+
+        return Math.max(targetStudentCount - totalSelectedCapacity, 0);
+    }, [targetStudentCount, totalSelectedCapacity]);
+    const spareSelectedCapacity = useMemo(() => {
+        if (targetStudentCount === null) {
+            return null;
+        }
+
+        return Math.max(totalSelectedCapacity - targetStudentCount, 0);
+    }, [targetStudentCount, totalSelectedCapacity]);
 
     useEffect(() => {
         const moduleExists = filteredModules.some((mod) => String(mod.id_module) === String(data.id_module));
         if (!moduleExists) {
             setData('id_module', '');
-            setData('id_element', '');
         }
     }, [filteredModules, data.id_module, setData]);
-
-    useEffect(() => {
-        const elementExists = availableElements.some((element) => String(element.id_element) === String(data.id_element));
-        if (!elementExists && data.id_element) {
-            setData('id_element', '');
-        }
-    }, [availableElements, data.id_element, setData]);
 
     useEffect(() => {
         if (data.plan_all_filtered_modules && !canPlanFilteredModules) {
@@ -187,10 +239,155 @@ export default function PlanifierForm({
     }, [data.salles]);
 
     useEffect(() => {
+        if (isBulkPlanning) {
+            setEligibleStudentCount(null);
+            setStudentCountLoading(false);
+            setStudentCountError('');
+            return;
+        }
+
+        if (!data.id_session_examen || !data.id_module) {
+            setEligibleStudentCount(null);
+            setStudentCountLoading(false);
+            setStudentCountError('');
+            return;
+        }
+
+        const cacheKey = `${data.id_session_examen}:${data.id_module}`;
+        if (studentCountCache[cacheKey] !== undefined) {
+            setEligibleStudentCount(studentCountCache[cacheKey]);
+            setStudentCountLoading(false);
+            setStudentCountError('');
+            return;
+        }
+
+        const controller = new AbortController();
+        setStudentCountLoading(true);
+        setStudentCountError('');
+
+        fetch(
+            route('examens.planning.student-count', {
+                id_session_examen: data.id_session_examen,
+                id_module: data.id_module,
+            }),
+            {
+                method: 'GET',
+                headers: {
+                    Accept: 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                signal: controller.signal,
+            },
+        )
+            .then(async (response) => {
+                if (!response.ok) {
+                    throw new Error('count-fetch-failed');
+                }
+
+                return response.json();
+            })
+            .then((payload) => {
+                const nextCount = Number(payload?.count ?? 0);
+                setEligibleStudentCount(nextCount);
+                setStudentCountCache((current) => ({
+                    ...current,
+                    [cacheKey]: nextCount,
+                }));
+            })
+            .catch((error) => {
+                if (error.name === 'AbortError') {
+                    return;
+                }
+
+                setEligibleStudentCount(null);
+                setStudentCountError('Impossible de charger l effectif pour ce module.');
+            })
+            .finally(() => {
+                if (!controller.signal.aborted) {
+                    setStudentCountLoading(false);
+                }
+            });
+
+        return () => controller.abort();
+    }, [data.id_module, data.id_session_examen, isBulkPlanning, studentCountCache]);
+
+    useEffect(() => {
+        if (!isBulkPlanning) {
+            setBulkStudentStats(null);
+            setBulkStudentCountLoading(false);
+            setBulkStudentCountError('');
+            return;
+        }
+
+        if (!data.id_session_examen || bulkStudentCountModuleIds.length === 0) {
+            setBulkStudentStats(null);
+            setBulkStudentCountLoading(false);
+            setBulkStudentCountError('');
+            return;
+        }
+
+        const cacheKey = `${data.id_session_examen}:${bulkStudentCountModuleIds.join(',')}`;
+        if (bulkStudentCountCache[cacheKey] !== undefined) {
+            setBulkStudentStats(bulkStudentCountCache[cacheKey]);
+            setBulkStudentCountLoading(false);
+            setBulkStudentCountError('');
+            return;
+        }
+
+        const controller = new AbortController();
+        setBulkStudentCountLoading(true);
+        setBulkStudentCountError('');
+
+        fetch(
+            route('examens.planning.student-count', {
+                id_session_examen: data.id_session_examen,
+                module_ids: bulkStudentCountModuleIds,
+            }),
+            {
+                method: 'GET',
+                headers: {
+                    Accept: 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                signal: controller.signal,
+            },
+        )
+            .then(async (response) => {
+                if (!response.ok) {
+                    throw new Error('bulk-count-fetch-failed');
+                }
+
+                return response.json();
+            })
+            .then((payload) => {
+                setBulkStudentStats(payload);
+                setBulkStudentCountCache((current) => ({
+                    ...current,
+                    [cacheKey]: payload,
+                }));
+            })
+            .catch((error) => {
+                if (error.name === 'AbortError') {
+                    return;
+                }
+
+                setBulkStudentStats(null);
+                setBulkStudentCountError('Impossible de charger l effectif pour les modules selectionnes.');
+            })
+            .finally(() => {
+                if (!controller.signal.aborted) {
+                    setBulkStudentCountLoading(false);
+                }
+            });
+
+        return () => controller.abort();
+    }, [bulkStudentCountCache, bulkStudentCountModuleIds, data.id_session_examen, isBulkPlanning]);
+
+    useEffect(() => {
         transform((currentData) => ({
             ...currentData,
             id_module: currentData.plan_all_filtered_modules ? '' : currentData.id_module,
-            id_element: currentData.plan_all_filtered_modules ? '' : currentData.id_element,
+            id_element: '',
             module_ids: currentData.plan_all_filtered_modules
                 ? (currentData.module_plannings || []).map((planning) => Number(planning.id_module))
                 : [],
@@ -198,12 +395,14 @@ export default function PlanifierForm({
                 ? (currentData.module_plannings || []).map((planning) => ({
                       id_module: Number(planning.id_module),
                       date_examen: planning.date_examen || '',
-                      date_debut: planning.date_debut || '',
-                      date_fin: planning.date_fin || '',
+                      date_debut: combineDateAndTime(planning.date_examen, planning.date_debut),
+                      date_fin: combineDateAndTime(planning.date_examen, planning.date_fin),
                   }))
                 : [],
-            anonymat_start: currentData.plan_all_filtered_modules ? '' : currentData.anonymat_start,
-            anonymat_end: currentData.plan_all_filtered_modules ? '' : currentData.anonymat_end,
+            anonymat_start: currentData.anonymat_start,
+            anonymat_end: '',
+            date_debut: combineDateAndTime(currentData.date_examen, currentData.date_debut),
+            date_fin: combineDateAndTime(currentData.date_examen, currentData.date_fin),
             repartition_salles: currentData.plan_all_filtered_modules
                 ? []
                 : (currentData.salles || [])
@@ -247,7 +446,7 @@ export default function PlanifierForm({
     const autoDistribute = () => {
         if (!selectedSalles.length) return;
         const totalStudents =
-            plannedAnonymatCount ??
+            targetStudentCount ??
             selectedSalles.reduce((sum, salle) => sum + (salle.capacite_examens ?? salle.capacite ?? 0), 0);
         let remaining = totalStudents;
         const next = {};
@@ -378,6 +577,19 @@ export default function PlanifierForm({
                         ))}
                     </select>
                     {!isBulkPlanning && <InputError message={errors.id_module} className="mt-1" />}
+                    {!isBulkPlanning && data.id_session_examen && data.id_module && (
+                        <p
+                            className={`mt-2 text-xs ${
+                                studentCountError ? 'text-red-600 dark:text-red-300' : 'text-gray-500 dark:text-gray-400'
+                            }`}
+                        >
+                            {studentCountLoading
+                                ? "Chargement de l'effectif..."
+                                : studentCountError
+                                  ? studentCountError
+                                  : `${eligibleStudentCount ?? 0} etudiant(s) concernes par cet examen.`}
+                        </p>
+                    )}
                     <div className="mt-3 rounded-lg border border-indigo-200 bg-indigo-50/70 p-3 dark:border-indigo-500/30 dark:bg-indigo-950/30">
                         <label className="flex items-start gap-3">
                             <input
@@ -389,7 +601,6 @@ export default function PlanifierForm({
                                     setData('plan_all_filtered_modules', checked);
                                     if (checked) {
                                         setData('id_module', '');
-                                        setData('id_element', '');
                                     }
                                 }}
                                 className="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-600 dark:bg-gray-900"
@@ -400,13 +611,56 @@ export default function PlanifierForm({
                                 </span>
                                 <span className="mt-1 block text-xs text-gray-600 dark:text-gray-300">
                                     {canPlanFilteredModules
-                                        ? `${filteredModules.length} modules et ${totalBulkElementCount} element(s) seront planifies en une seule action.`
+                                        ? `${filteredModules.length} modules seront planifies en une seule action.`
                                         : 'Choisissez d abord un niveau et un semestre contenant des modules.'}
                                 </span>
                             </span>
                         </label>
                         {isBulkPlanning && (
                             <div className="mt-3 space-y-2">
+                                <div className="grid gap-3 sm:grid-cols-3">
+                                    <div className="rounded-lg border border-indigo-200 bg-white px-3 py-2 dark:border-indigo-500/30 dark:bg-gray-900">
+                                        <div className="text-[11px] font-medium uppercase tracking-wide text-indigo-600 dark:text-indigo-300">
+                                            Etudiants concernes
+                                        </div>
+                                        <div className="mt-1 text-xl font-semibold text-gray-900 dark:text-gray-100">
+                                            {bulkStudentCountLoading ? '...' : bulkAffectedStudentCount ?? '--'}
+                                        </div>
+                                    </div>
+                                    <div className="rounded-lg border border-indigo-200 bg-white px-3 py-2 dark:border-indigo-500/30 dark:bg-gray-900">
+                                        <div className="text-[11px] font-medium uppercase tracking-wide text-indigo-600 dark:text-indigo-300">
+                                            Module le plus charge
+                                        </div>
+                                        <div className="mt-1 text-xl font-semibold text-gray-900 dark:text-gray-100">
+                                            {bulkStudentCountLoading
+                                                ? '...'
+                                                : bulkStudentStats
+                                                  ? bulkMaxStudentCount
+                                                  : '--'}
+                                        </div>
+                                    </div>
+                                    <div className="rounded-lg border border-indigo-200 bg-white px-3 py-2 dark:border-indigo-500/30 dark:bg-gray-900">
+                                        <div className="text-[11px] font-medium uppercase tracking-wide text-indigo-600 dark:text-indigo-300">
+                                            Examens generes
+                                        </div>
+                                        <div className="mt-1 text-xl font-semibold text-gray-900 dark:text-gray-100">
+                                            {totalBulkExamCount}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div
+                                    className={`text-xs ${
+                                        bulkStudentCountError
+                                            ? 'text-red-600 dark:text-red-300'
+                                            : 'text-gray-600 dark:text-gray-300'
+                                    }`}
+                                >
+                                    {!data.id_session_examen
+                                        ? 'Selectionnez d abord une session pour calculer l effectif concerne.'
+                                        : bulkStudentCountError
+                                          ? bulkStudentCountError
+                                          : 'Les effectifs ci-dessous sont calcules pour tous les modules du niveau, du semestre et de la filiere en cours.'}
+                                </div>
                                 <div className="text-xs font-medium text-indigo-700 dark:text-indigo-200">
                                     Modules concernes
                                 </div>
@@ -417,13 +671,9 @@ export default function PlanifierForm({
                                             className="rounded-full border border-indigo-200 bg-white px-2.5 py-1 text-xs font-medium text-indigo-700 dark:border-indigo-500/40 dark:bg-gray-900 dark:text-indigo-100"
                                         >
                                             {formatModuleLabel(module)}
-                                            {(() => {
-                                                const extraElements = (module.elements || []).filter(
-                                                    (element) => !isSelfReferencingElement(module, element),
-                                                ).length;
-
-                                                return extraElements > 0 ? ` + ${extraElements} element(s)` : '';
-                                            })()}
+                                            {bulkStudentCountsByModuleId[String(module.id_module)] !== undefined
+                                                ? ` - ${bulkStudentCountsByModuleId[String(module.id_module)]} etudiant(s)`
+                                                : ''}
                                         </span>
                                     ))}
                                     {filteredModules.length > bulkModulePreview.length && (
@@ -437,66 +687,83 @@ export default function PlanifierForm({
                     </div>
                     <InputError message={errors.module_ids} className="mt-1" />
                 </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                 <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Element du module</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">
+                        Ordre des etudiants
+                    </label>
                     <select
-                        value={data.id_element}
-                        onChange={(e) => setData('id_element', e.target.value)}
-                        disabled={isBulkPlanning || !selectedModule}
-                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700"
+                        value={data.student_order}
+                        onChange={(e) => setData('student_order', e.target.value)}
+                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
                     >
-                        <option value="">Module complet</option>
-                        {availableElements.map((element) => (
-                            <option key={element.id_element} value={element.id_element}>
-                                {formatElementLabel(element)}
+                        {studentOrderOptions.map((option) => (
+                            <option key={option.value} value={option.value}>
+                                {option.label}
                             </option>
                         ))}
                     </select>
-                    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                        Laissez vide pour une repartition sur tout le module.
-                    </p>
-                    <InputError message={errors.id_element} className="mt-1" />
+                    <InputError message={errors.student_order} className="mt-1" />
+                </div>
+                <div className="rounded-lg border border-dashed border-indigo-200 bg-indigo-50/70 p-3 text-xs text-indigo-800 dark:border-indigo-500/40 dark:bg-indigo-950/30 dark:text-indigo-100">
+                    {studentOrderOptions.find((option) => option.value === data.student_order)?.description}
+                    <div className="mt-1 text-indigo-700/90 dark:text-indigo-200/90">
+                        Les etudiants en credit restent regroupes dans la derniere salle pour respecter la logique actuelle.
+                    </div>
                 </div>
             </div>
 
-            {!isBulkPlanning && (
-                <div className="grid gap-4 sm:grid-cols-2">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Anonymat debut</label>
-                        <input
-                            type="number"
-                            min="1"
-                            value={data.anonymat_start}
-                            onChange={(e) => setData('anonymat_start', e.target.value)}
-                            className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
-                            placeholder="Ex: 101"
-                        />
-                        <InputError message={errors.anonymat_start} className="mt-1" />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Anonymat fin</label>
-                        <input
-                            type="number"
-                            min={data.anonymat_start || '1'}
-                            value={data.anonymat_end}
-                            onChange={(e) => setData('anonymat_end', e.target.value)}
-                            className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
-                            placeholder="Ex: 200"
-                        />
-                        <InputError message={errors.anonymat_end} className="mt-1" />
-                    </div>
-                    <div className="sm:col-span-2">
-                        <p className="text-xs text-gray-500 dark:text-gray-400">
-                            Laissez vide pour commencer a 1. Si vous renseignez une plage, seuls les anonymats compris entre ces deux valeurs seront generes.
-                        </p>
-                        {plannedAnonymatCount !== null && (
-                            <p className="mt-1 text-xs font-medium text-indigo-600 dark:text-indigo-300">
-                                {plannedAnonymatCount} anonymats seront generes pour cette planification.
-                            </p>
-                        )}
-                    </div>
+            <div className="grid gap-4 sm:grid-cols-1">
+                <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">
+                        {isBulkPlanning ? 'Anonymat debut commun' : 'Anonymat debut'}
+                    </label>
+                    <input
+                        type="number"
+                        min="1"
+                        max={!isBulkPlanning ? eligibleStudentCount || undefined : undefined}
+                        value={data.anonymat_start}
+                        onChange={(e) => setData('anonymat_start', e.target.value)}
+                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
+                        placeholder="Ex: 1"
+                    />
+                    <InputError message={errors.anonymat_start} className="mt-1" />
                 </div>
-            )}
+                <div>
+                    {isBulkPlanning ? (
+                        <>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                                Ce numero de debut sera applique a chaque examen cree pour les modules du semestre selectionne.
+                            </p>
+                            {bulkMinStudentCount !== null && (
+                                <p className="mt-1 text-xs font-medium text-indigo-600 dark:text-indigo-300">
+                                    Pour rester valide sur tous les modules, choisissez une valeur entre 1 et {bulkMinStudentCount}.
+                                </p>
+                            )}
+                        </>
+                    ) : (
+                        <>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                                Choisissez seulement le numero de debut. La numerotation couvrira tous les etudiants du module puis reviendra aux numeros laisses de cote.
+                            </p>
+                            {eligibleStudentCount !== null && anonymatPreviewEnd !== null && (
+                                <p className="mt-1 text-xs font-medium text-indigo-600 dark:text-indigo-300">
+                                    {eligibleStudentCount} anonymats seront generes: debut {normalizedAnonymatStart}, fin {anonymatPreviewEnd}
+                                    {normalizedAnonymatStart > 1 ? ', avec retour a 1 apres le dernier numero.' : '.'}
+                                </p>
+                            )}
+                            {anonymatPreviewSequence.length > 0 && (
+                                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                    Apercu: {anonymatPreviewSequence.join(', ')}
+                                    {eligibleStudentCount > anonymatPreviewSequence.length ? ', ...' : ''}
+                                </p>
+                            )}
+                        </>
+                    )}
+                </div>
+            </div>
 
             <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Salles</label>
@@ -538,6 +805,68 @@ export default function PlanifierForm({
                         </div>
                     </div>
 
+                    {!isBulkPlanning && (
+                        <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                            <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm dark:border-slate-700 dark:bg-gray-800">
+                                <div className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                    Etudiants eligibles
+                                </div>
+                                <div className="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-100">
+                                    {studentCountLoading ? '...' : eligibleStudentCount ?? '--'}
+                                </div>
+                            </div>
+                            <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm dark:border-slate-700 dark:bg-gray-800">
+                                <div className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                    Etudiants a couvrir
+                                </div>
+                                <div className="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-100">
+                                    {targetStudentCount ?? '--'}
+                                </div>
+                            </div>
+                            <div className="rounded-xl border border-emerald-200 bg-white px-4 py-3 text-sm dark:border-emerald-500/40 dark:bg-gray-800">
+                                <div className="text-xs font-medium uppercase tracking-wide text-emerald-600 dark:text-emerald-300">
+                                    Capacite selectionnee
+                                </div>
+                                <div className="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-100">
+                                    {totalSelectedCapacity}
+                                </div>
+                            </div>
+                            <div className="rounded-xl border border-amber-200 bg-white px-4 py-3 text-sm dark:border-amber-500/40 dark:bg-gray-800">
+                                <div className="text-xs font-medium uppercase tracking-wide text-amber-600 dark:text-amber-300">
+                                    Restant a couvrir
+                                </div>
+                                <div className="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-100">
+                                    {remainingStudentsForCapacity ?? '--'}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {!isBulkPlanning && (
+                        <div className="mt-3 space-y-1 text-xs text-gray-500 dark:text-gray-400">
+                            {!data.id_session_examen || !data.id_module ? (
+                                <p>Selectionnez d abord une session et un module pour charger l effectif reel.</p>
+                            ) : studentCountError ? (
+                                <p className="text-red-500 dark:text-red-300">{studentCountError}</p>
+                            ) : (
+                                <>
+                                    <p>La capacite des salles est soustraite automatiquement du nombre d etudiants a couvrir.</p>
+                                    {eligibleStudentCount !== null && anonymatPreviewEnd !== null && (
+                                        <p>
+                                            Numerotation active: {normalizedAnonymatStart} jusqu a {anonymatPreviewEnd}
+                                            {normalizedAnonymatStart > anonymatPreviewEnd ? ', puis retour a 1.' : '.'}
+                                        </p>
+                                    )}
+                                    {spareSelectedCapacity > 0 && (
+                                        <p className="text-emerald-600 dark:text-emerald-300">
+                                            {spareSelectedCapacity} place(s) restent libres avec les salles actuelles.
+                                        </p>
+                                    )}
+                                </>
+                            )}
+                        </div>
+                    )}
+
                     {selectedSalles.length > 0 ? (
                         <div className="mt-4 grid gap-3">
                             {selectedSalles.map((salle, index) => (
@@ -571,6 +900,22 @@ export default function PlanifierForm({
                                                 className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
                                             />
                                         </div>
+                                        {targetStudentCount !== null && (
+                                            <div className="md:col-span-2 rounded-lg border border-dashed border-indigo-200 bg-indigo-50/70 px-3 py-2 text-xs text-indigo-800 dark:border-indigo-500/30 dark:bg-indigo-950/30 dark:text-indigo-100">
+                                                {(() => {
+                                                    const coveredAfterSalle = selectedSalles
+                                                        .slice(0, index + 1)
+                                                        .reduce(
+                                                            (sum, currentSalle) =>
+                                                                sum + Number(currentSalle.capacite_examens ?? currentSalle.capacite ?? 0),
+                                                            0,
+                                                        );
+                                                    const remainingAfterSalle = Math.max(targetStudentCount - coveredAfterSalle, 0);
+
+                                                    return `Apres cette salle: capacite cumulee ${coveredAfterSalle} • restant ${remainingAfterSalle}`;
+                                                })()}
+                                            </div>
+                                        )}
                                     </div>
                                     <div className="flex items-start justify-end">
                                         <button
@@ -593,7 +938,7 @@ export default function PlanifierForm({
                 <InputError message={errors.salles} className="mt-1" />
                 {isBulkPlanning && (
                     <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                        Les memes salles seront utilisees pour chaque examen cree. La repartition sera calculee separement pour chaque module et chaque element genere.
+                        Les memes salles seront utilisees pour chaque examen cree. La repartition sera calculee separement pour chaque module.
                     </p>
                 )}
             </div>
@@ -603,7 +948,7 @@ export default function PlanifierForm({
                     <div>
                         <p className="text-sm font-medium text-gray-800 dark:text-gray-100">Dates par module</p>
                         <p className="text-xs text-gray-500 dark:text-gray-400">
-                            Renseignez la date, l&apos;heure de debut et l&apos;heure de fin pour chaque module. Les elements du module seront crees avec les memes horaires.
+                            Renseignez la date, l&apos;heure de debut et l&apos;heure de fin pour chaque module.
                         </p>
                     </div>
 
@@ -621,6 +966,26 @@ export default function PlanifierForm({
                                     <div className="text-sm font-semibold text-gray-800 dark:text-gray-100">
                                         {module ? formatModuleLabel(module) : `Module ${planning.id_module}`}
                                     </div>
+                                    {bulkStudentCountsByModuleId[String(planning.id_module)] !== undefined && (
+                                        <div className="mt-1 text-xs text-indigo-600 dark:text-indigo-300">
+                                            {bulkStudentCountsByModuleId[String(planning.id_module)]} etudiant(s) concernes
+                                            pour ce module.
+                                            {(() => {
+                                                const moduleStudentCount = Number(
+                                                    bulkStudentCountsByModuleId[String(planning.id_module)] ?? 0,
+                                                );
+
+                                                if (moduleStudentCount < 1) {
+                                                    return '';
+                                                }
+
+                                                const moduleAnonymatEnd =
+                                                    ((normalizedAnonymatStart + moduleStudentCount - 2) % moduleStudentCount) + 1;
+
+                                                return ` Anonymats: debut ${normalizedAnonymatStart}, fin ${moduleAnonymatEnd}.`;
+                                            })()}
+                                        </div>
+                                    )}
                                     <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                                         <div>
                                             <label className="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
@@ -639,7 +1004,7 @@ export default function PlanifierForm({
                                                 Debut
                                             </label>
                                             <input
-                                                type="datetime-local"
+                                                type="time"
                                                 value={planning.date_debut}
                                                 onChange={(e) => updateModulePlanning(index, 'date_debut', e.target.value)}
                                                 className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
@@ -651,7 +1016,7 @@ export default function PlanifierForm({
                                                 Fin
                                             </label>
                                             <input
-                                                type="datetime-local"
+                                                type="time"
                                                 value={planning.date_fin}
                                                 onChange={(e) => updateModulePlanning(index, 'date_fin', e.target.value)}
                                                 className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
@@ -744,7 +1109,7 @@ export default function PlanifierForm({
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Debut</label>
                         <input
-                            type="datetime-local"
+                            type="time"
                             value={data.date_debut}
                             onChange={(e) => setData('date_debut', e.target.value)}
                             className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
@@ -754,7 +1119,7 @@ export default function PlanifierForm({
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Fin</label>
                         <input
-                            type="datetime-local"
+                            type="time"
                             value={data.date_fin}
                             onChange={(e) => setData('date_fin', e.target.value)}
                             className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"

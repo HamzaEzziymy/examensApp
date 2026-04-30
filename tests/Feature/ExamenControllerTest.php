@@ -239,6 +239,95 @@ class ExamenControllerTest extends TestCase
         ]);
     }
 
+    public function test_eligible_student_count_returns_the_real_count_for_the_selected_session_and_module(): void
+    {
+        [
+            'user' => $user,
+            'annee' => $annee,
+            'section' => $section,
+            'niveau' => $niveau,
+            'offre' => $offre,
+            'module' => $module,
+            'session' => $session,
+        ] = $this->createSharedSessionPlanningContext();
+
+        $session->update([
+            'nom_session' => 'Session de Rattrapage',
+            'type_session' => 'Rattrapage',
+        ]);
+
+        $eligibleRattrapage = $this->createPedagogicalRegistration($section, $annee, $niveau, $offre, 'Alpha', 'Rattrapage');
+        $eligibleLatestRattrapage = $this->createPedagogicalRegistration($section, $annee, $niveau, $offre, 'Beta', 'LatestRattrapage');
+        $ineligibleLatestValide = $this->createPedagogicalRegistration($section, $annee, $niveau, $offre, 'Gamma', 'LatestValide');
+
+        $this->createModuleResult($eligibleRattrapage, $module, 'Rattrapage', '2026-06-30');
+        $this->createModuleResult($eligibleLatestRattrapage, $module, 'Valide', '2026-06-10');
+        $this->createModuleResult($eligibleLatestRattrapage, $module, 'Rattrapage', '2026-06-30');
+        $this->createModuleResult($ineligibleLatestValide, $module, 'Rattrapage', '2026-06-10');
+        $this->createModuleResult($ineligibleLatestValide, $module, 'Valide', '2026-06-30');
+
+        $response = $this
+            ->actingAs($user)
+            ->getJson(route('examens.planning.student-count', [
+                'id_session_examen' => $session->id_session_examen,
+                'id_module' => $module->id_module,
+            ]));
+
+        $response
+            ->assertOk()
+            ->assertJson([
+                'count' => 2,
+                'session_type' => 'Rattrapage',
+            ]);
+    }
+
+    public function test_eligible_student_count_returns_aggregated_counts_for_bulk_module_selection(): void
+    {
+        [
+            'user' => $user,
+            'annee' => $annee,
+            'section' => $section,
+            'niveau' => $niveau,
+            'semestre' => $semestre,
+            'module' => $firstModule,
+            'offre' => $firstOffre,
+            'session' => $session,
+        ] = $this->createSharedSessionPlanningContext();
+
+        $secondModule = Module::factory()->create();
+        $secondOffre = OffreFormation::create([
+            'id_module' => $secondModule->id_module,
+            'id_semestre' => $semestre->id_semestre,
+            'id_section' => $section->id_section,
+            'id_annee' => $annee->id_annee,
+            'id_coordinateur' => null,
+            'nom_affiche' => 'Deuxieme offre module commune',
+        ]);
+
+        $this->createPedagogicalRegistration($section, $annee, $niveau, $firstOffre, 'Alpha', 'A');
+        $this->createPedagogicalRegistration($section, $annee, $niveau, $firstOffre, 'Beta', 'B');
+        $this->createPedagogicalRegistration($section, $annee, $niveau, $secondOffre, 'Gamma', 'C');
+
+        $response = $this
+            ->actingAs($user)
+            ->getJson(route('examens.planning.student-count', [
+                'id_session_examen' => $session->id_session_examen,
+                'module_ids' => [$firstModule->id_module, $secondModule->id_module],
+            ]));
+
+        $response
+            ->assertOk()
+            ->assertJson([
+                'count' => 3,
+                'unique_count' => 3,
+                'session_type' => 'Normale',
+            ])
+            ->assertJsonPath('modules.0.id_module', $firstModule->id_module)
+            ->assertJsonPath('modules.0.count', 2)
+            ->assertJsonPath('modules.1.id_module', $secondModule->id_module)
+            ->assertJsonPath('modules.1.count', 1);
+    }
+
     public function test_store_can_plan_all_filtered_modules_with_a_separate_repartition_for_each_exam(): void
     {
         [
@@ -348,7 +437,124 @@ class ExamenControllerTest extends TestCase
         );
     }
 
-    public function test_store_can_plan_an_exam_for_a_module_element(): void
+    public function test_store_can_apply_anonymat_start_when_planning_all_filtered_modules(): void
+    {
+        [
+            'user' => $user,
+            'annee' => $annee,
+            'section' => $section,
+            'niveau' => $niveau,
+            'semestre' => $semestre,
+            'module' => $firstModule,
+            'salle' => $salle,
+            'offre' => $firstOffre,
+            'session' => $session,
+        ] = $this->createSharedSessionPlanningContext();
+
+        $secondModule = Module::factory()->create();
+        $secondOffre = OffreFormation::create([
+            'id_module' => $secondModule->id_module,
+            'id_semestre' => $semestre->id_semestre,
+            'id_section' => $section->id_section,
+            'id_annee' => $annee->id_annee,
+            'id_coordinateur' => null,
+            'nom_affiche' => 'Deuxieme offre module commune',
+        ]);
+
+        foreach ([
+            ['nom' => 'Alpha', 'prenom' => 'A'],
+            ['nom' => 'Beta', 'prenom' => 'B'],
+            ['nom' => 'Gamma', 'prenom' => 'C'],
+        ] as $payload) {
+            $this->createPedagogicalRegistration(
+                $section,
+                $annee,
+                $niveau,
+                $firstOffre,
+                $payload['nom'],
+                $payload['prenom']
+            );
+        }
+
+        foreach ([
+            ['nom' => 'Delta', 'prenom' => 'D'],
+            ['nom' => 'Epsilon', 'prenom' => 'E'],
+        ] as $payload) {
+            $this->createPedagogicalRegistration(
+                $section,
+                $annee,
+                $niveau,
+                $secondOffre,
+                $payload['nom'],
+                $payload['prenom']
+            );
+        }
+
+        $response = $this
+            ->actingAs($user)
+            ->post(route('examens.examens.store'), [
+                'id_session_examen' => $session->id_session_examen,
+                'plan_all_filtered_modules' => true,
+                'salles' => [$salle->id_salle],
+                'anonymat_start' => 2,
+                'module_plannings' => [
+                    [
+                        'id_module' => $firstModule->id_module,
+                        'date_examen' => '2026-06-20',
+                        'date_debut' => '2026-06-20 08:00:00',
+                        'date_fin' => '2026-06-20 10:00:00',
+                    ],
+                    [
+                        'id_module' => $secondModule->id_module,
+                        'date_examen' => '2026-06-21',
+                        'date_debut' => '2026-06-21 14:00:00',
+                        'date_fin' => '2026-06-21 16:00:00',
+                    ],
+                ],
+                'statut' => 'Planifiee',
+                'description' => 'Planification groupee avec anonymat',
+            ]);
+
+        $response
+            ->assertRedirect(route('examens.examens.index'))
+            ->assertSessionHasNoErrors();
+
+        $plannedExamens = Examen::query()
+            ->where('id_session_examen', $session->id_session_examen)
+            ->whereIn('id_module', [$firstModule->id_module, $secondModule->id_module])
+            ->get()
+            ->keyBy('id_module');
+
+        $firstExam = $plannedExamens->get($firstModule->id_module);
+        $secondExam = $plannedExamens->get($secondModule->id_module);
+
+        $this->assertNotNull($firstExam);
+        $this->assertNotNull($secondExam);
+        $this->assertSame(2, $firstExam->anonymat_start);
+        $this->assertSame(1, $firstExam->anonymat_end);
+        $this->assertSame(2, $secondExam->anonymat_start);
+        $this->assertSame(1, $secondExam->anonymat_end);
+
+        $this->assertSame(
+            ['2', '3', '1'],
+            Anonymat::query()
+                ->where('id_examen', $firstExam->id_examen)
+                ->orderBy('id_anonymat')
+                ->pluck('code_anonymat')
+                ->all()
+        );
+
+        $this->assertSame(
+            ['2', '1'],
+            Anonymat::query()
+                ->where('id_examen', $secondExam->id_examen)
+                ->orderBy('id_anonymat')
+                ->pluck('code_anonymat')
+                ->all()
+        );
+    }
+
+    public function test_store_ignores_submitted_element_and_creates_a_module_exam(): void
     {
         [
             'user' => $user,
@@ -400,7 +606,7 @@ class ExamenControllerTest extends TestCase
         $this->assertDatabaseHas('examens', [
             'id_examen' => $examen->id_examen,
             'id_module' => $module->id_module,
-            'id_element' => $element->id_element,
+            'id_element' => null,
         ]);
         $this->assertDatabaseHas('repartition_etudiants', [
             'id_examen' => $examen->id_examen,
@@ -408,7 +614,7 @@ class ExamenControllerTest extends TestCase
         ]);
     }
 
-    public function test_store_bulk_planning_creates_module_and_extra_element_exams_without_duplicating_self_reference(): void
+    public function test_store_bulk_planning_creates_only_module_exams(): void
     {
         [
             'user' => $user,
@@ -420,20 +626,6 @@ class ExamenControllerTest extends TestCase
             'salle' => $salle,
             'session' => $session,
         ] = $this->createSharedSessionPlanningContext();
-
-        $selfReferencingElement = ElementModule::query()
-            ->where('id_module', $module->id_module)
-            ->where('code_element', $module->code_module)
-            ->where('nom_element', $module->nom_module)
-            ->first();
-
-        $this->assertNotNull($selfReferencingElement);
-
-        $extraElement = ElementModule::factory()->create([
-            'id_module' => $module->id_module,
-            'code_element' => 'ANA-TP',
-            'nom_element' => 'Travaux pratiques',
-        ]);
 
         $inscriptionPedagogique = $this->createPedagogicalRegistration(
             $section,
@@ -459,7 +651,7 @@ class ExamenControllerTest extends TestCase
                     ],
                 ],
                 'statut' => 'Planifiee',
-                'description' => 'Planification groupee avec elements',
+                'description' => 'Planification groupee par module',
             ]);
 
         $response
@@ -472,32 +664,26 @@ class ExamenControllerTest extends TestCase
             ->orderBy('id_examen')
             ->get();
 
-        $this->assertCount(2, $plannedExamens);
+        $this->assertCount(1, $plannedExamens);
 
-        $moduleExam = $plannedExamens->first(fn (Examen $examen) => $examen->id_element === null);
-        $elementExam = $plannedExamens->first(fn (Examen $examen) => (int) $examen->id_element === $extraElement->id_element);
+        $moduleExam = $plannedExamens->first();
 
         $this->assertNotNull($moduleExam);
-        $this->assertNotNull($elementExam);
-        $this->assertDatabaseMissing('examens', [
-            'id_session_examen' => $session->id_session_examen,
-            'id_module' => $module->id_module,
-            'id_element' => $selfReferencingElement->id_element,
-        ]);
+        $this->assertNull($moduleExam->id_element);
         $this->assertDatabaseHas('repartition_etudiants', [
             'id_examen' => $moduleExam->id_examen,
             'id_inscription_pedagogique' => $inscriptionPedagogique->id_inscription_pedagogique,
         ]);
-        $this->assertDatabaseHas('repartition_etudiants', [
-            'id_examen' => $elementExam->id_examen,
-            'id_inscription_pedagogique' => $inscriptionPedagogique->id_inscription_pedagogique,
-        ]);
     }
 
-    public function test_store_rejects_an_element_that_does_not_belong_to_the_selected_module(): void
+    public function test_store_ignores_foreign_element_input_and_keeps_module_exam(): void
     {
         [
             'user' => $user,
+            'annee' => $annee,
+            'section' => $section,
+            'niveau' => $niveau,
+            'offre' => $offre,
             'module' => $module,
             'salle' => $salle,
             'session' => $session,
@@ -509,8 +695,16 @@ class ExamenControllerTest extends TestCase
             'code_element' => 'OTH-TP',
         ]);
 
+        $this->createPedagogicalRegistration(
+            $section,
+            $annee,
+            $niveau,
+            $offre,
+            'Alpha',
+            'A'
+        );
+
         $response = $this
-            ->from(route('examens.examens.index'))
             ->actingAs($user)
             ->post(route('examens.examens.store'), [
                 'id_session_examen' => $session->id_session_examen,
@@ -525,9 +719,13 @@ class ExamenControllerTest extends TestCase
 
         $response
             ->assertRedirect(route('examens.examens.index'))
-            ->assertSessionHasErrors(['id_element']);
+            ->assertSessionHasNoErrors();
 
-        $this->assertDatabaseCount('examens', 0);
+        $examen = Examen::query()->latest('id_examen')->first();
+
+        $this->assertNotNull($examen);
+        $this->assertSame($module->id_module, $examen->id_module);
+        $this->assertNull($examen->id_element);
     }
 
     public function test_store_places_credit_registrations_in_the_last_selected_salle(): void
@@ -642,10 +840,157 @@ class ExamenControllerTest extends TestCase
         $creditCode = str_pad((string) $creditRepartition->code_grille, 7, '0', STR_PAD_LEFT);
 
         $this->assertSame('2', $creditCode[3]);
-        $this->assertStringStartsWith(substr($derniereSalle->code_salle, 0, 4), (string) $creditRepartition->numero_place);
+        $this->assertSame('1', (string) $creditRepartition->numero_place);
     }
 
-    public function test_store_uses_the_requested_anonymat_range_for_generated_codes(): void
+    public function test_store_can_generate_a_stable_random_student_order_for_repartition(): void
+    {
+        [
+            'user' => $user,
+            'annee' => $annee,
+            'section' => $section,
+            'niveau' => $niveau,
+            'offre' => $offre,
+            'module' => $module,
+            'salle' => $salle,
+            'session' => $session,
+        ] = $this->createSharedSessionPlanningContext();
+
+        $inscriptions = collect([
+            ['nom' => 'Alpha', 'prenom' => 'A', 'type' => 'Normal'],
+            ['nom' => 'Beta', 'prenom' => 'B', 'type' => 'Normal'],
+            ['nom' => 'Gamma', 'prenom' => 'C', 'type' => 'Normal'],
+            ['nom' => 'Delta', 'prenom' => 'D', 'type' => 'Credit'],
+        ])->map(function (array $payload) use ($section, $annee, $niveau, $offre) {
+            return $this->createPedagogicalRegistration(
+                $section,
+                $annee,
+                $niveau,
+                $offre,
+                $payload['nom'],
+                $payload['prenom'],
+                $payload['type']
+            );
+        });
+
+        $response = $this
+            ->actingAs($user)
+            ->post(route('examens.examens.store'), [
+                'id_session_examen' => $session->id_session_examen,
+                'id_module' => $module->id_module,
+                'salles' => [$salle->id_salle],
+                'student_order' => 'random',
+                'date_examen' => '2026-06-20',
+                'date_debut' => '2026-06-20 08:00:00',
+                'date_fin' => '2026-06-20 10:00:00',
+                'statut' => 'Planifiee',
+                'description' => 'Examen avec ordre aleatoire',
+            ]);
+
+        $response
+            ->assertRedirect(route('examens.examens.index'))
+            ->assertSessionHasNoErrors();
+
+        $examen = Examen::query()->latest('id_examen')->first();
+
+        $this->assertNotNull($examen);
+        $this->assertSame('random', $examen->student_order);
+
+        $orderedRegistrationIds = RepartitionEtudiant::query()
+            ->where('id_examen', $examen->id_examen)
+            ->orderBy('id_repartition')
+            ->pluck('id_inscription_pedagogique')
+            ->all();
+
+        $expectedNormalOrder = $inscriptions
+            ->where('type_inscription', 'Normal')
+            ->sortBy(fn (InscriptionPedagogique $inscription) => hash(
+                'sha256',
+                sprintf('%s|%d', (string) $examen->id_examen, $inscription->id_inscription_pedagogique)
+            ))
+            ->pluck('id_inscription_pedagogique')
+            ->values()
+            ->all();
+
+        $expectedCreditOrder = $inscriptions
+            ->where('type_inscription', 'Credit')
+            ->sortBy(fn (InscriptionPedagogique $inscription) => hash(
+                'sha256',
+                sprintf('%s|%d', (string) $examen->id_examen, $inscription->id_inscription_pedagogique)
+            ))
+            ->pluck('id_inscription_pedagogique')
+            ->values()
+            ->all();
+
+        $this->assertSame(
+            array_merge($expectedNormalOrder, $expectedCreditOrder),
+            $orderedRegistrationIds
+        );
+        $this->assertSame(
+            $inscriptions->firstWhere('type_inscription', 'Credit')?->id_inscription_pedagogique,
+            end($orderedRegistrationIds)
+        );
+    }
+
+    public function test_store_assigns_anonymats_in_real_alphabetical_student_order(): void
+    {
+        [
+            'user' => $user,
+            'annee' => $annee,
+            'section' => $section,
+            'niveau' => $niveau,
+            'offre' => $offre,
+            'module' => $module,
+            'salle' => $salle,
+            'session' => $session,
+        ] = $this->createSharedSessionPlanningContext();
+
+        $this->createPedagogicalRegistration($section, $annee, $niveau, $offre, 'Zeta', 'Z');
+        $this->createPedagogicalRegistration($section, $annee, $niveau, $offre, 'Alpha', 'A');
+        $this->createPedagogicalRegistration($section, $annee, $niveau, $offre, 'Beta', 'B');
+
+        $response = $this
+            ->actingAs($user)
+            ->post(route('examens.examens.store'), [
+                'id_session_examen' => $session->id_session_examen,
+                'id_module' => $module->id_module,
+                'salles' => [$salle->id_salle],
+                'anonymat_start' => 1,
+                'date_examen' => '2026-06-20',
+                'date_debut' => '2026-06-20 08:00:00',
+                'date_fin' => '2026-06-20 10:00:00',
+                'statut' => 'Planifiee',
+                'description' => 'Ordre alphabetique reel',
+            ]);
+
+        $response
+            ->assertRedirect(route('examens.examens.index'))
+            ->assertSessionHasNoErrors();
+
+        $examen = Examen::query()->latest('id_examen')->first();
+        $this->assertNotNull($examen);
+
+        $orderedByAnonymat = RepartitionEtudiant::query()
+            ->with('inscriptionPedagogique.inscriptionAdministrative.etudiant:id_etudiant,nom,prenom')
+            ->where('id_examen', $examen->id_examen)
+            ->get()
+            ->sortBy(fn (RepartitionEtudiant $repartition) => (int) $repartition->code_anonymat)
+            ->values();
+
+        $this->assertSame(
+            ['1', '2', '3'],
+            $orderedByAnonymat->pluck('code_anonymat')->all()
+        );
+
+        $this->assertSame(
+            ['Alpha', 'Beta', 'Zeta'],
+            $orderedByAnonymat
+                ->map(fn (RepartitionEtudiant $repartition) => $repartition->inscriptionPedagogique?->inscriptionAdministrative?->etudiant?->nom)
+                ->all()
+        );
+    }
+
+    public function test_store_uses_the_requested_anonymat_start_and_wraps_codes_for_all_students(): void
     {
         [
             'user' => $user,
@@ -680,13 +1025,12 @@ class ExamenControllerTest extends TestCase
                 'id_session_examen' => $session->id_session_examen,
                 'id_module' => $module->id_module,
                 'salles' => [$salle->id_salle],
-                'anonymat_start' => 101,
-                'anonymat_end' => 103,
+                'anonymat_start' => 3,
                 'date_examen' => '2026-06-20',
                 'date_debut' => '2026-06-20 08:00:00',
                 'date_fin' => '2026-06-20 10:00:00',
                 'statut' => 'Planifiee',
-                'description' => 'Examen avec plage d\'anonymats',
+                'description' => 'Examen avec depart d anonymat',
             ]);
 
         $response
@@ -696,14 +1040,15 @@ class ExamenControllerTest extends TestCase
         $examen = Examen::query()->latest('id_examen')->first();
 
         $this->assertNotNull($examen);
-        $this->assertSame(101, $examen->anonymat_start);
-        $this->assertSame(103, $examen->anonymat_end);
-        $this->assertSame(3, RepartitionEtudiant::where('id_examen', $examen->id_examen)->count());
+        $this->assertSame(3, $examen->anonymat_start);
+        $this->assertSame(2, $examen->anonymat_end);
+        $this->assertSame(4, RepartitionEtudiant::where('id_examen', $examen->id_examen)->count());
 
         $expectedCodes = [
-            '101',
-            '102',
-            '103',
+            '3',
+            '4',
+            '1',
+            '2',
         ];
 
         $this->assertSame(
@@ -716,7 +1061,7 @@ class ExamenControllerTest extends TestCase
         );
     }
 
-    public function test_store_rejects_an_anonymat_range_that_exceeds_available_registrations(): void
+    public function test_store_rejects_an_anonymat_start_above_available_registrations(): void
     {
         [
             'user' => $user,
@@ -739,18 +1084,17 @@ class ExamenControllerTest extends TestCase
                 'id_session_examen' => $session->id_session_examen,
                 'id_module' => $module->id_module,
                 'salles' => [$salle->id_salle],
-                'anonymat_start' => 1,
-                'anonymat_end' => 5,
+                'anonymat_start' => 5,
                 'date_examen' => '2026-06-20',
                 'date_debut' => '2026-06-20 08:00:00',
                 'date_fin' => '2026-06-20 10:00:00',
                 'statut' => 'Planifiee',
-                'description' => 'Plage invalide',
+                'description' => 'Depart invalide',
             ]);
 
         $response
             ->assertRedirect(route('examens.examens.index'))
-            ->assertSessionHasErrors(['anonymat_end']);
+            ->assertSessionHasErrors(['anonymat_start']);
 
         $this->assertDatabaseCount('examens', 0);
     }

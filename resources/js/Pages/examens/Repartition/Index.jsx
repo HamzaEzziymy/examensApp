@@ -3,8 +3,9 @@ import { Head, router, useForm } from '@inertiajs/react';
 import ExamHeader from '../Header';
 import { useEffect, useMemo, useState } from 'react';
 import InputError from '@/Components/InputError';
+import PvAbsenceSection from '@/Pages/Documents/Pvs/PvAbsenceSection';
 import Swal from 'sweetalert2';
-import { CheckCircle2, Download, Edit3, FileSpreadsheet, FileText, Table2, Trash2, UploadCloud, X, XCircle } from 'lucide-react';
+import { CheckCircle2, Download, Edit3, FileDown, FileSpreadsheet, FileText, GripVertical, Table2, Trash2, UploadCloud, X, XCircle } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import XlsxPopulate from 'xlsx-populate/browser/xlsx-populate';
 
@@ -59,6 +60,13 @@ const REPARTITION_EXPORT_FIELDS = [
     { key: 'presence', label: 'Presence', defaultOn: true },
 ];
 
+const defaultExportColumns = () =>
+    REPARTITION_EXPORT_FIELDS.map(({ key, label, defaultOn }) => ({
+        key,
+        label,
+        enabled: defaultOn,
+    }));
+
 const safeSheetName = (value) => {
     const name = (value || 'Sheet').replace(/[\\/?*[\]:]/g, ' ').trim() || 'Sheet';
     return name.slice(0, 31);
@@ -90,6 +98,47 @@ const formatSessionLabel = (session) => {
     return parts.join(' - ') || null;
 };
 
+const exportFilenamePrefix = (format, documentType) => {
+    if (format === 'excel' && documentType === 'correctors') {
+        return 'notes_module';
+    }
+
+    if (documentType === 'absence-module') {
+        return 'pv_absence_module';
+    }
+
+    if (documentType === 'absence-collective') {
+        return 'pv_absence_collective';
+    }
+
+    if (documentType === 'collective') {
+        return 'presence_collective';
+    }
+
+    if (documentType === 'places') {
+        return 'repartition_salles_places';
+    }
+
+    return 'repartition';
+};
+
+const buildDefaultExportFilename = (examen, format = 'pdf', documentType = 'repartition') => {
+    const prefix = exportFilenamePrefix(format, documentType);
+    const baseName = sanitizeFileName(
+        [
+            prefix,
+            formatSessionLabel(examen?.session_examen),
+            examen?.module?.code_module,
+            examen?.element?.code_element,
+            examen?.id_examen,
+        ]
+            .filter(Boolean)
+            .join('_'),
+    );
+
+    return baseName || prefix;
+};
+
 const downloadBlob = (blob, filename) => {
     const blobUrl = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -110,6 +159,22 @@ const salleIndexFromGrille = (value) => {
 const extractFilenameFromDisposition = (disposition, fallbackFilename) => {
     const match = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/i.exec(disposition || '');
     return match ? match[1].replace(/['"]/g, '') : fallbackFilename;
+};
+
+const readFailedResponseMessage = async (response, fallback) => {
+    const contentType = response.headers.get('Content-Type') || '';
+
+    try {
+        if (contentType.includes('application/json')) {
+            const payload = await response.json();
+            return payload?.message || payload?.error || fallback;
+        }
+
+        const text = (await response.text())?.trim();
+        return text || fallback;
+    } catch {
+        return fallback;
+    }
 };
 
 const cloneTemplateCellStyle = (sourceCell, targetCell) => {
@@ -229,6 +294,16 @@ const formatExamLabel = (examen) => {
     return moduleLabel;
 };
 
+const resolvedExamSalles = (examen) => {
+    const salles = Array.isArray(examen?.salles) && examen.salles.length
+        ? examen.salles
+        : (examen?.salle ? [examen.salle] : []);
+
+    return salles.filter((salle) => salle?.id_salle);
+};
+
+const examSalleForIndex = (examen, salleIndex) => resolvedExamSalles(examen)[salleIndex - 1] || null;
+
 const repartitionStudent = (repartition) =>
     repartition?.inscription_pedagogique?.etudiant ||
     repartition?.inscription_pedagogique?.inscription_administrative?.etudiant ||
@@ -240,32 +315,51 @@ const repartitionStudentName = (repartition) => {
 };
 
 const selectedExportColumns = (columns) =>
-    REPARTITION_EXPORT_FIELDS
-        .filter(({ key }) => columns[key])
-        .map(({ key }) => key);
+    columns
+        .filter((column) => column.enabled)
+        .map((column) => column.key);
 
 function RepartitionExportModal({
     selectedExamen,
     selectedExamenUsesElements,
     repartitions,
+    filteredRepartitions,
+    searchActive,
+    collectiveModulesCount,
     initialColumns,
     initialPresenceFilled,
     onClose,
     onPdfRepartition,
     onPdfCollective,
+    onPdfAbsenceModule,
+    onPdfAbsenceCollective,
     onPdfSallesPlaces,
     onExcelRepartition,
     onExcelTemplates,
 }) {
     const [format, setFormat] = useState('pdf');
     const [documentType, setDocumentType] = useState('repartition');
-    const [localColumns, setLocalColumns] = useState(initialColumns);
+    const [localColumns, setLocalColumns] = useState(() =>
+        initialColumns.map((column) => ({ ...column })),
+    );
     const [localPresenceFilled, setLocalPresenceFilled] = useState(initialPresenceFilled);
+    const [exportScope, setExportScope] = useState('all');
+    const [exportFilename, setExportFilename] = useState(() =>
+        buildDefaultExportFilename(selectedExamen, 'pdf', 'repartition'),
+    );
+    const [dragOverKey, setDragOverKey] = useState(null);
     const [isExporting, setIsExporting] = useState(false);
 
     const selectedColumns = selectedExportColumns(localColumns);
     const canConfigureColumns = documentType === 'repartition';
-    const exportDisabled = isExporting || (canConfigureColumns && selectedColumns.length === 0);
+    const scopedRepartitions =
+        exportScope === 'filtered' && searchActive ? filteredRepartitions : repartitions;
+    const previewRows = scopedRepartitions.slice(0, 5);
+    const exportDisabled =
+        isExporting ||
+        scopedRepartitions.length === 0 ||
+        (canConfigureColumns && selectedColumns.length === 0);
+    const showCollectiveAbsenceActions = format === 'pdf' && documentType === 'collective';
 
     const documentOptions = format === 'pdf'
         ? [
@@ -309,33 +403,56 @@ function RepartitionExportModal({
         setDocumentType('repartition');
     }, [format]);
 
-    const toggleColumn = (key) => {
-        setLocalColumns((current) => ({ ...current, [key]: !current[key] }));
-    };
+    useEffect(() => {
+        if (!searchActive && exportScope === 'filtered') {
+            setExportScope('all');
+        }
+    }, [exportScope, searchActive]);
 
-    const setAllColumns = (value) => {
-        setLocalColumns(
-            Object.fromEntries(REPARTITION_EXPORT_FIELDS.map(({ key }) => [key, value])),
+    useEffect(() => {
+        setExportFilename(buildDefaultExportFilename(selectedExamen, format, documentType));
+    }, [documentType, format, selectedExamen]);
+
+    const toggleColumn = (key) => {
+        setLocalColumns((current) =>
+            current.map((column) =>
+                column.key === key ? { ...column, enabled: !column.enabled } : column,
+            ),
         );
     };
 
-    const handleSubmit = async () => {
-        setIsExporting(true);
-        try {
-            if (format === 'pdf') {
-                if (documentType === 'collective') {
-                    await onPdfCollective();
-                } else if (documentType === 'places') {
-                    await onPdfSallesPlaces();
-                } else {
-                    await onPdfRepartition(localColumns, localPresenceFilled);
-                }
-            } else if (documentType === 'correctors') {
-                await onExcelTemplates();
-            } else {
-                onExcelRepartition(localColumns, localPresenceFilled);
-            }
+    const setAllColumns = (value) => {
+        setLocalColumns((current) =>
+            current.map((column) => ({ ...column, enabled: value })),
+        );
+    };
 
+    const moveColumn = (fromIndex, toIndex) => {
+        if (fromIndex === toIndex) return;
+
+        setLocalColumns((current) => {
+            const next = [...current];
+            const [moved] = next.splice(fromIndex, 1);
+            next.splice(toIndex, 0, moved);
+            return next;
+        });
+    };
+
+    const buildExportOptions = () => ({
+        columns: localColumns,
+        presenceFilled: localPresenceFilled,
+        filename: exportFilename,
+        repartitionIds:
+            exportScope === 'filtered' && searchActive
+                ? scopedRepartitions.map((repartition) => repartition.id_repartition)
+                : [],
+    });
+
+    const runExportAction = async (callback) => {
+        setIsExporting(true);
+
+        try {
+            await callback(buildExportOptions());
             onClose();
         } catch (error) {
             setIsExporting(false);
@@ -343,239 +460,442 @@ function RepartitionExportModal({
         }
     };
 
-    const previewRows = repartitions.slice(0, 5);
+    const handleSubmit = async () => {
+        await runExportAction(async (exportOptions) => {
+            if (format === 'pdf') {
+                if (documentType === 'collective') {
+                    await onPdfCollective(exportOptions);
+                } else if (documentType === 'places') {
+                    await onPdfSallesPlaces(exportOptions);
+                } else {
+                    await onPdfRepartition(exportOptions);
+                }
+            } else if (documentType === 'correctors') {
+                await onExcelTemplates(exportOptions);
+            } else {
+                onExcelRepartition(exportOptions);
+            }
+        });
+    };
+
     const outputLabel = format === 'pdf' ? 'PDF' : 'Excel';
     const selectedDocument = documentOptions.find((option) => option.key === documentType);
+    const scopeOptions = [
+        {
+            value: 'all',
+            label: 'Tous',
+            count: repartitions.length,
+            description: 'Exporter toute la repartition de l examen.',
+            disabled: repartitions.length === 0,
+        },
+        {
+            value: 'filtered',
+            label: 'Filtres',
+            count: filteredRepartitions.length,
+            description: searchActive
+                ? 'Limiter l export aux lignes visibles dans le tableau.'
+                : 'Activez une recherche pour filtrer les lignes a exporter.',
+            disabled: !searchActive,
+        },
+    ];
 
     return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-            <div className="flex max-h-[92vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl dark:bg-gray-900">
-                <div className="flex items-start justify-between border-b border-slate-200 bg-slate-900 px-6 py-4 text-white dark:border-slate-700">
-                    <div>
-                        <h2 className="flex items-center gap-2 text-lg font-bold">
-                            <Download size={18} />
-                            Exporter la repartition
-                        </h2>
-                        <p className="mt-1 text-xs text-slate-300">
-                            {selectedExamen ? formatExamLabel(selectedExamen) : 'Examen non selectionne'}
-                        </p>
-                    </div>
-                    <button type="button" onClick={onClose} className="rounded-lg p-1 text-slate-300 transition hover:bg-white/10 hover:text-white">
-                        <X size={20} />
-                    </button>
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-6">
-                    <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-                        <div className="space-y-6">
-                            <section>
-                                <p className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">
-                                    Format d'export
-                                </p>
-                                <div className="grid gap-3 sm:grid-cols-2">
-                                    {[
-                                        { key: 'pdf', label: 'PDF', description: 'Documents prets a imprimer.', icon: FileText },
-                                        { key: 'excel', label: 'Excel', description: 'Fichiers editables pour traitement.', icon: FileSpreadsheet },
-                                    ].map((option) => {
-                                        const Icon = option.icon;
-                                        const active = format === option.key;
-
-                                        return (
-                                            <button
-                                                key={option.key}
-                                                type="button"
-                                                onClick={() => setFormat(option.key)}
-                                                className={`rounded-xl border-2 p-4 text-left transition ${
-                                                    active
-                                                        ? 'border-indigo-500 bg-indigo-50 text-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-200'
-                                                        : 'border-slate-200 text-slate-700 hover:border-slate-300 dark:border-slate-700 dark:text-slate-200 dark:hover:border-slate-600'
-                                                }`}
-                                            >
-                                                <div className="mb-2 flex items-center gap-2">
-                                                    <Icon size={18} />
-                                                    <span className="text-sm font-semibold">{option.label}</span>
-                                                </div>
-                                                <div className="text-xs leading-5 text-slate-500 dark:text-slate-400">
-                                                    {option.description}
-                                                </div>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            </section>
-
-                            <section>
-                                <p className="mb-3 text-xs font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">
-                                    Document
-                                </p>
-                                <div className="grid gap-3">
-                                    {documentOptions.map((option) => {
-                                        const Icon = option.icon;
-                                        const active = documentType === option.key;
-
-                                        return (
-                                            <button
-                                                key={option.key}
-                                                type="button"
-                                                onClick={() => setDocumentType(option.key)}
-                                                className={`flex items-start gap-3 rounded-xl border p-3 text-left transition ${
-                                                    active
-                                                        ? 'border-indigo-400 bg-indigo-50 text-indigo-800 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-200'
-                                                        : 'border-slate-200 text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800'
-                                                }`}
-                                            >
-                                                <Icon className="mt-0.5 shrink-0" size={17} />
-                                                <span>
-                                                    <span className="block text-sm font-semibold">{option.label}</span>
-                                                    <span className="mt-0.5 block text-xs leading-5 text-slate-500 dark:text-slate-400">
-                                                        {option.description}
-                                                    </span>
-                                                </span>
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            </section>
-
-                            {canConfigureColumns && (
-                                <section>
-                                    <div className="mb-3 flex items-center justify-between">
-                                        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">
-                                            Colonnes
-                                        </p>
-                                        <div className="flex gap-3">
-                                            <button type="button" onClick={() => setAllColumns(true)} className="text-xs font-medium text-indigo-600 hover:text-indigo-500">
-                                                Tout
-                                            </button>
-                                            <button type="button" onClick={() => setAllColumns(false)} className="text-xs font-medium text-slate-500 hover:text-slate-700 dark:hover:text-slate-300">
-                                                Aucun
-                                            </button>
-                                        </div>
-                                    </div>
-                                    <div className="grid gap-2 sm:grid-cols-2">
-                                        {REPARTITION_EXPORT_FIELDS.map(({ key, label }) => (
-                                            <button
-                                                key={key}
-                                                type="button"
-                                                onClick={() => toggleColumn(key)}
-                                                className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-sm transition ${
-                                                    localColumns[key]
-                                                        ? 'border-indigo-300 bg-indigo-50 text-indigo-700 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-200'
-                                                        : 'border-slate-200 text-slate-600 hover:bg-slate-50 dark:border-slate-700 dark:text-slate-300 dark:hover:bg-slate-800'
-                                                }`}
-                                            >
-                                                <span className={`flex h-4 w-4 items-center justify-center rounded border ${localColumns[key] ? 'border-indigo-600 bg-indigo-600' : 'border-slate-300 dark:border-slate-600'}`}>
-                                                    {localColumns[key] && <span className="block h-1.5 w-1.5 rounded-full bg-white" />}
-                                                </span>
-                                                {label}
-                                            </button>
-                                        ))}
-                                    </div>
-                                    <label className="mt-3 flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200">
-                                        <input
-                                            type="checkbox"
-                                            checked={localPresenceFilled}
-                                            onChange={() => setLocalPresenceFilled((current) => !current)}
-                                            className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-                                        />
-                                        Remplir la colonne presence
-                                    </label>
-                                </section>
-                            )}
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+            <div className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-white shadow-2xl dark:bg-gray-800">
+                <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-700">
+                    <div className="flex items-center gap-3">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-100 dark:bg-emerald-900/30">
+                            <FileDown className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
                         </div>
-
-                        <aside className="space-y-4 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-900/50">
-                            <div>
-                                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">
-                                    Resume
-                                </p>
-                                <div className="mt-3 grid grid-cols-2 gap-2">
-                                    <div className="rounded-lg bg-white p-3 dark:bg-slate-800">
-                                        <div className="text-xs text-slate-500 dark:text-slate-400">Format</div>
-                                        <div className="mt-1 text-lg font-bold text-slate-900 dark:text-white">{outputLabel}</div>
-                                    </div>
-                                    <div className="rounded-lg bg-white p-3 dark:bg-slate-800">
-                                        <div className="text-xs text-slate-500 dark:text-slate-400">Lignes</div>
-                                        <div className="mt-1 text-lg font-bold text-slate-900 dark:text-white">{repartitions.length}</div>
-                                    </div>
-                                    <div className="rounded-lg bg-white p-3 dark:bg-slate-800">
-                                        <div className="text-xs text-slate-500 dark:text-slate-400">Document</div>
-                                        <div className="mt-1 text-sm font-bold text-slate-900 dark:text-white">{selectedDocument?.label || '-'}</div>
-                                    </div>
-                                    <div className="rounded-lg bg-white p-3 dark:bg-slate-800">
-                                        <div className="text-xs text-slate-500 dark:text-slate-400">Colonnes</div>
-                                        <div className="mt-1 text-lg font-bold text-slate-900 dark:text-white">
-                                            {canConfigureColumns ? selectedColumns.length : '-'}
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div>
-                                <p className="mb-2 text-xs font-semibold uppercase tracking-[0.22em] text-slate-500 dark:text-slate-400">
-                                    Apercu
-                                </p>
-                                <div className="overflow-hidden rounded-lg border border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-900">
-                                    {previewRows.length > 0 ? (
-                                        <table className="w-full text-xs">
-                                            <thead className="bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400">
-                                                <tr>
-                                                    <th className="px-2 py-2 text-left font-semibold">Etudiant</th>
-                                                    <th className="px-2 py-2 text-left font-semibold">Grille</th>
-                                                    <th className="px-2 py-2 text-left font-semibold">Place</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                                {previewRows.map((repartition) => (
-                                                    <tr key={repartition.id_repartition}>
-                                                        <td className="px-2 py-2 text-slate-700 dark:text-slate-200">
-                                                            {repartitionStudentName(repartition)}
-                                                        </td>
-                                                        <td className="px-2 py-2 text-slate-500 dark:text-slate-400">
-                                                            {repartition.code_grille ?? '-'}
-                                                        </td>
-                                                        <td className="px-2 py-2 text-slate-500 dark:text-slate-400">
-                                                            {repartition.numero_place ?? '-'}
-                                                        </td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    ) : (
-                                        <div className="px-3 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
-                                            Aucune repartition pour cet examen.
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        </aside>
+                        <div>
+                            <h2 className="text-base font-bold text-gray-900 dark:text-white">
+                                Exporter la repartition
+                            </h2>
+                            <p className="text-xs text-gray-500 dark:text-gray-400">
+                                Configurez votre export {outputLabel.toLowerCase()} avant telechargement
+                            </p>
+                        </div>
                     </div>
-                </div>
-
-                <div className="flex flex-col-reverse gap-3 border-t border-slate-200 bg-slate-50 px-6 py-4 dark:border-slate-700 dark:bg-slate-800/50 sm:flex-row sm:items-center sm:justify-between">
                     <button
                         type="button"
                         onClick={onClose}
-                        className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 transition hover:bg-white dark:border-slate-600 dark:text-slate-200 dark:hover:bg-slate-700"
+                        className="rounded-lg p-1 text-gray-400 transition hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-700 dark:hover:text-gray-300"
                     >
-                        Annuler
+                        <X size={16} />
                     </button>
-                    <button
-                        type="button"
-                        onClick={handleSubmit}
-                        disabled={exportDisabled}
-                        className="inline-flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                        <Download size={16} />
-                        {isExporting ? 'Export en cours...' : `Exporter en ${outputLabel}`}
-                    </button>
+                </div>
+
+                <div className="space-y-5 px-6 py-5">
+                    <div className="rounded-xl border border-gray-200 bg-gray-50/80 px-4 py-3 dark:border-gray-700 dark:bg-gray-900/40">
+                        <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                            {selectedExamen ? formatExamLabel(selectedExamen) : 'Examen non selectionne'}
+                        </div>
+                        <div className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                            {selectedExamen?.session_examen?.nom_session ?? 'Session'} · {repartitions.length} ligne(s) disponibles
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-400">
+                            Format d'export
+                        </label>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                            {[
+                                {
+                                    key: 'pdf',
+                                    label: 'PDF',
+                                    description: 'Documents prets a imprimer par salle.',
+                                    icon: FileText,
+                                },
+                                {
+                                    key: 'excel',
+                                    label: 'Excel',
+                                    description: 'Fichiers editables pour suivi et traitement.',
+                                    icon: FileSpreadsheet,
+                                },
+                            ].map((option) => {
+                                const Icon = option.icon;
+                                const active = format === option.key;
+
+                                return (
+                                    <button
+                                        key={option.key}
+                                        type="button"
+                                        onClick={() => setFormat(option.key)}
+                                        className={`rounded-xl border-2 px-4 py-3 text-left transition-all ${
+                                            active
+                                                ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20'
+                                                : 'border-gray-200 hover:border-gray-300 dark:border-gray-600'
+                                        }`}
+                                    >
+                                        <div className="mb-2 flex items-center gap-2">
+                                            <Icon className={`h-4 w-4 ${active ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500 dark:text-gray-400'}`} />
+                                            <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                                                {option.label}
+                                            </span>
+                                        </div>
+                                        <div className="text-xs leading-5 text-gray-500 dark:text-gray-400">
+                                            {option.description}
+                                        </div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-400">
+                            Document
+                        </label>
+                        <div className="grid gap-2">
+                            {documentOptions.map((option) => {
+                                const Icon = option.icon;
+                                const active = documentType === option.key;
+
+                                return (
+                                    <button
+                                        key={option.key}
+                                        type="button"
+                                        onClick={() => setDocumentType(option.key)}
+                                        className={`flex items-start gap-3 rounded-xl border px-4 py-3 text-left transition-all ${
+                                            active
+                                                ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20'
+                                                : 'border-gray-200 hover:border-gray-300 dark:border-gray-600'
+                                        }`}
+                                    >
+                                        <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${active ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500 dark:text-gray-400'}`} />
+                                        <span>
+                                            <span className="block text-sm font-semibold text-gray-900 dark:text-white">
+                                                {option.label}
+                                            </span>
+                                            <span className="mt-0.5 block text-xs leading-5 text-gray-500 dark:text-gray-400">
+                                                {option.description}
+                                            </span>
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    <div>
+                        <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-400">
+                            Donnees a exporter
+                        </label>
+                        <div className="grid gap-2 sm:grid-cols-2">
+                            {scopeOptions.map((option) => {
+                                const active = exportScope === option.value;
+
+                                return (
+                                    <button
+                                        key={option.value}
+                                        type="button"
+                                        onClick={() => setExportScope(option.value)}
+                                        disabled={option.disabled}
+                                        className={`rounded-xl border-2 px-4 py-3 text-left transition-all disabled:cursor-not-allowed disabled:opacity-40 ${
+                                            active
+                                                ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20'
+                                                : 'border-gray-200 hover:border-gray-300 dark:border-gray-600'
+                                        }`}
+                                    >
+                                        <div className="flex items-center justify-between gap-3">
+                                            <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                                                {option.label}
+                                            </span>
+                                            <span className={`text-sm font-bold ${active ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-500 dark:text-gray-400'}`}>
+                                                {option.count}
+                                            </span>
+                                        </div>
+                                        <div className="mt-1 text-xs leading-5 text-gray-500 dark:text-gray-400">
+                                            {option.description}
+                                        </div>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {canConfigureColumns && (
+                        <div>
+                            <div className="mb-2 flex items-center justify-between">
+                                <label className="text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-400">
+                                    Colonnes
+                                    <span className="normal-case font-normal text-gray-400">
+                                        {' '}
+                                        (glisser pour reordonner)
+                                    </span>
+                                </label>
+                                <div className="flex gap-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setAllColumns(true)}
+                                        className="text-xs text-emerald-600 hover:underline"
+                                    >
+                                        Tout
+                                    </button>
+                                    <span className="text-gray-300">|</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setAllColumns(false)}
+                                        className="text-xs text-red-500 hover:underline"
+                                    >
+                                        Aucun
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div className="space-y-1">
+                                {localColumns.map((column, index) => (
+                                    <div
+                                        key={column.key}
+                                        draggable
+                                        onDragStart={(event) =>
+                                            event.dataTransfer.setData('text/plain', String(index))
+                                        }
+                                        onDragOver={(event) => {
+                                            event.preventDefault();
+                                            setDragOverKey(column.key);
+                                        }}
+                                        onDragLeave={() => setDragOverKey(null)}
+                                        onDrop={(event) => {
+                                            event.preventDefault();
+                                            moveColumn(
+                                                Number(event.dataTransfer.getData('text/plain')),
+                                                index,
+                                            );
+                                            setDragOverKey(null);
+                                        }}
+                                        className={`flex items-center gap-2 rounded-lg border px-3 py-2 transition-all ${
+                                            column.enabled
+                                                ? 'border-emerald-400 bg-emerald-50 dark:bg-emerald-900/20'
+                                                : 'border-gray-200 bg-white dark:border-gray-600 dark:bg-gray-700'
+                                        } ${dragOverKey === column.key ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                                    >
+                                        <GripVertical className="h-4 w-4 text-gray-400 dark:text-gray-500" />
+                                        <input
+                                            type="checkbox"
+                                            checked={column.enabled}
+                                            onChange={() => toggleColumn(column.key)}
+                                            className="h-3.5 w-3.5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                                            onClick={(event) => event.stopPropagation()}
+                                        />
+                                        <span className="flex-1 text-sm text-gray-700 dark:text-gray-200">
+                                            {column.label}
+                                        </span>
+                                        <span className="text-xs text-gray-300 dark:text-gray-500">
+                                            #{index + 1}
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <label className="mt-3 flex items-center gap-2 text-sm text-gray-700 dark:text-gray-200">
+                                <input
+                                    type="checkbox"
+                                    checked={localPresenceFilled}
+                                    onChange={() => setLocalPresenceFilled((current) => !current)}
+                                    className="h-4 w-4 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500"
+                                />
+                                Remplir la colonne presence
+                            </label>
+                        </div>
+                    )}
+
+                    <div>
+                        <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-gray-600 dark:text-gray-400">
+                            Nom du fichier
+                        </label>
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="text"
+                                value={exportFilename}
+                                onChange={(event) => setExportFilename(event.target.value)}
+                                className="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:ring-2 focus:ring-emerald-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-100"
+                                placeholder={buildDefaultExportFilename(selectedExamen, format, documentType)}
+                            />
+                            <span className="whitespace-nowrap text-xs text-gray-400">
+                                .{format === 'pdf' ? 'pdf' : 'xlsx'}
+                            </span>
+                        </div>
+                    </div>
+
+                    {showCollectiveAbsenceActions && (
+                        <div className="rounded-xl border border-amber-200 bg-amber-50/70 p-4 dark:border-amber-700/60 dark:bg-amber-900/10">
+                            <div className="flex items-start justify-between gap-4">
+                                <div>
+                                    <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                                        PV d&apos;absence
+                                    </div>
+                                    <div className="mt-1 text-xs leading-5 text-gray-600 dark:text-gray-300">
+                                        Genere le modele du parcours <code>/documents/proces-v</code> pour le module courant
+                                        ou pour l&apos;ensemble des modules de la presence collective.
+                                    </div>
+                                </div>
+                                <span className="rounded-full bg-white px-2.5 py-1 text-xs font-semibold text-amber-700 shadow-sm dark:bg-gray-800 dark:text-amber-300">
+                                    {collectiveModulesCount} module(s)
+                                </span>
+                            </div>
+
+                            <div className="mt-4 flex flex-wrap gap-2">
+                                <button
+                                    type="button"
+                                    onClick={() => runExportAction(onPdfAbsenceModule)}
+                                    disabled={isExporting || scopedRepartitions.length === 0}
+                                    className="inline-flex items-center gap-2 rounded-lg border border-amber-300 bg-white px-3 py-2 text-sm font-medium text-amber-900 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-amber-600 dark:bg-gray-800 dark:text-amber-200 dark:hover:bg-amber-900/20"
+                                >
+                                    <Download className="h-4 w-4" />
+                                    PV d&apos;absence du module courant
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => runExportAction(onPdfAbsenceCollective)}
+                                    disabled={isExporting || scopedRepartitions.length === 0 || collectiveModulesCount === 0}
+                                    className="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-3 py-2 text-sm font-semibold text-white transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-50"
+                                >
+                                    <Download className="h-4 w-4" />
+                                    PV d&apos;absence tous modules
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    <div className="rounded-xl border border-gray-200 dark:border-gray-700">
+                        <div className="border-b border-gray-200 px-4 py-3 dark:border-gray-700">
+                            <div className="flex items-center justify-between gap-3">
+                                <div>
+                                    <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                                        Apercu de l'export
+                                    </div>
+                                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                                        {selectedDocument?.label || 'Document'} · {scopedRepartitions.length} ligne(s)
+                                    </div>
+                                </div>
+                                {canConfigureColumns && (
+                                    <div className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                                        {selectedColumns.length} colonne(s)
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                        <div className="max-h-56 overflow-y-auto">
+                            {previewRows.length > 0 ? (
+                                <table className="w-full text-sm">
+                                    <thead className="bg-gray-50 dark:bg-gray-700">
+                                        <tr>
+                                            <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-300">
+                                                Etudiant
+                                            </th>
+                                            <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-300">
+                                                Grille
+                                            </th>
+                                            <th className="px-4 py-2 text-left text-xs font-semibold uppercase tracking-wide text-gray-500 dark:text-gray-300">
+                                                Place
+                                            </th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                                        {previewRows.map((repartition) => (
+                                            <tr key={repartition.id_repartition}>
+                                                <td className="px-4 py-2 text-gray-700 dark:text-gray-200">
+                                                    {repartitionStudentName(repartition)}
+                                                </td>
+                                                <td className="px-4 py-2 text-gray-500 dark:text-gray-400">
+                                                    {repartition.code_grille ?? '-'}
+                                                </td>
+                                                <td className="px-4 py-2 text-gray-500 dark:text-gray-400">
+                                                    {repartition.numero_place ?? '-'}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            ) : (
+                                <div className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">
+                                    Aucune ligne a exporter avec les filtres actuels.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="flex items-center justify-between border-t border-gray-200 bg-gray-50 px-5 py-3 dark:border-gray-700 dark:bg-gray-800/50">
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                        {canConfigureColumns ? `${selectedColumns.length} col · ` : ''}
+                        {scopedRepartitions.length} ligne(s) · {selectedDocument?.label || outputLabel}
+                    </p>
+                    <div className="flex gap-2">
+                        <button
+                            type="button"
+                            onClick={onClose}
+                            className="rounded-lg border border-gray-300 px-3 py-1.5 text-sm text-gray-700 transition hover:bg-gray-100 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-700"
+                        >
+                            Annuler
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleSubmit}
+                            disabled={exportDisabled}
+                            className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-1.5 text-sm font-semibold text-white transition-colors hover:bg-emerald-700 disabled:opacity-50"
+                        >
+                            <FileDown className="h-4 w-4" />
+                            {isExporting ? 'Export en cours...' : `Exporter en ${outputLabel}`}
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
     );
 }
 
-export default function RepartitionIndex({ examens, repartitions, inscriptions, selectedExamenId, salles }) {
+export default function RepartitionIndex({
+    examens,
+    repartitions,
+    inscriptions,
+    selectedExamenId,
+    salles,
+    pvDocuments = [],
+    pvFormOptions = {},
+}) {
     const [editingId, setEditingId] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
     const [currentPage, setCurrentPage] = useState(1);
@@ -584,15 +904,9 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
     const [selectedSemestre, setSelectedSemestre] = useState('');
     const [selectedElement, setSelectedElement] = useState('');
     const [showExportModal, setShowExportModal] = useState(false);
+    const [showPvAbsenceSection, setShowPvAbsenceSection] = useState(false);
     const [isPushingPointage, setIsPushingPointage] = useState(false);
-    const [columns, setColumns] = useState({
-        cne: true,
-        etudiant: true,
-        grille: true,
-        place: true,
-        anonymat: true,
-        presence: true,
-    });
+    const [columns, setColumns] = useState(() => defaultExportColumns());
     const [presenceFilled, setPresenceFilled] = useState(true);
     const [templateBuffer, setTemplateBuffer] = useState(null);
     const { data, setData, post, put, delete: destroy, processing, errors } = useForm(defaultFormState(selectedExamenId));
@@ -605,6 +919,52 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         () => (selectedExamen ? usesElementRepartitionLogic(selectedExamen) : false),
         [selectedExamen],
     );
+    const selectedExamenPvInitialValues = useMemo(() => {
+        if (!selectedExamen) {
+            return {};
+        }
+
+        const examMeta = resolveExamMeta(selectedExamen);
+        const examSalles = resolvedExamSalles(selectedExamen);
+        const prefilledSalle = examSalles.length === 1 ? examSalles[0] : null;
+        const examDate = selectedExamen.date_examen
+            ? new Date(selectedExamen.date_examen).toLocaleDateString('fr-FR')
+            : '';
+
+        return {
+            nomDoc: [
+                "PV absence",
+                selectedExamen.session_examen?.nom_session,
+                prefilledSalle?.code_salle || prefilledSalle?.nom_salle,
+            ]
+                .filter(Boolean)
+                .join(' - '),
+            descripDoc: [formatExamLabel(selectedExamen), examDate].filter(Boolean).join(' - '),
+            session_id: selectedExamen.id_session_examen ? String(selectedExamen.id_session_examen) : '',
+            niveau_id: examMeta.niveauId ? String(examMeta.niveauId) : '',
+            filiere_id:
+                selectedExamen.offre_formation?.section?.id_filiere
+                || selectedExamen.session_examen?.id_filiere
+                    ? String(
+                          selectedExamen.offre_formation?.section?.id_filiere
+                              || selectedExamen.session_examen?.id_filiere,
+                      )
+                    : '',
+            section_id: selectedExamen.offre_formation?.id_section
+                ? String(selectedExamen.offre_formation.id_section)
+                : '',
+            salle_id: prefilledSalle?.id_salle ? String(prefilledSalle.id_salle) : '',
+            module_id: '',
+        };
+    }, [selectedExamen]);
+    const pvAbsenceFormKey = useMemo(
+        () =>
+            JSON.stringify({
+                examen: selectedExamenId ?? null,
+                defaults: selectedExamenPvInitialValues,
+            }),
+        [selectedExamenId, selectedExamenPvInitialValues],
+    );
 
     const editingRow = useMemo(
         () => repartitions.find((item) => item.id_repartition === editingId),
@@ -616,6 +976,12 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         setEditingId(null);
         setSearchTerm('');
         setCurrentPage(1);
+    }, [selectedExamenId]);
+
+    useEffect(() => {
+        if (!selectedExamenId) {
+            setShowPvAbsenceSection(false);
+        }
     }, [selectedExamenId]);
 
     useEffect(() => {
@@ -747,6 +1113,61 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
             })),
         [examens],
     );
+    const selectedExamenMeta = useMemo(
+        () => (selectedExamen ? resolveExamMeta(selectedExamen) : null),
+        [selectedExamen],
+    );
+    const collectiveExamens = useMemo(() => {
+        if (!selectedExamen || !selectedExamenMeta) {
+            return [];
+        }
+
+        const selectedSessionId = String(
+            selectedExamen.session_examen?.id_session_examen ?? selectedExamen.id_session_examen ?? '',
+        );
+        const selectedSemestreId = selectedExamenMeta.semestreId ? String(selectedExamenMeta.semestreId) : '';
+        const selectedNiveauId = selectedExamenMeta.niveauId ? String(selectedExamenMeta.niveauId) : '';
+        const selectedFiliere = normalizeText(selectedExamenMeta.filiereNom);
+
+        return examensWithMeta
+            .filter(({ examen, semestreId, niveauId, filiereNom }) => {
+                const examSessionId = String(
+                    examen.session_examen?.id_session_examen ?? examen.id_session_examen ?? '',
+                );
+
+                if (examSessionId !== selectedSessionId) {
+                    return false;
+                }
+
+                if (selectedSemestreId && String(semestreId ?? '') !== selectedSemestreId) {
+                    return false;
+                }
+
+                if (selectedNiveauId && String(niveauId ?? '') !== selectedNiveauId) {
+                    return false;
+                }
+
+                if (selectedFiliere && normalizeText(filiereNom) !== selectedFiliere) {
+                    return false;
+                }
+
+                return true;
+            })
+            .map(({ examen }) => examen);
+    }, [examensWithMeta, selectedExamen, selectedExamenMeta]);
+    const collectiveSalles = useMemo(() => {
+        const seen = new Set();
+
+        return collectiveExamens.flatMap((examen) => resolvedExamSalles(examen)).filter((salle) => {
+            const key = String(salle.id_salle);
+            if (seen.has(key)) {
+                return false;
+            }
+
+            seen.add(key);
+            return true;
+        });
+    }, [collectiveExamens]);
 
     const availableNiveaux = useMemo(() => {
         const map = new Map();
@@ -972,27 +1393,63 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         });
     };
 
-    const downloadPdfPerSalle = async (baseUrl, requestParams, fallbackPrefix) => {
-        if (salleIndices.length === 0) {
+    const resolveExportRows = (repartitionIds = []) => {
+        if (!Array.isArray(repartitionIds) || repartitionIds.length === 0) {
+            return repartitions;
+        }
+
+        const ids = new Set(repartitionIds.map((value) => String(value)));
+
+        return repartitions.filter((repartition) => ids.has(String(repartition.id_repartition)));
+    };
+
+    const downloadPdfPerSalle = async (
+        baseUrl,
+        requestParams,
+        fallbackPrefix,
+        exportRows = repartitions,
+        filename = '',
+        options = {},
+    ) => {
+        const resolveSalleForIndex = options.resolveSalleForIndex;
+        const targetSalleIndices = Array.from(
+            new Set(exportRows.map((item) => salleIndexFromGrille(item.code_grille))),
+        ).sort((left, right) => left - right);
+
+        if (targetSalleIndices.length === 0) {
             Swal.fire({ icon: 'info', title: 'Aucune repartition pour cet examen' });
             return;
         }
 
-        for (const index of salleIndices) {
+        const fallbackBase =
+            sanitizeFileName((filename || '').replace(/\.pdf$/i, '')) || fallbackPrefix;
+
+        for (const index of targetSalleIndices) {
             const params = new URLSearchParams(requestParams.toString());
             params.set('salle_index', String(index));
+            const salle = resolveSalleForIndex?.(index);
+            if (salle?.id_salle) {
+                params.set('salle_id', String(salle.id_salle));
+            }
             const url = `${baseUrl}?${params.toString()}`;
 
             try {
                 const response = await fetch(url, { credentials: 'same-origin' });
                 if (!response.ok) {
-                    throw new Error(`Erreur serveur (${response.status})`);
+                    throw new Error(
+                        await readFailedResponseMessage(
+                            response,
+                            `Erreur serveur (${response.status})`,
+                        ),
+                    );
                 }
 
                 const blob = await response.blob();
                 const filename = extractFilenameFromDisposition(
                     response.headers.get('Content-Disposition'),
-                    `${fallbackPrefix}-salle-${index}.pdf`,
+                    targetSalleIndices.length === 1
+                        ? `${fallbackBase}.pdf`
+                        : `${fallbackBase}-salle-${index}.pdf`,
                 );
 
                 downloadBlob(blob, filename);
@@ -1064,6 +1521,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         }
         const exportColumns = options.columns ?? columns;
         const exportPresenceFilled = options.presenceFilled ?? presenceFilled;
+        const exportRows = resolveExportRows(options.repartitionIds);
         const selectedColumns = selectedExportColumns(exportColumns);
 
         if (selectedColumns.length === 0) {
@@ -1075,36 +1533,209 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         const params = new URLSearchParams();
         selectedColumns.forEach((col) => params.append('columns[]', col));
         params.append('presence_filled', exportPresenceFilled ? '1' : '0');
-        await downloadPdfPerSalle(baseUrl, params, 'repartition');
+        (options.repartitionIds ?? []).forEach((id) => params.append('ids[]', String(id)));
+        if (options.filename?.trim()) {
+            params.append('filename', options.filename.trim());
+        }
+        await downloadPdfPerSalle(baseUrl, params, 'repartition', exportRows, options.filename);
     };
 
-    const handleCollectiveExport = async () => {
+    const handleCollectiveExport = async (options = {}) => {
         if (!selectedExamenId) {
             Swal.fire({ icon: 'info', title: 'Choisissez un examen' });
             return;
         }
 
         const baseUrl = route('surveillance.repartition-etudiants.export-collective', selectedExamenId);
-        await downloadPdfPerSalle(baseUrl, new URLSearchParams(), 'presence-collective');
+        const params = new URLSearchParams();
+        (options.repartitionIds ?? []).forEach((id) => params.append('ids[]', String(id)));
+        if (options.filename?.trim()) {
+            params.append('filename', options.filename.trim());
+        }
+
+        if (collectiveSalles.length === 0) {
+            Swal.fire({ icon: 'info', title: 'Aucune salle trouvee pour cette exportation collective' });
+            return;
+        }
+
+        const fallbackBase =
+            sanitizeFileName((options.filename || '').replace(/\.pdf$/i, '')) || 'presence-collective';
+
+        for (const salle of collectiveSalles) {
+            const requestParams = new URLSearchParams(params.toString());
+            requestParams.set('salle_id', String(salle.id_salle));
+
+            try {
+                const response = await fetch(`${baseUrl}?${requestParams.toString()}`, {
+                    credentials: 'same-origin',
+                });
+                if (!response.ok) {
+                    throw new Error(
+                        await readFailedResponseMessage(
+                            response,
+                            `Erreur serveur (${response.status})`,
+                        ),
+                    );
+                }
+
+                const blob = await response.blob();
+                const fallbackFilename =
+                    collectiveSalles.length === 1
+                        ? `${fallbackBase}.pdf`
+                        : `${fallbackBase}-salle-${sanitizeFileName(salle.code_salle || salle.nom_salle || salle.id_salle)}.pdf`;
+                const filename = extractFilenameFromDisposition(
+                    response.headers.get('Content-Disposition'),
+                    fallbackFilename,
+                );
+
+                downloadBlob(blob, filename);
+                await new Promise((resolve) => setTimeout(resolve, 200));
+            } catch (error) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Echec du telechargement',
+                    text: error?.message || 'Impossible de telecharger les PDFs collectifs.',
+                });
+                break;
+            }
+        }
     };
 
-    const handleSallesPlacesExport = async () => {
+    const resolvePdfExportFilename = (requestedFilename, targetDocumentType, sourceDocumentType = targetDocumentType) => {
+        const trimmed = requestedFilename?.trim();
+        const sourceDefault = buildDefaultExportFilename(selectedExamen, 'pdf', sourceDocumentType);
+
+        if (!trimmed || trimmed === sourceDefault) {
+            return buildDefaultExportFilename(selectedExamen, 'pdf', targetDocumentType);
+        }
+
+        return trimmed;
+    };
+
+    const handleModuleAbsenceExport = async (options = {}) => {
+        if (!selectedExamenId) {
+            Swal.fire({ icon: 'info', title: 'Choisissez un examen' });
+            return;
+        }
+
+        const exportRows = resolveExportRows(options.repartitionIds);
+        const filename = resolvePdfExportFilename(options.filename, 'absence-module', 'collective');
+        const baseUrl = route('surveillance.repartition-etudiants.export-pv-absence', selectedExamenId);
+        const params = new URLSearchParams();
+
+        (options.repartitionIds ?? []).forEach((id) => params.append('ids[]', String(id)));
+        if (filename?.trim()) {
+            params.append('filename', filename.trim());
+        }
+
+        await downloadPdfPerSalle(
+            baseUrl,
+            params,
+            'pv-absence-module',
+            exportRows,
+            filename,
+            {
+                resolveSalleForIndex: (index) => examSalleForIndex(selectedExamen, index),
+            },
+        );
+    };
+
+    const handleCollectiveAbsenceExport = async (options = {}) => {
+        if (!selectedExamenId) {
+            Swal.fire({ icon: 'info', title: 'Choisissez un examen' });
+            return;
+        }
+
+        if (collectiveSalles.length === 0) {
+            Swal.fire({ icon: 'info', title: 'Aucune salle trouvee pour cette exportation collective' });
+            return;
+        }
+
+        const filename = resolvePdfExportFilename(options.filename, 'absence-collective', 'collective');
+        const baseUrl = route('surveillance.repartition-etudiants.export-pv-absence-collective', selectedExamenId);
+        const params = new URLSearchParams();
+
+        (options.repartitionIds ?? []).forEach((id) => params.append('ids[]', String(id)));
+        if (filename?.trim()) {
+            params.append('filename', filename.trim());
+        }
+
+        const fallbackBase =
+            sanitizeFileName((filename || '').replace(/\.pdf$/i, '')) || 'pv-absence-collective';
+
+        for (const salle of collectiveSalles) {
+            const requestParams = new URLSearchParams(params.toString());
+            requestParams.set('salle_id', String(salle.id_salle));
+
+            try {
+                const response = await fetch(`${baseUrl}?${requestParams.toString()}`, {
+                    credentials: 'same-origin',
+                });
+                if (!response.ok) {
+                    throw new Error(
+                        await readFailedResponseMessage(
+                            response,
+                            `Erreur serveur (${response.status})`,
+                        ),
+                    );
+                }
+
+                const blob = await response.blob();
+                const fallbackFilename =
+                    collectiveSalles.length === 1
+                        ? `${fallbackBase}.pdf`
+                        : `${fallbackBase}-salle-${sanitizeFileName(salle.code_salle || salle.nom_salle || salle.id_salle)}.pdf`;
+                const resolvedFilename = extractFilenameFromDisposition(
+                    response.headers.get('Content-Disposition'),
+                    fallbackFilename,
+                );
+
+                downloadBlob(blob, resolvedFilename);
+                await new Promise((resolve) => setTimeout(resolve, 200));
+            } catch (error) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Echec du telechargement',
+                    text: error?.message || "Impossible de telecharger les PV d'absence collectifs.",
+                });
+                break;
+            }
+        }
+    };
+
+    const handleSallesPlacesExport = async (options = {}) => {
         if (!selectedExamenId) {
             Swal.fire({ icon: 'info', title: 'Choisissez un examen' });
             return;
         }
 
         const baseUrl = route('surveillance.repartition-etudiants.export-salles-places', selectedExamenId);
-        await downloadPdfPerSalle(baseUrl, new URLSearchParams(), 'repartition-salles-places');
+        const exportRows = resolveExportRows(options.repartitionIds);
+        const params = new URLSearchParams();
+        (options.repartitionIds ?? []).forEach((id) => params.append('ids[]', String(id)));
+        if (options.filename?.trim()) {
+            params.append('filename', options.filename.trim());
+        }
+        await downloadPdfPerSalle(
+            baseUrl,
+            params,
+            'repartition-salles-places',
+            exportRows,
+            options.filename,
+        );
     };
 
-    const handleRepartitionExcelExport = (exportColumns = columns, exportPresenceFilled = presenceFilled) => {
+    const handleRepartitionExcelExport = (options = {}) => {
         if (!selectedExamen || !selectedExamenId) {
             Swal.fire({ icon: 'info', title: 'Choisissez un examen' });
             return;
         }
 
-        if (!repartitions.length) {
+        const exportColumns = options.columns ?? columns;
+        const exportPresenceFilled = options.presenceFilled ?? presenceFilled;
+        const exportRows = resolveExportRows(options.repartitionIds);
+
+        if (!exportRows.length) {
             Swal.fire({ icon: 'info', title: 'Aucune repartition pour cet examen' });
             return;
         }
@@ -1115,7 +1746,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
             return;
         }
 
-        const orderedRows = [...repartitions].sort((left, right) => {
+        const orderedRows = [...exportRows].sort((left, right) => {
             const leftSalle = salleIndexFromGrille(left.code_grille);
             const rightSalle = salleIndexFromGrille(right.code_grille);
             if (leftSalle !== rightSalle) {
@@ -1185,14 +1816,8 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
             XLSX.utils.book_append_sheet(workbook, worksheet, safeSheetName('Repartition'));
 
             const filename = ensureXlsxExtension(
-                sanitizeFileName(
-                    [
-                        'repartition',
-                        formatSessionLabel(selectedExamen.session_examen),
-                        selectedExamen.module?.code_module,
-                        selectedExamen.element?.code_element,
-                    ].filter(Boolean).join('_'),
-                ) || 'repartition',
+                sanitizeFileName((options.filename || '').replace(/\.xlsx$/i, '')) ||
+                    buildDefaultExportFilename(selectedExamen, 'excel', 'repartition'),
             );
 
             XLSX.writeFile(workbook, filename);
@@ -1213,13 +1838,15 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
         }
     };
 
-    const handleExcelTemplates = async () => {
+    const handleExcelTemplates = async (options = {}) => {
         if (!selectedExamen || !selectedExamenId) {
             Swal.fire({ icon: 'info', title: 'Choisissez un examen' });
             return;
         }
 
-        if (!repartitions.length) {
+        const exportRows = resolveExportRows(options.repartitionIds);
+
+        if (!exportRows.length) {
             Swal.fire({ icon: 'info', title: 'Aucune repartition pour cet examen' });
             return;
         }
@@ -1247,9 +1874,10 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                 .filter(Boolean)
                 .join(' - ');
             const noteScale = 20;
-            const anonymatList = repartitions.map((rep) => rep.code_anonymat ?? rep.code_grille ?? '');
+            const anonymatList = exportRows.map((rep) => rep.code_anonymat ?? rep.code_grille ?? '');
 
             const baseName =
+                sanitizeFileName((options.filename || '').replace(/\.xlsx$/i, '')) ||
                 sanitizeFileName(
                     [
                         sessionLabel,
@@ -1357,20 +1985,25 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                     selectedExamen={selectedExamen}
                     selectedExamenUsesElements={selectedExamenUsesElements}
                     repartitions={repartitions}
+                    filteredRepartitions={filteredRepartitions}
+                    searchActive={searchActive}
+                    collectiveModulesCount={collectiveExamens.length}
                     initialColumns={columns}
                     initialPresenceFilled={presenceFilled}
                     onClose={() => setShowExportModal(false)}
-                    onPdfRepartition={async (exportColumns, exportPresenceFilled) => {
-                        setColumns(exportColumns);
-                        setPresenceFilled(exportPresenceFilled);
-                        await handleExport({ columns: exportColumns, presenceFilled: exportPresenceFilled });
+                    onPdfRepartition={async (options) => {
+                        setColumns(options.columns);
+                        setPresenceFilled(options.presenceFilled);
+                        await handleExport(options);
                     }}
                     onPdfCollective={handleCollectiveExport}
+                    onPdfAbsenceModule={handleModuleAbsenceExport}
+                    onPdfAbsenceCollective={handleCollectiveAbsenceExport}
                     onPdfSallesPlaces={handleSallesPlacesExport}
-                    onExcelRepartition={(exportColumns, exportPresenceFilled) => {
-                        setColumns(exportColumns);
-                        setPresenceFilled(exportPresenceFilled);
-                        handleRepartitionExcelExport(exportColumns, exportPresenceFilled);
+                    onExcelRepartition={(options) => {
+                        setColumns(options.columns);
+                        setPresenceFilled(options.presenceFilled);
+                        handleRepartitionExcelExport(options);
                     }}
                     onExcelTemplates={handleExcelTemplates}
                 />
@@ -1485,15 +2118,26 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                 </div>
                             )}
                             <div className="mt-3 space-y-2">
-                                <button
-                                    type="button"
-                                    onClick={() => setShowExportModal(true)}
-                                    className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
-                                    disabled={!selectedExamenId || repartitions.length === 0}
-                                >
-                                    <Download size={16} />
-                                    Exporter
-                                </button>
+                                <div className="grid gap-2 sm:grid-cols-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowExportModal(true)}
+                                        className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-60"
+                                        disabled={!selectedExamenId || repartitions.length === 0}
+                                    >
+                                        <Download size={16} />
+                                        Exporter
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPvAbsenceSection((current) => !current)}
+                                        className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-60"
+                                        disabled={!selectedExamenId || repartitions.length === 0}
+                                    >
+                                        <FileText size={16} />
+                                        {showPvAbsenceSection ? 'Masquer le formulaire PV' : "PV d'absence"}
+                                    </button>
+                                </div>
                                 <button
                                     type="button"
                                     onClick={handlePushPointage}
@@ -1504,7 +2148,7 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                                     {isPushingPointage ? 'Envoi en cours...' : 'Envoyer au pointage'}
                                 </button>
                                 <p className="mt-2 text-xs leading-5 text-gray-500 dark:text-gray-400">
-                                    Choisissez PDF ou Excel, ou envoyez la repartition vers l application pointage.
+                                    Ouvrez la meme section que <code>/documents/proces-v</code> pour generer les PV d'absence, ou utilisez l export rapide / le pointage.
                                 </p>
                             </div>
                         </>
@@ -1513,6 +2157,25 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                     )}
                 </div>
             </div>
+
+            {showPvAbsenceSection && selectedExamen && (
+                <div className="mb-6">
+                    <PvAbsenceSection
+                        formKey={pvAbsenceFormKey}
+                        documents={pvDocuments}
+                        formProps={{
+                            sessions: pvFormOptions.sessions || [],
+                            niveaux: pvFormOptions.niveaux || [],
+                            salles: pvFormOptions.salles || [],
+                            modules: pvFormOptions.modules || [],
+                            filieres: pvFormOptions.filieres || [],
+                            sections: pvFormOptions.sections || [],
+                            initialValues: selectedExamenPvInitialValues,
+                            submitLabel: 'Generer les PV d\'absence',
+                        }}
+                    />
+                </div>
+            )}
 
             <div className="grid gap-6 lg:grid-cols-3">
                 <div className="lg:col-span-1">
@@ -1576,9 +2239,12 @@ export default function RepartitionIndex({ examens, repartitions, inscriptions, 
                             <div>
                                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Numero de place</label>
                                 <input
+                                    inputMode="numeric"
+                                    pattern="[0-9]*"
                                     value={data.numero_place}
                                     onChange={(e) => setData('numero_place', e.target.value)}
                                     className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 dark:text-white focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
+                                    placeholder="Ex: 1"
                                 />
                                 <InputError message={errors.numero_place} className="mt-1" />
                             </div>
