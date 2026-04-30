@@ -3,6 +3,8 @@ import { useForm } from '@inertiajs/react';
 import Swal from 'sweetalert2';
 import InputError from '@/Components/InputError';
 import { Edit3, Trash2 } from 'lucide-react';
+import { studentOrderOptions } from './studentOrderOptions';
+import { combineDateAndTime, toInputDate, toInputTime } from './dateTimeFields';
 
 const formatDate = (value) => {
     if (!value) return '—';
@@ -12,17 +14,6 @@ const formatDate = (value) => {
 const formatDateTime = (value) => {
     if (!value) return '—';
     return new Date(value).toLocaleString();
-};
-
-const toInputDate = (value) => (value ? value.substring(0, 10) : '');
-
-const toInputDateTime = (value) => {
-    if (!value) return '';
-    const date = new Date(value);
-    const pad = (num) => `${num}`.padStart(2, '0');
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(
-        date.getMinutes(),
-    )}`;
 };
 
 const formatSessionLabel = (session) => {
@@ -42,19 +33,7 @@ const formatSessionLabel = (session) => {
 const formatModuleLabel = (module) =>
     [module?.code_module, module?.nom_module].filter(Boolean).join(' - ');
 
-const formatElementLabel = (element) =>
-    [element?.code_element, element?.nom_element].filter(Boolean).join(' - ');
-
-const formatExamLabel = (examen) => {
-    const moduleLabel = formatModuleLabel(examen?.module);
-    const elementLabel = formatElementLabel(examen?.element);
-
-    if (elementLabel) {
-        return [moduleLabel || 'Module', elementLabel].filter(Boolean).join(' / ');
-    }
-
-    return moduleLabel || 'Module';
-};
+const formatExamLabel = (examen) => formatModuleLabel(examen?.module) || 'Module';
 
 const statusTone = {
     Planifiee: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-900/40 dark:text-indigo-200',
@@ -85,6 +64,11 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
     const [editSelectedNiveau, setEditSelectedNiveau] = useState('');
     const [editSelectedSemestre, setEditSelectedSemestre] = useState('');
     const [allocations, setAllocations] = useState({});
+    const [pendingSalleId, setPendingSalleId] = useState('');
+    const [eligibleStudentCount, setEligibleStudentCount] = useState(null);
+    const [studentCountLoading, setStudentCountLoading] = useState(false);
+    const [studentCountError, setStudentCountError] = useState('');
+    const [studentCountCache, setStudentCountCache] = useState({});
 
     const { data, setData, put, delete: destroy, errors, processing, reset, transform } = useForm({
         id_examen: null,
@@ -96,6 +80,7 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
         repartition_salles: [],
         anonymat_start: '',
         anonymat_end: '',
+        student_order: 'alphabetic',
         date_examen: '',
         date_debut: '',
         date_fin: '',
@@ -134,41 +119,83 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
             return matchesNiveau && matchesSemestre;
         });
     }, [modules, editSelectedNiveau, editSelectedSemestre]);
-    const selectedEditModule = useMemo(
-        () => filteredEditModules.find((module) => String(module.id_module) === String(data.id_module)),
-        [data.id_module, filteredEditModules],
+    const filteredEditSemestres = useMemo(
+        () => semestres.filter((sem) => !editSelectedNiveau || String(sem.id_niveau) === String(editSelectedNiveau)),
+        [semestres, editSelectedNiveau],
     );
-    const availableEditElements = selectedEditModule?.elements || [];
-
     const selectedSalles = useMemo(
         () => salles.filter((salle) => data.salles.includes(String(salle.id_salle))),
         [salles, data.salles],
     );
-    const plannedAnonymatCount = useMemo(() => {
-        const start = Number.parseInt(data.anonymat_start, 10);
-        const end = Number.parseInt(data.anonymat_end, 10);
-
-        if (!Number.isInteger(start) || !Number.isInteger(end) || start < 1 || end < start) {
+    const availableSalles = useMemo(
+        () => salles.filter((salle) => !data.salles.includes(String(salle.id_salle))),
+        [salles, data.salles],
+    );
+    const selectedSession = useMemo(
+        () => sessions.find((session) => String(session.id_session_examen) === String(data.id_session_examen)),
+        [sessions, data.id_session_examen],
+    );
+    const anonymatStartValue = Number.parseInt(data.anonymat_start, 10);
+    const hasCustomAnonymatStart = Number.isInteger(anonymatStartValue) && anonymatStartValue > 0;
+    const normalizedAnonymatStart = hasCustomAnonymatStart ? anonymatStartValue : 1;
+    const anonymatPreviewEnd = useMemo(() => {
+        if (!eligibleStudentCount || eligibleStudentCount < 1) {
             return null;
         }
 
-        return (end - start) + 1;
-    }, [data.anonymat_end, data.anonymat_start]);
+        return ((normalizedAnonymatStart + eligibleStudentCount - 2) % eligibleStudentCount) + 1;
+    }, [eligibleStudentCount, normalizedAnonymatStart]);
+    const anonymatPreviewSequence = useMemo(() => {
+        if (!eligibleStudentCount || eligibleStudentCount < 1) {
+            return [];
+        }
 
+        if (hasCustomAnonymatStart && anonymatStartValue > eligibleStudentCount) {
+            return [];
+        }
+
+        return Array.from({ length: Math.min(6, eligibleStudentCount) }, (_, index) =>
+            ((normalizedAnonymatStart + index - 1) % eligibleStudentCount) + 1,
+        );
+    }, [anonymatStartValue, eligibleStudentCount, hasCustomAnonymatStart, normalizedAnonymatStart]);
+    const targetStudentCount = eligibleStudentCount;
+    const totalSelectedCapacity = useMemo(
+        () =>
+            selectedSalles.reduce(
+                (sum, salle) => sum + Number(salle.capacite_examens ?? salle.capacite ?? 0),
+                0,
+            ),
+        [selectedSalles],
+    );
+    const remainingStudentsForCapacity = useMemo(() => {
+        if (targetStudentCount === null) {
+            return null;
+        }
+
+        return Math.max(targetStudentCount - totalSelectedCapacity, 0);
+    }, [targetStudentCount, totalSelectedCapacity]);
+    const spareSelectedCapacity = useMemo(() => {
+        if (targetStudentCount === null) {
+            return null;
+        }
+
+        return Math.max(totalSelectedCapacity - targetStudentCount, 0);
+    }, [targetStudentCount, totalSelectedCapacity]);
     useEffect(() => {
         const exists = filteredEditModules.some((mod) => String(mod.id_module) === String(data.id_module));
         if (!exists) {
             setData('id_module', '');
-            setData('id_element', '');
         }
     }, [filteredEditModules, data.id_module, setData]);
 
     useEffect(() => {
-        const exists = availableEditElements.some((element) => String(element.id_element) === String(data.id_element));
-        if (!exists && data.id_element) {
-            setData('id_element', '');
+        const semestreExists = filteredEditSemestres.some(
+            (sem) => String(sem.id_semestre) === String(editSelectedSemestre),
+        );
+        if (!semestreExists && editSelectedSemestre) {
+            setEditSelectedSemestre('');
         }
-    }, [availableEditElements, data.id_element, setData]);
+    }, [filteredEditSemestres, editSelectedSemestre]);
 
     useEffect(() => {
         const semestreExists = filteredListSemestres.some((sem) => String(sem.id_semestre) === String(semestreFilter));
@@ -197,9 +224,78 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
     }, [data.salles]);
 
     useEffect(() => {
+        if (!data.id_session_examen || !data.id_module) {
+            setEligibleStudentCount(null);
+            setStudentCountLoading(false);
+            setStudentCountError('');
+            return;
+        }
+
+        const cacheKey = `${data.id_session_examen}:${data.id_module}`;
+        if (studentCountCache[cacheKey] !== undefined) {
+            setEligibleStudentCount(studentCountCache[cacheKey]);
+            setStudentCountLoading(false);
+            setStudentCountError('');
+            return;
+        }
+
+        const controller = new AbortController();
+        setStudentCountLoading(true);
+        setStudentCountError('');
+
+        fetch(
+            route('examens.planning.student-count', {
+                id_session_examen: data.id_session_examen,
+                id_module: data.id_module,
+            }),
+            {
+                method: 'GET',
+                headers: {
+                    Accept: 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                },
+                signal: controller.signal,
+            },
+        )
+            .then(async (response) => {
+                if (!response.ok) {
+                    throw new Error('count-fetch-failed');
+                }
+
+                return response.json();
+            })
+            .then((payload) => {
+                const nextCount = Number(payload?.count ?? 0);
+                setEligibleStudentCount(nextCount);
+                setStudentCountCache((current) => ({
+                    ...current,
+                    [cacheKey]: nextCount,
+                }));
+            })
+            .catch((error) => {
+                if (error.name === 'AbortError') {
+                    return;
+                }
+
+                setEligibleStudentCount(null);
+                setStudentCountError('Impossible de charger l effectif pour ce module.');
+            })
+            .finally(() => {
+                if (!controller.signal.aborted) {
+                    setStudentCountLoading(false);
+                }
+            });
+
+        return () => controller.abort();
+    }, [data.id_module, data.id_session_examen, studentCountCache]);
+
+    useEffect(() => {
         transform((currentData) => ({
             ...currentData,
-            id_element: currentData.id_element || '',
+            id_element: '',
+            anonymat_end: '',
+            date_debut: combineDateAndTime(currentData.date_examen, currentData.date_debut),
+            date_fin: combineDateAndTime(currentData.date_examen, currentData.date_fin),
             repartition_salles: (currentData.salles || [])
                 .map((id) => {
                     const value = allocations[id];
@@ -216,7 +312,7 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
         if (!selectedSalles.length) return;
 
         const totalStudents =
-            plannedAnonymatCount ??
+            targetStudentCount ??
             selectedSalles.reduce((sum, salle) => sum + (salle.capacite_examens ?? salle.capacite ?? 0), 0);
         let remaining = totalStudents;
         const next = {};
@@ -233,6 +329,22 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
         setAllocations(next);
     };
 
+    const addSalle = (salleId) => {
+        if (!salleId || data.salles.includes(salleId)) {
+            return;
+        }
+
+        setData('salles', [...data.salles, salleId]);
+        setPendingSalleId('');
+    };
+
+    const removeSalle = (salleId) => {
+        setData(
+            'salles',
+            data.salles.filter((currentSalleId) => currentSalleId !== salleId),
+        );
+    };
+
     const openModal = (examen) => {
         const moduleData = modules.find((m) => String(m.id_module) === String(examen.id_module));
         const firstSem = moduleData?.semestres?.[0];
@@ -243,18 +355,20 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
             id_examen: examen.id_examen,
             id_session_examen: examen.id_session_examen ?? '',
             id_module: examen.id_module ?? '',
-            id_element: examen.id_element ?? '',
+            id_element: '',
             id_salle: examen.id_salle ?? '',
             salles: (examen.salles || []).map((s) => String(s.id_salle)),
             anonymat_start: examen.anonymat_start ?? '',
-            anonymat_end: examen.anonymat_end ?? '',
+            anonymat_end: '',
+            student_order: examen.student_order ?? 'alphabetic',
             date_examen: toInputDate(examen.date_examen),
-            date_debut: toInputDateTime(examen.date_debut),
-            date_fin: toInputDateTime(examen.date_fin),
+            date_debut: toInputTime(examen.date_debut),
+            date_fin: toInputTime(examen.date_fin),
             statut: examen.statut,
             description: examen.description ?? '',
         });
         setAllocations({});
+        setPendingSalleId('');
         setModalOpen(true);
     };
 
@@ -263,6 +377,7 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
         setEditSelectedNiveau('');
         setEditSelectedSemestre('');
         setAllocations({});
+        setPendingSalleId('');
         reset();
     };
 
@@ -617,7 +732,59 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
                                             </option>
                                         ))}
                                     </select>
+                                    {selectedSession && (
+                                        <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                                            Type de session : <span className="font-semibold text-gray-700 dark:text-gray-200">{selectedSession.type_session}</span>
+                                        </p>
+                                    )}
                                     <InputError message={errors.id_session_examen} className="mt-1" />
+                                </div>
+                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-100">Niveau</label>
+                                        <select
+                                            value={editSelectedNiveau}
+                                            onChange={(e) => {
+                                                setEditSelectedNiveau(e.target.value);
+                                                setEditSelectedSemestre('');
+                                            }}
+                                            className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
+                                        >
+                                            <option value="">Tous</option>
+                                            {niveaux.map((niveau) => (
+                                                <option key={niveau.id_niveau} value={niveau.id_niveau}>
+                                                    {niveau.nom_niveau}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-100">Semestre</label>
+                                        <select
+                                            value={editSelectedSemestre}
+                                            onChange={(e) => {
+                                                const value = e.target.value;
+                                                setEditSelectedSemestre(value);
+                                                if (value && !editSelectedNiveau) {
+                                                    const sem = semestres.find(
+                                                        (item) => String(item.id_semestre) === value,
+                                                    );
+                                                    if (sem?.id_niveau) {
+                                                        setEditSelectedNiveau(String(sem.id_niveau));
+                                                    }
+                                                }
+                                            }}
+                                            className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
+                                        >
+                                            <option value="">Tous</option>
+                                            {filteredEditSemestres.map((semestre) => (
+                                                <option key={semestre.id_semestre} value={semestre.id_semestre}>
+                                                    {semestre.nom_niveau ? `${semestre.nom_niveau} - ` : ''}
+                                                    {semestre.nom_semestre}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-100">Module</label>
@@ -625,7 +792,6 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
                                         value={data.id_module}
                                         onChange={(e) => {
                                             setData('id_module', e.target.value);
-                                            setData('id_element', '');
                                         }}
                                         className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
                                     >
@@ -636,81 +802,236 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
                                             </option>
                                         ))}
                                     </select>
+                                    {data.id_session_examen && data.id_module && (
+                                        <p
+                                            className={`mt-2 text-xs ${
+                                                studentCountError ? 'text-red-600 dark:text-red-300' : 'text-gray-500 dark:text-gray-400'
+                                            }`}
+                                        >
+                                            {studentCountLoading
+                                                ? "Chargement de l'effectif..."
+                                                : studentCountError
+                                                  ? studentCountError
+                                                  : `${eligibleStudentCount ?? 0} etudiant(s) concernes par cet examen.`}
+                                        </p>
+                                    )}
                                     <InputError message={errors.id_module} className="mt-1" />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-100">Element du module</label>
-                                    <select
-                                        value={data.id_element}
-                                        onChange={(e) => setData('id_element', e.target.value)}
-                                        disabled={!selectedEditModule}
-                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:text-white"
-                                    >
-                                        <option value="">Module complet</option>
-                                        {availableEditElements.map((element) => (
-                                            <option key={element.id_element} value={element.id_element}>
-                                                {formatElementLabel(element)}
-                                            </option>
-                                        ))}
-                                    </select>
-                                    <InputError message={errors.id_element} className="mt-1" />
                                 </div>
                             </div>
 
-                            <div className="grid gap-4 sm:grid-cols-2">
+                            <div className="grid gap-4 sm:grid-cols-1">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-100">Anonymat debut</label>
                                     <input
                                         type="number"
                                         min="1"
+                                        max={eligibleStudentCount || undefined}
                                         value={data.anonymat_start}
                                         onChange={(e) => setData('anonymat_start', e.target.value)}
                                         className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
-                                        placeholder="Ex: 101"
+                                        placeholder="Ex: 1"
                                     />
                                     <InputError message={errors.anonymat_start} className="mt-1" />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-100">Anonymat fin</label>
-                                    <input
-                                        type="number"
-                                        min={data.anonymat_start || '1'}
-                                        value={data.anonymat_end}
-                                        onChange={(e) => setData('anonymat_end', e.target.value)}
-                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
-                                        placeholder="Ex: 200"
-                                    />
-                                    <InputError message={errors.anonymat_end} className="mt-1" />
-                                </div>
-                                <div className="sm:col-span-2">
                                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                                        Laissez vide pour commencer a 1. Si vous renseignez une plage, seuls les anonymats compris entre ces deux valeurs seront generes.
+                                        Laissez vide pour commencer a 1. La numerotation couvrira tous les etudiants du module puis reviendra aux numeros laisses de cote.
                                     </p>
-                                    {plannedAnonymatCount !== null && (
+                                    {eligibleStudentCount !== null && anonymatPreviewEnd !== null && (
                                         <p className="mt-1 text-xs font-medium text-indigo-600 dark:text-indigo-300">
-                                            {plannedAnonymatCount} anonymats seront generes pour cette planification.
+                                            {eligibleStudentCount} anonymats seront generes: debut {normalizedAnonymatStart}, fin {anonymatPreviewEnd}
+                                            {normalizedAnonymatStart > 1 ? ', avec retour a 1 apres le dernier numero.' : '.'}
+                                        </p>
+                                    )}
+                                    {anonymatPreviewSequence.length > 0 && (
+                                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                            Apercu: {anonymatPreviewSequence.join(', ')}
+                                            {eligibleStudentCount > anonymatPreviewSequence.length ? ', ...' : ''}
                                         </p>
                                     )}
                                 </div>
                             </div>
 
-                            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                            <div className="grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
                                 <div>
-                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-100">Salles (multi)</label>
-                                <select
-                                    multiple
-                                    value={data.salles}
-                                    onChange={(e) => setData('salles', Array.from(e.target.selectedOptions).map((opt) => opt.value))}
-                                    className="mt-1 min-h-[8rem] w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
-                                >
-                                    {salles.map((salle) => (
-                                        <option key={salle.id_salle} value={String(salle.id_salle)}>
-                                            {salle.code_salle} - Capacite {salle.capacite_examens ?? salle.capacite ?? 0}
-                                        </option>
-                                    ))}
-                                </select>
-                                <InputError message={errors.salles} className="mt-1" />
+                                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-100">
+                                        Ordre des etudiants
+                                    </label>
+                                    <select
+                                        value={data.student_order}
+                                        onChange={(e) => setData('student_order', e.target.value)}
+                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
+                                    >
+                                        {studentOrderOptions.map((option) => (
+                                            <option key={option.value} value={option.value}>
+                                                {option.label}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <InputError message={errors.student_order} className="mt-1" />
                                 </div>
+                                <div className="rounded-lg border border-dashed border-indigo-200 bg-indigo-50/70 p-3 text-xs text-indigo-800 dark:border-indigo-500/40 dark:bg-indigo-950/30 dark:text-indigo-100">
+                                    {studentOrderOptions.find((option) => option.value === data.student_order)?.description}
+                                    <div className="mt-1 text-indigo-700/90 dark:text-indigo-200/90">
+                                        Les etudiants en credit restent regroupes dans la derniere salle pour respecter la logique actuelle.
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-medium text-gray-700 dark:text-gray-100">Salles</label>
+                                <div className="mt-1 rounded-xl border border-gray-200 bg-gray-50/70 p-3 dark:border-gray-700 dark:bg-gray-900/40">
+                                    <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto]">
+                                        <div>
+                                            <label className="block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                                Ajouter une salle
+                                            </label>
+                                            <select
+                                                value={pendingSalleId}
+                                                onChange={(e) => {
+                                                    const value = e.target.value;
+                                                    setPendingSalleId(value);
+                                                    addSalle(value);
+                                                }}
+                                                disabled={!availableSalles.length}
+                                                className="mt-1 w-full rounded-xl border border-gray-300 bg-white px-3 py-2.5 text-sm text-gray-700 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-60 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100"
+                                            >
+                                                <option value="">
+                                                    {availableSalles.length ? 'Selectionnez une salle' : 'Toutes les salles sont deja ajoutees'}
+                                                </option>
+                                                {availableSalles.map((salle) => (
+                                                    <option key={salle.id_salle} value={String(salle.id_salle)}>
+                                                        {(salle.code_salle || salle.nom_salle) +
+                                                            (salle.nom_salle && salle.code_salle ? ` - ${salle.nom_salle}` : '') +
+                                                            ` - Capacite ${salle.capacite_examens ?? salle.capacite ?? 0}`}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div className="rounded-xl border border-indigo-200 bg-white px-4 py-3 text-sm dark:border-indigo-500/40 dark:bg-gray-800">
+                                            <div className="text-xs font-medium uppercase tracking-wide text-indigo-600 dark:text-indigo-300">
+                                                Salles selectionnees
+                                            </div>
+                                            <div className="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-100">
+                                                {selectedSalles.length}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                                        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm dark:border-slate-700 dark:bg-gray-800">
+                                            <div className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                                Etudiants eligibles
+                                            </div>
+                                            <div className="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-100">
+                                                {studentCountLoading ? '...' : eligibleStudentCount ?? '--'}
+                                            </div>
+                                        </div>
+                                        <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm dark:border-slate-700 dark:bg-gray-800">
+                                            <div className="text-xs font-medium uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                                                Etudiants a couvrir
+                                            </div>
+                                            <div className="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-100">
+                                                {targetStudentCount ?? '--'}
+                                            </div>
+                                        </div>
+                                        <div className="rounded-xl border border-emerald-200 bg-white px-4 py-3 text-sm dark:border-emerald-500/40 dark:bg-gray-800">
+                                            <div className="text-xs font-medium uppercase tracking-wide text-emerald-600 dark:text-emerald-300">
+                                                Capacite selectionnee
+                                            </div>
+                                            <div className="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-100">
+                                                {totalSelectedCapacity}
+                                            </div>
+                                        </div>
+                                        <div className="rounded-xl border border-amber-200 bg-white px-4 py-3 text-sm dark:border-amber-500/40 dark:bg-gray-800">
+                                            <div className="text-xs font-medium uppercase tracking-wide text-amber-600 dark:text-amber-300">
+                                                Restant a couvrir
+                                            </div>
+                                            <div className="mt-1 text-2xl font-semibold text-gray-900 dark:text-gray-100">
+                                                {remainingStudentsForCapacity ?? '--'}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="mt-3 space-y-1 text-xs text-gray-500 dark:text-gray-400">
+                                        {!data.id_session_examen || !data.id_module ? (
+                                            <p>Selectionnez d abord une session et un module pour charger l effectif reel.</p>
+                                        ) : studentCountError ? (
+                                            <p className="text-red-500 dark:text-red-300">{studentCountError}</p>
+                                        ) : (
+                                            <>
+                                                <p>La capacite des salles est soustraite automatiquement du nombre d etudiants a couvrir.</p>
+                                                {eligibleStudentCount !== null && anonymatPreviewEnd !== null && (
+                                                    <p>
+                                                        Numerotation active: {normalizedAnonymatStart} jusqu a {anonymatPreviewEnd}
+                                                        {normalizedAnonymatStart > anonymatPreviewEnd ? ', puis retour a 1.' : '.'}
+                                                    </p>
+                                                )}
+                                                {spareSelectedCapacity > 0 && (
+                                                    <p className="text-emerald-600 dark:text-emerald-300">
+                                                        {spareSelectedCapacity} place(s) restent libres avec les salles actuelles.
+                                                    </p>
+                                                )}
+                                            </>
+                                        )}
+                                    </div>
+
+                                    {selectedSalles.length > 0 ? (
+                                        <div className="mt-4 grid gap-3">
+                                            {selectedSalles.map((salle, index) => (
+                                                <div
+                                                    key={salle.id_salle}
+                                                    className="grid gap-3 rounded-xl border border-gray-200 bg-white p-3 shadow-sm dark:border-gray-700 dark:bg-gray-800 lg:grid-cols-[40px_minmax(0,1fr)_auto]"
+                                                >
+                                                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-100 text-sm font-semibold text-indigo-700 dark:bg-indigo-500/20 dark:text-indigo-100">
+                                                        {index + 1}
+                                                    </div>
+                                                    <div className="grid gap-2 md:grid-cols-2">
+                                                        <div>
+                                                            <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                                                Salle
+                                                            </label>
+                                                            <input
+                                                                type="text"
+                                                                readOnly
+                                                                value={salle.nom_salle || salle.code_salle || `Salle ${salle.id_salle}`}
+                                                                className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400">
+                                                                Details
+                                                            </label>
+                                                            <input
+                                                                type="text"
+                                                                readOnly
+                                                                value={`${salle.code_salle || 'Sans code'} • Capacite ${salle.capacite_examens ?? salle.capacite ?? 'N/C'}`}
+                                                                className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700 outline-none dark:border-gray-700 dark:bg-gray-900 dark:text-gray-100"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex items-start justify-end">
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => removeSalle(String(salle.id_salle))}
+                                                            className="rounded-lg border border-red-200 px-3 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-50 dark:border-red-500/30 dark:text-red-300 dark:hover:bg-red-950/30"
+                                                        >
+                                                            Retirer
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="mt-4 rounded-xl border border-dashed border-gray-300 bg-white/70 px-4 py-5 text-sm text-gray-500 dark:border-gray-700 dark:bg-gray-800/60 dark:text-gray-400">
+                                            Aucune salle ajoutee. Selectionnez une salle dans la liste ci-dessus pour l ajouter.
+                                        </div>
+                                    )}
+                                </div>
+                                <InputError message={errors.salles} className="mt-1" />
+                            </div>
+
+                            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-100">Date</label>
                                     <input
@@ -803,7 +1124,7 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-100">Début</label>
                                     <input
-                                        type="datetime-local"
+                                        type="time"
                                         value={data.date_debut}
                                         onChange={(e) => setData('date_debut', e.target.value)}
                                         className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
@@ -813,7 +1134,7 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
                                 <div>
                                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-100">Fin</label>
                                     <input
-                                        type="datetime-local"
+                                        type="time"
                                         value={data.date_fin}
                                         onChange={(e) => setData('date_fin', e.target.value)}
                                         className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-white"

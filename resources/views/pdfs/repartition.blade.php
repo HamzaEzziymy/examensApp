@@ -31,17 +31,25 @@
 </head>
 <body>
     @php
-        $columns = $columns ?? ['cne', 'etudiant', 'grille', 'place', 'anonymat', 'presence'];
-        $showCne = in_array('cne', $columns);
-        $showEtudiant = in_array('etudiant', $columns);
-        $showGrille = in_array('grille', $columns);
-        $showPlace = in_array('place', $columns);
-        $showAnonymat = in_array('anonymat', $columns);
-        $showPresence = in_array('presence', $columns);
+        $columnDefinitions = [
+            'cne' => 'CNE',
+            'etudiant' => 'Etudiant',
+            'grille' => 'Grille',
+            'place' => 'Place',
+            'anonymat' => 'Anonymat',
+            'presence' => 'Presence',
+        ];
+        $columns = collect($columns ?? array_keys($columnDefinitions))
+            ->map(fn ($column) => (string) $column)
+            ->filter(fn ($column) => array_key_exists($column, $columnDefinitions))
+            ->values();
+        if ($columns->isEmpty()) {
+            $columns = collect(array_keys($columnDefinitions));
+        }
         $presenceFilled = $presenceFilled ?? true;
         $sessionLabel = $sessionLabel ?? ($examen->sessionExamen->nom_session ?? '-');
         $displayLabel = $displayLabel ?? ($elementLabel ?? $moduleLabel ?? ($examen->module->nom_module ?? '-'));
-        $columnCount = ($showCne ? 1 : 0) + ($showEtudiant ? 1 : 0) + ($showGrille ? 1 : 0) + ($showPlace ? 1 : 0) + ($showAnonymat ? 1 : 0) + ($showPresence ? 1 : 0);
+        $columnCount = $columns->count();
         $groups = $salleGroups ?? collect([[
             'salle' => $examen->salle,
             'rows' => $repartitions,
@@ -98,47 +106,36 @@
             <table>
                 <thead>
                     <tr>
-                        @if($showCne)
-                            <th>CNE</th>
-                        @endif
-                        @if($showEtudiant)
-                            <th>Etudiant</th>
-                        @endif
-                        @if($showGrille)
-                            <th>Grille</th>
-                        @endif
-                        @if($showPlace)
-                            <th>Place</th>
-                        @endif
-                        @if($showAnonymat)
-                            <th>Anonymat</th>
-                        @endif
-                        @if($showPresence)
-                            <th>Presence</th>
-                        @endif
+                        @foreach($columns as $column)
+                            <th>{{ $columnDefinitions[$column] }}</th>
+                        @endforeach
                     </tr>
                 </thead>
                 <tbody>
                     @foreach($normalRows as $rep)
                         <tr>
-                            @if($showCne)
-                                <td>{{ $rep->inscriptionPedagogique->etudiant->cne ?? '-' }}</td>
-                            @endif
-                            @if($showEtudiant)
-                                <td>{{ $rep->inscriptionPedagogique->etudiant->nom ?? '' }} {{ $rep->inscriptionPedagogique->etudiant->prenom ?? '' }}</td>
-                            @endif
-                            @if($showGrille)
-                                <td class="text-center">{{ $rep->code_grille ?? '-' }}</td>
-                            @endif
-                            @if($showPlace)
-                                <td class="text-center">{{ $rep->numero_place ?? '-' }}</td>
-                            @endif
-                            @if($showAnonymat)
-                                <td class="text-center">{{ $rep->code_anonymat ?? '-' }}</td>
-                            @endif
-                            @if($showPresence)
-                                <td class="text-center">{{ $presenceFilled ? ($rep->present ? 'Present' : 'Absent') : '' }}</td>
-                            @endif
+                            @foreach($columns as $column)
+                                @switch($column)
+                                    @case('cne')
+                                        <td>{{ $rep->inscriptionPedagogique->etudiant->cne ?? '-' }}</td>
+                                        @break
+                                    @case('etudiant')
+                                        <td>{{ $rep->inscriptionPedagogique->etudiant->nom ?? '' }} {{ $rep->inscriptionPedagogique->etudiant->prenom ?? '' }}</td>
+                                        @break
+                                    @case('grille')
+                                        <td class="text-center">{{ $rep->code_grille ?? '-' }}</td>
+                                        @break
+                                    @case('place')
+                                        <td class="text-center">{{ $rep->numero_place ?? '-' }}</td>
+                                        @break
+                                    @case('anonymat')
+                                        <td class="text-center">{{ $rep->code_anonymat ?? '-' }}</td>
+                                        @break
+                                    @case('presence')
+                                        <td class="text-center">{{ $presenceFilled ? ($rep->present ? 'Present' : 'Absent') : '' }}</td>
+                                        @break
+                                @endswitch
+                            @endforeach
                         </tr>
                     @endforeach
                     @if($creditRows->isNotEmpty())
@@ -147,24 +144,28 @@
                         </tr>
                         @foreach($creditRows as $rep)
                             <tr>
-                                @if($showCne)
-                                    <td>{{ $rep->inscriptionPedagogique->etudiant->cne ?? '-' }}</td>
-                                @endif
-                                @if($showEtudiant)
-                                    <td>{{ $rep->inscriptionPedagogique->etudiant->nom ?? '' }} {{ $rep->inscriptionPedagogique->etudiant->prenom ?? '' }}</td>
-                                @endif
-                                @if($showGrille)
-                                    <td class="text-center">{{ $rep->code_grille ?? '-' }}</td>
-                                @endif
-                                @if($showPlace)
-                                    <td class="text-center">{{ $rep->numero_place ?? '-' }}</td>
-                                @endif
-                                @if($showAnonymat)
-                                    <td class="text-center">{{ $rep->code_anonymat ?? '-' }}</td>
-                                @endif
-                                @if($showPresence)
-                                    <td class="text-center">{{ $presenceFilled ? ($rep->present ? 'Present' : 'Absent') : '' }}</td>
-                                @endif
+                                @foreach($columns as $column)
+                                    @switch($column)
+                                        @case('cne')
+                                            <td>{{ $rep->inscriptionPedagogique->etudiant->cne ?? '-' }}</td>
+                                            @break
+                                        @case('etudiant')
+                                            <td>{{ $rep->inscriptionPedagogique->etudiant->nom ?? '' }} {{ $rep->inscriptionPedagogique->etudiant->prenom ?? '' }}</td>
+                                            @break
+                                        @case('grille')
+                                            <td class="text-center">{{ $rep->code_grille ?? '-' }}</td>
+                                            @break
+                                        @case('place')
+                                            <td class="text-center">{{ $rep->numero_place ?? '-' }}</td>
+                                            @break
+                                        @case('anonymat')
+                                            <td class="text-center">{{ $rep->code_anonymat ?? '-' }}</td>
+                                            @break
+                                        @case('presence')
+                                            <td class="text-center">{{ $presenceFilled ? ($rep->present ? 'Present' : 'Absent') : '' }}</td>
+                                            @break
+                                    @endswitch
+                                @endforeach
                             </tr>
                         @endforeach
                     @endif

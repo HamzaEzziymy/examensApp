@@ -14,6 +14,7 @@ class Examen extends Model
     use HasFactory;
 
     public const STATUTS = ['Planifiee', 'En cours', 'Terminee', 'Annulee'];
+    public const STUDENT_ORDERS = ['alphabetic', 'random'];
 
     protected $table = 'examens';
     protected $primaryKey = 'id_examen';
@@ -26,6 +27,7 @@ class Examen extends Model
         'id_salle',
         'anonymat_start',
         'anonymat_end',
+        'student_order',
         'date_examen',
         'date_debut',
         'date_fin',

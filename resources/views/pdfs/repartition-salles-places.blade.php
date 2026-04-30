@@ -61,7 +61,7 @@
                 <img src="{{ public_path('/logo.png') }}" alt="Logo">
             </div>
 
-            <h1>REPARTITION PAR SALLE ET PLACE</h1>
+            <h1>Liste d'affichage </h1>
 
             <table class="meta">
                 <tr>

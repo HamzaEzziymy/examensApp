@@ -18,6 +18,7 @@
         .counts { width: 100%; display: flex; gap: 8px; margin-bottom: 8px; }
         .count-box { flex: 1; border: 2px solid #000; padding: 6px; text-align: center; font-size: 11px; font-weight: bold; }
         table { width: 100%; border-collapse: collapse; }
+        .presence-table { table-layout: fixed; }
         th, td { border: 1px solid #000; padding: 4px 6px; font-size: 11px; text-align: left; }
         th { background: #FFD966; text-align: center; }
         tbody tr:nth-child(odd) { background: #e5e5e5; }
@@ -44,6 +45,30 @@
         $primaryOffre = $examen->offreFormation;
         $filiereName = $primaryOffre?->section?->filiere?->nom_filiere;
         $sectionName = $primaryOffre?->section?->nom_section;
+        $moduleCount = max($modules->count(), 1);
+        $indexColumnWidth = 6;
+
+        if ($moduleCount === 1) {
+            $moduleColumnWidth = 22;
+            $studentColumnWidth = 72;
+        } elseif ($moduleCount === 2) {
+            $moduleColumnWidth = 18;
+            $studentColumnWidth = 58;
+        } elseif ($moduleCount === 3) {
+            $moduleColumnWidth = 15;
+            $studentColumnWidth = 49;
+        } else {
+            $studentColumnWidth = 30;
+            $moduleColumnWidth = round((100 - $indexColumnWidth - $studentColumnWidth) / $moduleCount, 2);
+        }
+
+        $formatWidth = function ($width) {
+            return rtrim(rtrim(number_format($width, 2, '.', ''), '0'), '.');
+        };
+
+        $indexColumnWidthCss = $formatWidth($indexColumnWidth);
+        $studentColumnWidthCss = $formatWidth($studentColumnWidth);
+        $moduleColumnWidthCss = $formatWidth($moduleColumnWidth);
     @endphp
 
     @foreach($groups as $groupIndex => $group)
@@ -93,11 +118,18 @@
                 <div class="count-box">Etudiants: {{ $group['total'] }}</div>
             </div>
 
-            <table>
+            <table class="presence-table">
+                <colgroup>
+                    <col style="width: {{ $indexColumnWidthCss }}%;">
+                    <col style="width: {{ $studentColumnWidthCss }}%;">
+                    @foreach($modules as $module)
+                        <col style="width: {{ $moduleColumnWidthCss }}%;">
+                    @endforeach
+                </colgroup>
                 <thead>
                     <tr>
-                        <th style="width: 5%;">#</th>
-                        <th style="width: 30%;">Nom et Prenom</th>
+                        <th>#</th>
+                        <th>Nom et Prenom</th>
                         @foreach($modules as $module)
                             <th>
                                 @php

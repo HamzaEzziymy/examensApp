@@ -8,13 +8,13 @@ use App\Models\Module;
 use App\Models\AnneeUniversitaire;
 use App\Models\InscriptionPedagogique;
 use App\Models\Anonymat;
-use App\Models\ElementModule;
 use App\Models\OffreFormation;
 use App\Models\RepartitionEtudiant;
 use App\Models\Salle;
 use App\Models\SessionExamen;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Inertia\Inertia;
@@ -33,6 +33,87 @@ class ExamenController extends Controller
         $payload = $this->indexData();
 
         return Inertia::render('examens/Examens/Calendar', $payload);
+    }
+
+    public function eligibleStudentCount(Request $request)
+    {
+        $validated = $request->validate([
+            'id_session_examen' => ['required', 'exists:sessions_examen,id_session_examen'],
+            'id_module' => ['nullable', 'exists:modules,id_module'],
+            'module_ids' => ['nullable', 'array'],
+            'module_ids.*' => ['integer', 'exists:modules,id_module'],
+        ]);
+
+        $moduleIds = collect($validated['module_ids'] ?? [])
+            ->push($validated['id_module'] ?? null)
+            ->filter()
+            ->map(fn ($id) => (int) $id)
+            ->unique()
+            ->values();
+
+        if ($moduleIds->isEmpty()) {
+            return response()->json([
+                'count' => 0,
+                'unique_count' => 0,
+                'modules' => [],
+                'session_type' => null,
+            ]);
+        }
+
+        $session = SessionExamen::find(
+            (int) $validated['id_session_examen'],
+            ['id_session_examen', 'id_annee', 'id_filiere', 'type_session', 'nom_session']
+        );
+
+        if (! $session) {
+            return response()->json([
+                'count' => 0,
+                'unique_count' => 0,
+                'modules' => $moduleIds->map(fn ($moduleId) => [
+                    'id_module' => $moduleId,
+                    'count' => 0,
+                ])->values(),
+                'session_type' => null,
+            ]);
+        }
+
+        $preferredFiliereId = $session->id_filiere ?: $this->currentUserFiliereId();
+        $uniqueRegistrationIds = collect();
+        $moduleCounts = $moduleIds->map(function (int $moduleId) use ($preferredFiliereId, $session, &$uniqueRegistrationIds) {
+            $resolvedOffre = $this->resolveExamOffre($moduleId, $session, $preferredFiliereId);
+
+            if (! $resolvedOffre) {
+                return [
+                    'id_module' => $moduleId,
+                    'count' => 0,
+                ];
+            }
+
+            $registrations = $this->registrationsForModule(
+                (int) $resolvedOffre->id_module,
+                $session->id_annee,
+                $preferredFiliereId,
+                $session,
+                (int) $resolvedOffre->id_offre
+            );
+
+            $uniqueRegistrationIds = $uniqueRegistrationIds
+                ->concat($registrations->pluck('id_inscription_pedagogique'))
+                ->unique()
+                ->values();
+
+            return [
+                'id_module' => $moduleId,
+                'count' => $registrations->count(),
+            ];
+        })->values();
+
+        return response()->json([
+            'count' => (int) $moduleCounts->sum('count'),
+            'unique_count' => $uniqueRegistrationIds->count(),
+            'modules' => $moduleCounts,
+            'session_type' => $session->type_session,
+        ]);
     }
 
     private function indexData(): array
@@ -90,6 +171,7 @@ class ExamenController extends Controller
                 'id_salle',
                 'anonymat_start',
                 'anonymat_end',
+                'student_order',
                 'date_examen',
                 'date_debut',
                 'date_fin',
@@ -117,6 +199,7 @@ class ExamenController extends Controller
                         $query->where('id_annee', $selectedAnnee);
                     }
                 },
+                'offresFormation.section:id_section,id_filiere',
                 'offresFormation.semestre:id_semestre,nom_semestre,id_niveau',
                 'offresFormation.semestre.niveau:id_niveau,nom_niveau',
             ])
@@ -248,7 +331,6 @@ class ExamenController extends Controller
         }
 
         $moduleCatalog = Module::query()
-            ->with(['elements:id_element,id_module,code_element,nom_element'])
             ->whereIn('id_module', $moduleIds)
             ->get(['id_module', 'code_module', 'nom_module'])
             ->keyBy('id_module');
@@ -257,12 +339,11 @@ class ExamenController extends Controller
         foreach ($moduleIds as $moduleId) {
             $moduleValidated = $validated;
             $moduleValidated['id_module'] = $moduleId;
+            $moduleValidated['id_element'] = null;
+            $moduleValidated['student_order'] = $this->normalizedStudentOrder($moduleValidated['student_order'] ?? null);
 
             if ($planAllFilteredModules) {
-                $moduleValidated['id_element'] = null;
                 $modulePlanning = $modulePlannings->get($moduleId, []);
-                $moduleValidated['anonymat_start'] = null;
-                $moduleValidated['anonymat_end'] = null;
                 $moduleValidated['date_examen'] = $modulePlanning['date_examen'] ?? null;
                 $moduleValidated['date_debut'] = $modulePlanning['date_debut'] ?? null;
                 $moduleValidated['date_fin'] = $modulePlanning['date_fin'] ?? null;
@@ -311,12 +392,34 @@ class ExamenController extends Controller
             }
 
             $studentCount = $registrations->count();
-            [$expectedCount, $rangeErrors] = $planAllFilteredModules
-                ? [$studentCount, null]
-                : $this->resolveExpectedCount($moduleValidated, $studentCount, (int) $manualSplit->sum('nombre'));
+            [$expectedCount, $rangeErrors] = $this->resolveExpectedCount(
+                $moduleValidated,
+                $studentCount,
+                (int) $manualSplit->sum('nombre')
+            );
 
             if ($rangeErrors) {
+                if ($planAllFilteredModules && isset($rangeErrors['anonymat_start'])) {
+                    $rangeErrors['anonymat_start'] = $this->planningModuleMessage(
+                        $moduleCatalog->get($moduleId),
+                        $moduleId,
+                        $rangeErrors['anonymat_start'],
+                        true
+                    );
+                }
+
                 return back()->withErrors($rangeErrors)->withInput();
+            }
+
+            $moduleValidated['anonymat_end'] = $this->resolvedAnonymatEnd(
+                isset($moduleValidated['anonymat_start']) && $moduleValidated['anonymat_start'] !== ''
+                    ? (int) $moduleValidated['anonymat_start']
+                    : null,
+                $studentCount
+            );
+
+            if (! $planAllFilteredModules && ($manualCoverageError = $this->validateManualCoverage($manualSplit, $salleModels, $expectedCount))) {
+                return back()->withErrors(['repartition_salles' => $manualCoverageError])->withInput();
             }
 
             if ($creditAllocationError = $this->validateCreditAllocation($registrations, $salleModels, $manualSplit, $expectedCount)) {
@@ -345,12 +448,10 @@ class ExamenController extends Controller
                     ->withInput();
             }
 
-            $targets = $planAllFilteredModules
-                ? $this->bulkPlanningTargetsForModule($moduleCatalog->get($moduleId))
-                : collect([[
-                    'id_module' => $moduleId,
-                    'id_element' => $moduleValidated['id_element'] ?? null,
-                ]]);
+            $targets = collect([[
+                'id_module' => $moduleId,
+                'id_element' => null,
+            ]]);
 
             foreach ($targets as $target) {
                 $targetValidated = $moduleValidated;
@@ -408,6 +509,8 @@ class ExamenController extends Controller
         $manualSplit = collect($validated['repartition_salles'] ?? []);
         unset($validated['repartition_salles']);
         unset($validated['plan_all_filtered_modules'], $validated['module_ids'], $validated['module_plannings']);
+        $validated['id_element'] = null;
+        $validated['student_order'] = $this->normalizedStudentOrder($validated['student_order'] ?? $examen->student_order ?? null);
 
         if (! ($validated['id_module'] ?? null)) {
             return back()->withErrors(['id_module' => 'Veuillez selectionner un module.'])->withInput();
@@ -466,6 +569,12 @@ class ExamenController extends Controller
         if ($rangeErrors) {
             return back()->withErrors($rangeErrors)->withInput();
         }
+        $validated['anonymat_end'] = $this->resolvedAnonymatEnd(
+            isset($validated['anonymat_start']) && $validated['anonymat_start'] !== ''
+                ? (int) $validated['anonymat_start']
+                : null,
+            $studentCount
+        );
         $salleModels = $this->orderedSalles($allSalleIds);
         $totalCapacity = $salleModels->sum(function ($salle) {
             return $salle->capacite_examens ?? $salle->capacite ?? 0;
@@ -473,6 +582,10 @@ class ExamenController extends Controller
 
         if ($capacityError = $this->validateManualCapacities($manualSplit, $salleModels)) {
             return back()->withErrors(['repartition_salles' => $capacityError])->withInput();
+        }
+
+        if ($manualCoverageError = $this->validateManualCoverage($manualSplit, $salleModels, $expectedCount)) {
+            return back()->withErrors(['repartition_salles' => $manualCoverageError])->withInput();
         }
 
         if ($creditAllocationError = $this->validateCreditAllocation($registrations, $salleModels, $manualSplit, $expectedCount)) {
@@ -544,7 +657,7 @@ class ExamenController extends Controller
         $validator = validator($request->all(), [
             'id_session_examen' => ['required', 'exists:sessions_examen,id_session_examen'],
             'id_module'         => [Rule::requiredIf(! $planAllFilteredModules), 'nullable', 'exists:modules,id_module'],
-            'id_element'        => ['nullable', 'exists:elements_module,id_element'],
+            'id_element'        => ['nullable'],
             'plan_all_filtered_modules' => ['sometimes', 'boolean'],
             'module_ids'        => ['nullable', 'array'],
             'module_ids.*'      => ['nullable', 'exists:modules,id_module'],
@@ -559,8 +672,9 @@ class ExamenController extends Controller
             'repartition_salles'            => ['nullable', 'array'],
             'repartition_salles.*.id_salle' => ['required_with:repartition_salles.*.nombre', 'exists:salles,id_salle'],
             'repartition_salles.*.nombre'   => ['nullable', 'integer', 'min:1'],
-            'anonymat_start'    => ['nullable', 'integer', 'min:1', 'required_with:anonymat_end'],
-            'anonymat_end'      => ['nullable', 'integer', 'min:1', 'gte:anonymat_start', 'required_with:anonymat_start'],
+            'anonymat_start'    => ['nullable', 'integer', 'min:1'],
+            'anonymat_end'      => ['nullable', 'integer', 'min:1'],
+            'student_order'     => ['nullable', Rule::in(Examen::STUDENT_ORDERS)],
             'date_examen'       => [Rule::requiredIf(! $planAllFilteredModules), 'nullable', 'date'],
             'date_debut'        => [Rule::requiredIf(! $planAllFilteredModules), 'nullable', 'date'],
             'date_fin'          => [Rule::requiredIf(! $planAllFilteredModules), 'nullable', 'date', 'after:date_debut'],
@@ -569,20 +683,6 @@ class ExamenController extends Controller
         ]);
 
         $validator->after(function ($validator) use ($planAllFilteredModules, $request) {
-            $moduleId = (int) $request->input('id_module');
-            $elementId = (int) $request->input('id_element');
-
-            if (! $planAllFilteredModules && $moduleId && $elementId) {
-                $matchesModule = ElementModule::query()
-                    ->whereKey($elementId)
-                    ->where('id_module', $moduleId)
-                    ->exists();
-
-                if (! $matchesModule) {
-                    $validator->errors()->add('id_element', 'L\'element selectionne ne correspond pas au module choisi.');
-                }
-            }
-
             if (! $planAllFilteredModules) {
                 return;
             }
@@ -644,11 +744,12 @@ class ExamenController extends Controller
             $examen->sessionExamen,
             $examen->id_offre ? (int) $examen->id_offre : null
         );
-        $limitCount ??= $this->anonymatRangeCount(
-            $examen->anonymat_start ? (int) $examen->anonymat_start : null,
-            $examen->anonymat_end ? (int) $examen->anonymat_end : null
+        $limitCount ??= $registrations->count();
+        $registrations = $this->orderRegistrationsForRepartition(
+            collect($registrations),
+            $this->normalizedStudentOrder($examen->student_order ?? null),
+            $examen
         );
-        $registrations = $this->orderRegistrationsForRepartition(collect($registrations));
         if ($registrations->isEmpty()) {
             return;
         }
@@ -673,7 +774,11 @@ class ExamenController extends Controller
         }
 
         $now = now();
-        $seq = $examen->anonymat_start ? (int) $examen->anonymat_start : 1;
+        $anonymatCodes = $this->anonymatSequence(
+            $examen->anonymat_start ? (int) $examen->anonymat_start : null,
+            $totalStudents
+        );
+        $anonymatIndex = 0;
         $anonRows = [];
         $repartitionRows = [];
 
@@ -803,7 +908,6 @@ class ExamenController extends Controller
             }
 
             $seat = 1;
-            $seatPrefix = substr($salle->code_salle ?? 'S', 0, 4);
             $filiereCode = $this->filiereCode($examen);
             $niveauCode = $this->niveauCode($examen);
             $sessionCode = $this->sessionCode($examen);
@@ -812,7 +916,7 @@ class ExamenController extends Controller
                 : ($index + 1);
 
             foreach ($slice as $ip) {
-                $codeAnonymat = (string) $seq;
+                $codeAnonymat = (string) ($anonymatCodes[$anonymatIndex] ?? ($anonymatIndex + 1));
                 $grilleCode = (int) sprintf(
                     '%d%d%d%d%03d',
                     $filiereCode,
@@ -835,13 +939,13 @@ class ExamenController extends Controller
                     'id_inscription_pedagogique' => $ip->id_inscription_pedagogique,
                     'code_grille'                => $grilleCode,
                     'code_anonymat'              => $codeAnonymat,
-                    'numero_place'               => sprintf('%s-%03d', $seatPrefix, $seat), // max ~8 chars to fit column
+                    'numero_place'               => (string) $seat,
                     'present'                    => false,
                     'created_at'                 => $now,
                     'updated_at'                 => $now,
                 ];
 
-                $seq++;
+                $anonymatIndex++;
                 $seat++;
             }
         }
@@ -857,75 +961,24 @@ class ExamenController extends Controller
 
     private function resolveExpectedCount(array $validated, int $studentCount, int $manualTotal = 0): array
     {
-        $anonymatStart = isset($validated['anonymat_start']) ? (int) $validated['anonymat_start'] : null;
-        $anonymatEnd = isset($validated['anonymat_end']) ? (int) $validated['anonymat_end'] : null;
-        $rangeCount = $this->anonymatRangeCount($anonymatStart, $anonymatEnd);
+        $anonymatStart = isset($validated['anonymat_start']) && $validated['anonymat_start'] !== ''
+            ? (int) $validated['anonymat_start']
+            : null;
 
-        if ($rangeCount === null) {
-            return [$manualTotal > 0 ? $manualTotal : $studentCount, null];
-        }
-
-        if ($rangeCount > $studentCount) {
+        if ($anonymatStart !== null && $anonymatStart > $studentCount) {
             return [
                 null,
                 [
-                    'anonymat_end' => sprintf(
-                        'La plage d\'anonymats demandee couvre %d etudiants, mais seulement %d inscriptions sont disponibles pour ce module.',
-                        $rangeCount,
+                    'anonymat_start' => sprintf(
+                        'Le numero de debut doit etre compris entre 1 et %d pour couvrir les %d etudiants du module.',
+                        $studentCount,
                         $studentCount
                     ),
                 ],
             ];
         }
 
-        if ($manualTotal > 0 && $manualTotal !== $rangeCount) {
-            return [
-                null,
-                [
-                    'repartition_salles' => sprintf(
-                        'La repartition manuelle doit couvrir exactement %d anonymats pour correspondre a la plage %d-%d.',
-                        $rangeCount,
-                        $anonymatStart,
-                        $anonymatEnd
-                    ),
-                ],
-            ];
-        }
-
-        return [$rangeCount, null];
-    }
-
-    private function bulkPlanningTargetsForModule(?Module $module): Collection
-    {
-        if (! $module) {
-            return collect();
-        }
-
-        $targets = collect([[
-            'id_module' => (int) $module->id_module,
-            'id_element' => null,
-        ]]);
-
-        $elementTargets = collect($module->elements ?? [])
-            ->reject(fn ($element) => $this->isSelfReferencingElementForModule($module, $element))
-            ->sortBy(fn ($element) => sprintf(
-                '%s|%s',
-                strtolower((string) ($element->code_element ?? '')),
-                strtolower((string) ($element->nom_element ?? ''))
-            ))
-            ->values()
-            ->map(fn ($element) => [
-                'id_module' => (int) $module->id_module,
-                'id_element' => (int) $element->id_element,
-            ]);
-
-        return $targets->concat($elementTargets)->values();
-    }
-
-    private function isSelfReferencingElementForModule(Module $module, ElementModule $element): bool
-    {
-        return trim((string) $element->code_element) === trim((string) $module->code_module)
-            && trim((string) $element->nom_element) === trim((string) $module->nom_module);
+        return [$studentCount, null];
     }
 
     private function resolvePlanningModuleIds(array $validated): Collection
@@ -985,13 +1038,28 @@ class ExamenController extends Controller
         return sprintf('%s: %s', $label, $message);
     }
 
-    private function anonymatRangeCount(?int $anonymatStart, ?int $anonymatEnd): ?int
+    private function resolvedAnonymatEnd(?int $anonymatStart, int $studentCount): ?int
     {
-        if ($anonymatStart === null || $anonymatEnd === null) {
+        if ($studentCount < 1 || $anonymatStart === null || $anonymatStart < 1) {
             return null;
         }
 
-        return ($anonymatEnd - $anonymatStart) + 1;
+        return (($anonymatStart + $studentCount - 2) % $studentCount) + 1;
+    }
+
+    private function anonymatSequence(?int $anonymatStart, int $studentCount): array
+    {
+        if ($studentCount < 1) {
+            return [];
+        }
+
+        $start = $anonymatStart && $anonymatStart > 0
+            ? $anonymatStart
+            : 1;
+
+        return collect(range(0, $studentCount - 1))
+            ->map(fn (int $offset) => (($start + $offset - 1) % $studentCount) + 1)
+            ->all();
     }
 
     private function normalizeManualSplit(Collection $manualSplit, Collection $allowedSalleIds): Collection
@@ -1041,6 +1109,29 @@ class ExamenController extends Controller
                     $capacity
                 );
             }
+        }
+
+        return null;
+    }
+
+    private function validateManualCoverage(Collection $manualSplit, Collection $salles, ?int $expectedCount): ?string
+    {
+        if ($manualSplit->isEmpty() || $expectedCount === null) {
+            return null;
+        }
+
+        $effectiveCapacity = $salles->sum(function ($salle) use ($manualSplit) {
+            $manualTarget = $manualSplit->get($salle->id_salle)['nombre'] ?? null;
+
+            return $manualTarget ?? (int) ($salle->capacite_examens ?? $salle->capacite ?? 0);
+        });
+
+        if ($effectiveCapacity < $expectedCount) {
+            return sprintf(
+                'La repartition des salles ne couvre que %d etudiants, mais %d doivent etre planifies.',
+                $effectiveCapacity,
+                $expectedCount
+            );
         }
 
         return null;
@@ -1114,6 +1205,10 @@ class ExamenController extends Controller
                         ->orderByDesc('id_resultat_module');
                 }]);
             })
+            ->with([
+                'inscriptionAdministrative:id_inscription_admin,id_etudiant',
+                'inscriptionAdministrative.etudiant:id_etudiant,nom,prenom,cne',
+            ])
             ->whereHas('offreFormation', function ($query) use ($moduleId, $activeYearId, $resolvedFiliereIds, $offreId) {
                 if ($offreId) {
                     $query->where('id_offre', $offreId);
@@ -1138,7 +1233,7 @@ class ExamenController extends Controller
             })
             ->where('type_inscription', '!=', 'Capitalisation')
             ->orderBy('id_inscription_pedagogique')
-            ->get(['id_inscription_pedagogique', 'type_inscription']);
+            ->get(['id_inscription_pedagogique', 'id_inscription_admin', 'type_inscription']);
 
         return $this->filterRegistrationsForSession($registrations, $moduleId, $session);
     }
@@ -1293,17 +1388,81 @@ class ExamenController extends Controller
             ->values();
     }
 
-    private function orderRegistrationsForRepartition(Collection $registrations): Collection
+    private function orderRegistrationsForRepartition(
+        Collection $registrations,
+        string $studentOrder = 'alphabetic',
+        ?Examen $examen = null
+    ): Collection
     {
-        return $registrations
-            ->sortBy(function ($registration) {
-                return sprintf(
-                    '%d-%010d',
-                    $this->isCreditRegistration($registration) ? 1 : 0,
-                    (int) ($registration->id_inscription_pedagogique ?? 0)
-                );
-            })
+        $studentOrder = $this->normalizedStudentOrder($studentOrder);
+
+        $normalRegistrations = $registrations
+            ->reject(fn ($registration) => $this->isCreditRegistration($registration))
             ->values();
+        $creditRegistrations = $registrations
+            ->filter(fn ($registration) => $this->isCreditRegistration($registration))
+            ->values();
+
+        if ($studentOrder === 'random') {
+            // Keep the "random" order stable for the same exam so updates do not reshuffle seats unexpectedly.
+            $normalRegistrations = $normalRegistrations
+                ->sortBy(fn ($registration) => $this->randomStudentOrderKey($registration, $examen))
+                ->values();
+            $creditRegistrations = $creditRegistrations
+                ->sortBy(fn ($registration) => $this->randomStudentOrderKey($registration, $examen))
+                ->values();
+        } else {
+            $normalRegistrations = $normalRegistrations
+                ->sortBy(fn ($registration) => $this->alphabeticStudentOrderKey($registration))
+                ->values();
+            $creditRegistrations = $creditRegistrations
+                ->sortBy(fn ($registration) => $this->alphabeticStudentOrderKey($registration))
+                ->values();
+        }
+
+        return $normalRegistrations->concat($creditRegistrations)->values();
+    }
+
+    private function normalizedStudentOrder(?string $studentOrder): string
+    {
+        $studentOrder = strtolower((string) $studentOrder);
+
+        return in_array($studentOrder, Examen::STUDENT_ORDERS, true)
+            ? $studentOrder
+            : 'alphabetic';
+    }
+
+    private function randomStudentOrderKey($registration, ?Examen $examen = null): string
+    {
+        return hash(
+            'sha256',
+            sprintf(
+                '%s|%d',
+                (string) ($examen?->id_examen ?? 0),
+                (int) ($registration->id_inscription_pedagogique ?? 0)
+            )
+        );
+    }
+
+    private function alphabeticStudentOrderKey($registration): string
+    {
+        $student = $registration->inscriptionAdministrative->etudiant ?? null;
+        $lastName = $this->normalizedStudentNameFragment($student?->nom);
+        $firstName = $this->normalizedStudentNameFragment($student?->prenom);
+        $cne = $this->normalizedStudentNameFragment($student?->cne);
+
+        return sprintf(
+            '%s|%s|%s|%020d',
+            $lastName,
+            $firstName,
+            $cne,
+            (int) ($registration->id_inscription_pedagogique ?? 0)
+        );
+    }
+
+    private function normalizedStudentNameFragment(?string $value): string
+    {
+        return Str::lower(Str::ascii(trim((string) $value)));
     }
 
     private function isCreditRegistration($registration): bool
