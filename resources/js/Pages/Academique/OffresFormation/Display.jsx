@@ -32,6 +32,7 @@ export default function Display({
     // Search and filter states (now using backend)
     const [searchTerm, setSearchTerm] = useState(initialFilters.search || '');
     const [semestreFilter, setSemestreFilter] = useState(initialFilters.semestre || '');
+    const [sectionFilter, setSectionFilter] = useState(initialFilters.section || '');
     const [perPage, setPerPage] = useState(initialFilters.per_page || 25);
 
     // Export state
@@ -193,7 +194,7 @@ export default function Display({
         router.get(route('academique.offres-formations.index'), {
             search: value,
             annee: userSelectedAnnee !== 'all' ? userSelectedAnnee : '',
-            section: '', // Section filtering removed - depends on Years_Sectors_Selecters
+            section: sectionFilter,
             semestre: semestreFilter,
             per_page: perPage,
         }, {
@@ -207,7 +208,7 @@ export default function Display({
         const newFilters = {
             search: searchTerm,
             annee: userSelectedAnnee !== 'all' ? userSelectedAnnee : '',
-            section: '', // Section filtering removed - depends on Years_Sectors_Selecters
+            section: sectionFilter,
             semestre: semestreFilter,
             per_page: perPage,
         };
@@ -216,6 +217,7 @@ export default function Display({
         
         // Update local state
         if (filterName === 'semestre') setSemestreFilter(value);
+        if (filterName === 'section') setSectionFilter(value);
         if (filterName === 'per_page') setPerPage(value);
         
         router.get(route('academique.offres-formations.index'), newFilters, {
@@ -229,7 +231,7 @@ export default function Display({
         router.get(route('academique.offres-formations.index'), {
             search: searchTerm,
             annee: userSelectedAnnee !== 'all' ? userSelectedAnnee : '',
-            section: '', // Section filtering removed - depends on Years_Sectors_Selecters
+            section: sectionFilter,
             semestre: semestreFilter,
             per_page: perPage,
             page: page,
@@ -387,10 +389,13 @@ export default function Display({
     };
 
     const clearFilters = () => {
+        setSearchTerm('');
+        setSemestreFilter('');
+        setSectionFilter('');
         router.get(route('academique.offres-formations.index'), {
             search: '',
             annee: userSelectedAnnee !== 'all' ? userSelectedAnnee : '',
-            section: '', // Section filtering removed - depends on Years_Sectors_Selecters
+            section: '',
             semestre: '',
             per_page: 25,
         }, {
@@ -473,6 +478,20 @@ export default function Display({
                 
                 {/* Filters */}
                 <div className="flex flex-wrap items-center gap-2">
+                    <label className="text-sm text-gray-600 dark:text-gray-400">Section:</label>
+                    <select
+                        value={sectionFilter}
+                        onChange={(e) => handleFilterChange('section', e.target.value)}
+                        className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-sm focus:ring-2 focus:ring-blue-500"
+                    >
+                        <option value="">Toutes</option>
+                        {sections.map(section => (
+                            <option key={section.id_section} value={section.id_section}>
+                                {section.filiere?.nom_filiere} ({section.nom_section})
+                            </option>
+                        ))}
+                    </select>
+
                     <label className="text-sm text-gray-600 dark:text-gray-400">Semestre:</label>
                     <select
                         value={semestreFilter}

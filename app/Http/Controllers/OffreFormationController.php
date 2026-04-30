@@ -74,10 +74,10 @@ class OffreFormationController extends Controller
             $offresQuery->where('id_annee', $filterAnnee);
         }
 
-        // Apply section filter (removed - now depends on Years_Sectors_Selecters filière)
-        // if (!empty($filterSection)) {
-        //     $offresQuery->where('id_section', $filterSection);
-        // }
+        // Apply section filter
+        if (!empty($filterSection)) {
+            $offresQuery->where('id_section', $filterSection);
+        }
 
         // Apply semestre filter
         if (!empty($filterSemestre)) {
