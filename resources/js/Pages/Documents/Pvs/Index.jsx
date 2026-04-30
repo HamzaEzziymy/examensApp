@@ -2,7 +2,8 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout'
 import { Head, useForm } from '@inertiajs/react'
 import React, { useState } from 'react'
 import Header from '../Header'
-import PvAbsenceSection from './PvAbsenceSection'
+import CreateForm from './CreateForm'
+import DisplayDocuments from './DisplayDocuments'
 
 function Index({documents, sessions, niveaux, salles, modules, filieres, sections}) {
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -33,19 +34,6 @@ function Index({documents, sessions, niveaux, salles, modules, filieres, section
     >
       <Head title="Documents" />
       <Header />
-<<<<<<< HEAD
-      <div className='p-4'>
-        <PvAbsenceSection
-          documents={documents}
-          formProps={{
-            sessions,
-            niveaux,
-            salles,
-            modules,
-            filieres,
-            sections,
-          }}
-=======
 
       {/* Toolbar */}
       <div className="flex items-center gap-3 px-4 pt-4 flex-wrap">
@@ -61,23 +49,9 @@ function Index({documents, sessions, niveaux, salles, modules, filieres, section
         </button>
       </div>
 
-<<<<<<< HEAD
       {/* Full-width table */}
       <div className="p-4">
         <DisplayDocuments documents={documents} />
-=======
-      <div className='flex flex-col lg:flex-row justify-between gap-4 lg:gap-6 p-4'>
-        <CreateForm 
-          className='w-full rounded-lg shadow-sm' 
-          sessions={sessions}
-          niveaux={niveaux}
-          salles={salles}
-          modules={modules}
-          filieres={filieres}
-          sections={sections}
->>>>>>> db31ec7a23071ad207c1b013527b6ae467045ad0
-        />
->>>>>>> 93be32bc46c3793c8e3808b56b9d9c196f5c0fd4
       </div>
 
       {/* ── Create PV Modal ── */}
