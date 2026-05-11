@@ -42,7 +42,7 @@ return new class extends Migration {
             $table->id('id_inscription_pedagogique');
             $table->unsignedBigInteger('id_inscription_admin')->nullable();
             $table->unsignedBigInteger('id_offre')->nullable();
-            $table->enum('type_inscription', ['Normal', 'Credit', 'Anticipe']);
+            $table->enum('type_inscription', ['Normal', 'Credit', 'Anticipe', 'Capitalisation']);
             $table->integer('credits_acquis')->default(0);
             $table->foreign('id_inscription_admin')->references('id_inscription_admin')->on('inscriptions_administratives')->onDelete('set null');
             $table->foreign('id_offre')->references('id_offre')->on('offre_formation')->onDelete('set null');

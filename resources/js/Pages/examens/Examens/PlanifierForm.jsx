@@ -12,6 +12,7 @@ export default function PlanifierForm({
     statuts,
     semestres = [],
     niveaux = [],
+    sections = [],
     onSuccess,
     onCancel,
     asCard = true,
@@ -33,9 +34,12 @@ export default function PlanifierForm({
         return parts.join(' - ');
     };
     const formatModuleLabel = (module) => [module.code_module, module.nom_module].filter(Boolean).join(' - ');
+    const formatSectionLabel = (section) =>
+        [section.nom_section, section.langue].filter(Boolean).join(' - ');
 
     const { data, setData, post, processing, errors, reset, transform } = useForm({
         id_session_examen: '',
+        section_id: '',
         id_module: '',
         id_element: '',
         plan_all_filtered_modules: false,
@@ -65,22 +69,42 @@ export default function PlanifierForm({
     const [bulkStudentCountLoading, setBulkStudentCountLoading] = useState(false);
     const [bulkStudentCountError, setBulkStudentCountError] = useState('');
     const [bulkStudentCountCache, setBulkStudentCountCache] = useState({});
+    const selectedSession = useMemo(
+        () => sessions.find((session) => String(session.id_session_examen) === String(data.id_session_examen)),
+        [sessions, data.id_session_examen],
+    );
+    const selectedSessionFiliereId = selectedSession?.id_filiere ? String(selectedSession.id_filiere) : '';
 
     const filteredSemestres = useMemo(
         () => semestres.filter((sem) => !selectedNiveau || String(sem.id_niveau) === String(selectedNiveau)),
         [semestres, selectedNiveau],
     );
+    const filteredSections = useMemo(
+        () =>
+            sections.filter(
+                (section) =>
+                    !selectedSessionFiliereId
+                    || String(section.id_filiere) === String(selectedSessionFiliereId),
+            ),
+        [sections, selectedSessionFiliereId],
+    );
 
     const filteredModules = useMemo(() => {
         return modules.filter((module) => {
             const sems = module.semestres || [];
+            const moduleSectionIds = module.section_ids || [];
+            const moduleFiliereIds = module.filiere_ids || [];
             const matchesNiveau =
                 !selectedNiveau || sems.some((sem) => String(sem.id_niveau) === String(selectedNiveau));
             const matchesSemestre =
                 !selectedSemestre || sems.some((sem) => String(sem.id_semestre) === String(selectedSemestre));
-            return matchesNiveau && matchesSemestre;
+            const matchesSection =
+                !data.section_id || moduleSectionIds.includes(Number(data.section_id));
+            const matchesSessionFiliere =
+                !selectedSessionFiliereId || moduleFiliereIds.includes(Number(selectedSessionFiliereId));
+            return matchesNiveau && matchesSemestre && matchesSection && matchesSessionFiliere;
         });
-    }, [modules, selectedNiveau, selectedSemestre]);
+    }, [data.section_id, modules, selectedNiveau, selectedSemestre, selectedSessionFiliereId]);
     const isBulkPlanning = Boolean(data.plan_all_filtered_modules);
     const canPlanFilteredModules = Boolean(selectedNiveau && selectedSemestre && filteredModules.length > 0);
     const bulkModulePreview = useMemo(() => filteredModules.slice(0, 4), [filteredModules]);
@@ -122,17 +146,23 @@ export default function PlanifierForm({
 
         return counts.reduce((min, current) => Math.min(min, current), counts[0]);
     }, [bulkStudentCountsByModuleId]);
+    const sallesById = useMemo(
+        () =>
+            new Map(
+                salles.map((salle) => [String(salle.id_salle), salle]),
+            ),
+        [salles],
+    );
     const selectedSalles = useMemo(
-        () => salles.filter((salle) => data.salles.includes(String(salle.id_salle))),
-        [salles, data.salles],
+        () =>
+            data.salles
+                .map((id) => sallesById.get(String(id)))
+                .filter(Boolean),
+        [data.salles, sallesById],
     );
     const availableSalles = useMemo(
         () => salles.filter((salle) => !data.salles.includes(String(salle.id_salle))),
         [salles, data.salles],
-    );
-    const selectedSession = useMemo(
-        () => sessions.find((session) => String(session.id_session_examen) === String(data.id_session_examen)),
-        [sessions, data.id_session_examen],
     );
     const anonymatStartValue = Number.parseInt(data.anonymat_start, 10);
     const hasCustomAnonymatStart = Number.isInteger(anonymatStartValue) && anonymatStartValue > 0;
@@ -187,6 +217,15 @@ export default function PlanifierForm({
             setData('id_module', '');
         }
     }, [filteredModules, data.id_module, setData]);
+
+    useEffect(() => {
+        const sectionExists = filteredSections.some(
+            (section) => String(section.id_section) === String(data.section_id),
+        );
+        if (!sectionExists && data.section_id) {
+            setData('section_id', '');
+        }
+    }, [data.section_id, filteredSections, setData]);
 
     useEffect(() => {
         if (data.plan_all_filtered_modules && !canPlanFilteredModules) {
@@ -253,7 +292,7 @@ export default function PlanifierForm({
             return;
         }
 
-        const cacheKey = `${data.id_session_examen}:${data.id_module}`;
+        const cacheKey = `${data.id_session_examen}:${data.id_module}:${data.section_id || 'all'}`;
         if (studentCountCache[cacheKey] !== undefined) {
             setEligibleStudentCount(studentCountCache[cacheKey]);
             setStudentCountLoading(false);
@@ -269,6 +308,7 @@ export default function PlanifierForm({
             route('examens.planning.student-count', {
                 id_session_examen: data.id_session_examen,
                 id_module: data.id_module,
+                ...(data.section_id ? { section_id: data.section_id } : {}),
             }),
             {
                 method: 'GET',
@@ -309,7 +349,7 @@ export default function PlanifierForm({
             });
 
         return () => controller.abort();
-    }, [data.id_module, data.id_session_examen, isBulkPlanning, studentCountCache]);
+    }, [data.id_module, data.id_session_examen, data.section_id, isBulkPlanning, studentCountCache]);
 
     useEffect(() => {
         if (!isBulkPlanning) {
@@ -326,7 +366,7 @@ export default function PlanifierForm({
             return;
         }
 
-        const cacheKey = `${data.id_session_examen}:${bulkStudentCountModuleIds.join(',')}`;
+        const cacheKey = `${data.id_session_examen}:${bulkStudentCountModuleIds.join(',')}:${data.section_id || 'all'}`;
         if (bulkStudentCountCache[cacheKey] !== undefined) {
             setBulkStudentStats(bulkStudentCountCache[cacheKey]);
             setBulkStudentCountLoading(false);
@@ -342,6 +382,7 @@ export default function PlanifierForm({
             route('examens.planning.student-count', {
                 id_session_examen: data.id_session_examen,
                 module_ids: bulkStudentCountModuleIds,
+                ...(data.section_id ? { section_id: data.section_id } : {}),
             }),
             {
                 method: 'GET',
@@ -381,7 +422,7 @@ export default function PlanifierForm({
             });
 
         return () => controller.abort();
-    }, [bulkStudentCountCache, bulkStudentCountModuleIds, data.id_session_examen, isBulkPlanning]);
+    }, [bulkStudentCountCache, bulkStudentCountModuleIds, data.id_session_examen, data.section_id, isBulkPlanning]);
 
     useEffect(() => {
         transform((currentData) => ({
@@ -525,7 +566,7 @@ export default function PlanifierForm({
                     )}
                     <InputError message={errors.id_session_examen} className="mt-1" />
                 </div>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                     <div>
                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Niveau</label>
                         <select
@@ -559,6 +600,22 @@ export default function PlanifierForm({
                                 </option>
                             ))}
                         </select>
+                    </div>
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Section</label>
+                        <select
+                            value={data.section_id}
+                            onChange={(e) => setData('section_id', e.target.value)}
+                            className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
+                        >
+                            <option value="">Toutes</option>
+                            {filteredSections.map((section) => (
+                                <option key={section.id_section} value={section.id_section}>
+                                    {formatSectionLabel(section)}
+                                </option>
+                            ))}
+                        </select>
+                        <InputError message={errors.section_id} className="mt-1" />
                     </div>
                 </div>
                 <div>

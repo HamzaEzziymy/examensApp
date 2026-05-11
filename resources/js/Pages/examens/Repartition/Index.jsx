@@ -54,6 +54,8 @@ const MODULE_ONLY_FILTER = '__module__';
 const REPARTITION_EXPORT_FIELDS = [
     { key: 'cne', label: 'CNE', defaultOn: true },
     { key: 'etudiant', label: 'Etudiant', defaultOn: true },
+    { key: 'nom', label: 'Nom', defaultOn: false },
+    { key: 'prenom', label: 'Prenom', defaultOn: false },
     { key: 'grille', label: 'Grille', defaultOn: true },
     { key: 'place', label: 'Place', defaultOn: true },
     { key: 'anonymat', label: 'Anonymat', defaultOn: true },
@@ -97,6 +99,9 @@ const formatSessionLabel = (session) => {
     const parts = [session.nom_session, session.type_session].filter(Boolean);
     return parts.join(' - ') || null;
 };
+
+const formatSectionLabel = (section) =>
+    [section?.nom_section, section?.langue].filter(Boolean).join(' - ');
 
 const exportFilenamePrefix = (format, documentType) => {
     if (format === 'excel' && documentType === 'correctors') {
@@ -250,6 +255,9 @@ const resolveExamMeta = (examen) => {
             niveauId: examen.niveau_id,
             niveauNom: examen.niveau_nom,
             filiereNom: examen.filiere_nom,
+            sectionId: examen.section_id,
+            sectionNom: examen.section_nom,
+            sectionLangue: examen.section_langue,
         };
     }
 
@@ -264,13 +272,17 @@ const resolveExamMeta = (examen) => {
 
     const semestre = matchedOffre?.semestre;
     const niveau = semestre?.niveau;
+    const section = matchedOffre?.section;
 
     return {
         semestreId: semestre?.id_semestre,
         semestreNom: semestre?.nom_semestre,
         niveauId: niveau?.id_niveau,
         niveauNom: niveau?.nom_niveau,
-        filiereNom: matchedOffre?.section?.filiere?.nom_filiere,
+        filiereNom: section?.filiere?.nom_filiere,
+        sectionId: section?.id_section,
+        sectionNom: section?.nom_section,
+        sectionLangue: section?.langue,
     };
 };
 
@@ -299,7 +311,26 @@ const resolvedExamSalles = (examen) => {
         ? examen.salles
         : (examen?.salle ? [examen.salle] : []);
 
-    return salles.filter((salle) => salle?.id_salle);
+    return salles
+        .filter((salle) => salle?.id_salle)
+        .slice()
+        .sort((left, right) => {
+            const leftOrder = Number(left?.pivot?.ordre ?? Number.MAX_SAFE_INTEGER);
+            const rightOrder = Number(right?.pivot?.ordre ?? Number.MAX_SAFE_INTEGER);
+
+            if (leftOrder !== rightOrder) {
+                return leftOrder - rightOrder;
+            }
+
+            const leftPrimary = Number(left?.id_salle) === Number(examen?.id_salle) ? 0 : 1;
+            const rightPrimary = Number(right?.id_salle) === Number(examen?.id_salle) ? 0 : 1;
+
+            if (leftPrimary !== rightPrimary) {
+                return leftPrimary - rightPrimary;
+            }
+
+            return Number(left?.id_salle ?? 0) - Number(right?.id_salle ?? 0);
+        });
 };
 
 const examSalleForIndex = (examen, salleIndex) => resolvedExamSalles(examen)[salleIndex - 1] || null;
@@ -335,6 +366,7 @@ function RepartitionExportModal({
     onPdfAbsenceCollective,
     onPdfSallesPlaces,
     onExcelRepartition,
+    onExcelCollective,
     onExcelTemplates,
 }) {
     const [format, setFormat] = useState('pdf');
@@ -388,6 +420,12 @@ function RepartitionExportModal({
                 label: 'Repartition Excel',
                 description: 'Table editable avec les etudiants affectes.',
                 icon: Table2,
+            },
+            {
+                key: 'collective',
+                label: 'Presence collective Excel',
+                description: 'Classeur par salle pour toute la presence collective.',
+                icon: FileSpreadsheet,
             },
             {
                 key: 'correctors',
@@ -470,6 +508,8 @@ function RepartitionExportModal({
                 } else {
                     await onPdfRepartition(exportOptions);
                 }
+            } else if (documentType === 'collective') {
+                await onExcelCollective(exportOptions);
             } else if (documentType === 'correctors') {
                 await onExcelTemplates(exportOptions);
             } else {
@@ -902,6 +942,7 @@ export default function RepartitionIndex({
     const [rowsPerPage, setRowsPerPage] = useState(10);
     const [selectedNiveau, setSelectedNiveau] = useState('');
     const [selectedSemestre, setSelectedSemestre] = useState('');
+    const [selectedSection, setSelectedSection] = useState('');
     const [selectedElement, setSelectedElement] = useState('');
     const [showExportModal, setShowExportModal] = useState(false);
     const [showPvAbsenceSection, setShowPvAbsenceSection] = useState(false);
@@ -1009,13 +1050,14 @@ export default function RepartitionIndex({
     const studentCount = inscriptions.length;
     const salleUsage = useMemo(() => {
         if (!selectedExamen) return [];
+        const examSalles = resolvedExamSalles(selectedExamen);
         const salleFromGrille = (code) => {
             if (code === null || code === undefined) return null;
             const str = String(code).padStart(7, '0'); // f n s salle + seat(3)
             const digit = Number(str.charAt(3));
             return Number.isNaN(digit) ? null : digit;
         };
-        return (selectedExamen.salles || []).map((salle, index) => {
+        return examSalles.map((salle, index) => {
             const capacity = salle.capacite_examens ?? salle.capacite ?? 0;
             const usage = repartitions.filter((item) => {
                 const salleDigit = salleFromGrille(item.code_grille);
@@ -1199,19 +1241,52 @@ export default function RepartitionIndex({
         return Array.from(map.values()).sort((a, b) => a.nom.localeCompare(b.nom));
     }, [examensWithMeta, selectedNiveau]);
 
+    const availableSections = useMemo(() => {
+        const map = new Map();
+        examensWithMeta.forEach(({ sectionId, sectionNom, sectionLangue, niveauId, semestreId }) => {
+            if (!sectionId) return;
+            if (selectedNiveau && String(niveauId) !== String(selectedNiveau)) return;
+            if (selectedSemestre && String(semestreId) !== String(selectedSemestre)) return;
+            if (!map.has(sectionId)) {
+                map.set(sectionId, {
+                    id: sectionId,
+                    nom_section: sectionNom || `Section ${sectionId}`,
+                    langue: sectionLangue,
+                });
+            }
+        });
+        return Array.from(map.values()).sort((a, b) =>
+            formatSectionLabel(a).localeCompare(formatSectionLabel(b)),
+        );
+    }, [examensWithMeta, selectedNiveau, selectedSemestre]);
+
+    useEffect(() => {
+        if (!selectedSection) {
+            return;
+        }
+
+        const exists = availableSections.some((section) => String(section.id) === String(selectedSection));
+        if (!exists) {
+            setSelectedSection('');
+        }
+    }, [availableSections, selectedSection]);
+
     const examensMatchingAcademicFilters = useMemo(() => {
         return examensWithMeta
-            .filter(({ niveauId, semestreId }) => {
+            .filter(({ niveauId, semestreId, sectionId }) => {
                 if (selectedNiveau && String(niveauId) !== String(selectedNiveau)) {
                     return false;
                 }
                 if (selectedSemestre && String(semestreId) !== String(selectedSemestre)) {
                     return false;
                 }
+                if (selectedSection && String(sectionId) !== String(selectedSection)) {
+                    return false;
+                }
                 return true;
             })
             .map(({ examen }) => examen);
-    }, [examensWithMeta, selectedNiveau, selectedSemestre]);
+    }, [examensWithMeta, selectedNiveau, selectedSection, selectedSemestre]);
 
     const filteredExamens = examensMatchingAcademicFilters;
 
@@ -1709,20 +1784,59 @@ export default function RepartitionIndex({
             return;
         }
 
+        if (collectiveSalles.length === 0) {
+            Swal.fire({ icon: 'info', title: 'Aucune salle trouvee pour cette exportation collective' });
+            return;
+        }
+
         const baseUrl = route('surveillance.repartition-etudiants.export-salles-places', selectedExamenId);
-        const exportRows = resolveExportRows(options.repartitionIds);
         const params = new URLSearchParams();
         (options.repartitionIds ?? []).forEach((id) => params.append('ids[]', String(id)));
         if (options.filename?.trim()) {
             params.append('filename', options.filename.trim());
         }
-        await downloadPdfPerSalle(
-            baseUrl,
-            params,
-            'repartition-salles-places',
-            exportRows,
-            options.filename,
-        );
+
+        const fallbackBase =
+            sanitizeFileName((options.filename || '').replace(/\.pdf$/i, '')) || 'repartition-salles-places';
+
+        for (const salle of collectiveSalles) {
+            const requestParams = new URLSearchParams(params.toString());
+            requestParams.set('salle_id', String(salle.id_salle));
+
+            try {
+                const response = await fetch(`${baseUrl}?${requestParams.toString()}`, {
+                    credentials: 'same-origin',
+                });
+                if (!response.ok) {
+                    throw new Error(
+                        await readFailedResponseMessage(
+                            response,
+                            `Erreur serveur (${response.status})`,
+                        ),
+                    );
+                }
+
+                const blob = await response.blob();
+                const fallbackFilename =
+                    collectiveSalles.length === 1
+                        ? `${fallbackBase}.pdf`
+                        : `${fallbackBase}-salle-${sanitizeFileName(salle.code_salle || salle.nom_salle || salle.id_salle)}.pdf`;
+                const resolvedFilename = extractFilenameFromDisposition(
+                    response.headers.get('Content-Disposition'),
+                    fallbackFilename,
+                );
+
+                downloadBlob(blob, resolvedFilename);
+                await new Promise((resolve) => setTimeout(resolve, 200));
+            } catch (error) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Echec du telechargement',
+                    text: error?.message || 'Impossible de telecharger les plans de salle.',
+                });
+                break;
+            }
+        }
     };
 
     const handleRepartitionExcelExport = (options = {}) => {
@@ -1774,6 +1888,14 @@ export default function RepartitionIndex({
 
             if (selectedColumns.includes('etudiant')) {
                 row.Etudiant = repartitionStudentName(repartition);
+            }
+
+            if (selectedColumns.includes('nom')) {
+                row.Nom = student.nom ?? '';
+            }
+
+            if (selectedColumns.includes('prenom')) {
+                row.Prenom = student.prenom ?? '';
             }
 
             if (selectedColumns.includes('grille')) {
@@ -1835,6 +1957,54 @@ export default function RepartitionIndex({
                 title: 'Export Excel impossible',
                 text: 'Le fichier de repartition n a pas pu etre genere.',
             });
+        }
+    };
+
+    const handleCollectiveExcelExport = async (options = {}) => {
+        if (!selectedExamenId) {
+            Swal.fire({ icon: 'info', title: 'Choisissez un examen' });
+            return;
+        }
+
+        const baseUrl = route('surveillance.repartition-etudiants.export-collective-excel', selectedExamenId);
+        const params = new URLSearchParams();
+        (options.repartitionIds ?? []).forEach((id) => params.append('ids[]', String(id)));
+        if (options.filename?.trim()) {
+            params.append('filename', options.filename.trim());
+        }
+
+        try {
+            const response = await fetch(`${baseUrl}?${params.toString()}`, {
+                credentials: 'same-origin',
+            });
+            if (!response.ok) {
+                throw new Error(
+                    await readFailedResponseMessage(
+                        response,
+                        `Erreur serveur (${response.status})`,
+                    ),
+                );
+            }
+
+            const blob = await response.blob();
+            const fallbackFilename =
+                ensureXlsxExtension(
+                    sanitizeFileName((options.filename || '').replace(/\.xlsx$/i, '')) ||
+                        buildDefaultExportFilename(selectedExamen, 'excel', 'collective'),
+                );
+            const filename = extractFilenameFromDisposition(
+                response.headers.get('Content-Disposition'),
+                fallbackFilename,
+            );
+
+            downloadBlob(blob, filename);
+        } catch (error) {
+            Swal.fire({
+                icon: 'error',
+                title: 'Export Excel impossible',
+                text: error?.message || 'Le classeur collectif n a pas pu etre genere.',
+            });
+            throw error;
         }
     };
 
@@ -2005,13 +2175,14 @@ export default function RepartitionIndex({
                         setPresenceFilled(options.presenceFilled);
                         handleRepartitionExcelExport(options);
                     }}
+                    onExcelCollective={handleCollectiveExcelExport}
                     onExcelTemplates={handleExcelTemplates}
                 />
             )}
 
             <div className="mb-6 grid gap-4 rounded-xl border border-gray-200 bg-white/90 p-4 shadow-sm dark:border-gray-700 dark:bg-gray-900 md:grid-cols-3">
                 <div className="md:col-span-2 space-y-3">
-                    <div className={`grid gap-3 sm:grid-cols-2 ${selectedExamenUsesElements ? 'xl:grid-cols-4' : 'xl:grid-cols-3'}`}>
+                    <div className={`grid gap-3 sm:grid-cols-2 ${selectedExamenUsesElements ? 'xl:grid-cols-5' : 'xl:grid-cols-4'}`}>
                         <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Niveau</label>
                             <select
@@ -2019,6 +2190,7 @@ export default function RepartitionIndex({
                                 onChange={(event) => {
                                     setSelectedNiveau(event.target.value);
                                     setSelectedSemestre('');
+                                    setSelectedSection('');
                                     setSelectedElement('');
                                 }}
                                 className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:bg-slate-800 dark:text-white"
@@ -2050,6 +2222,24 @@ export default function RepartitionIndex({
                             </select>
                         </div>
                         <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Section</label>
+                            <select
+                                value={selectedSection}
+                                onChange={(event) => {
+                                    setSelectedSection(event.target.value);
+                                    setSelectedElement('');
+                                }}
+                                className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:bg-slate-800 dark:text-white"
+                            >
+                                <option value="">Toutes</option>
+                                {availableSections.map((section) => (
+                                    <option key={section.id} value={section.id}>
+                                        {formatSectionLabel(section)}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+                        <div>
                             <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">Selectionnez un examen</label>
                             <select
                                 value={selectedExamenId ? String(selectedExamenId) : ''}
@@ -2057,11 +2247,27 @@ export default function RepartitionIndex({
                                 className="mt-1 w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:bg-slate-800 dark:text-white"
                             >
                                 <option value="">-- Choisir un examen --</option>
-                                {filteredExamens.map((examen) => (
-                                    <option key={examen.id_examen} value={examen.id_examen}>
-                                        {formatExamLabel(examen)} - {examen.session_examen?.nom_session ?? 'Session'} - {new Date(examen.date_examen).toLocaleDateString()}
-                                    </option>
-                                ))}
+                                {filteredExamens.map((examen) => {
+                                    const examMeta = resolveExamMeta(examen);
+
+                                    return (
+                                        <option key={examen.id_examen} value={examen.id_examen}>
+                                            {[
+                                                formatExamLabel(examen),
+                                                examen.session_examen?.nom_session ?? 'Session',
+                                                examMeta.sectionNom
+                                                    ? formatSectionLabel({
+                                                          nom_section: examMeta.sectionNom,
+                                                          langue: examMeta.sectionLangue,
+                                                      })
+                                                    : null,
+                                                new Date(examen.date_examen).toLocaleDateString(),
+                                            ]
+                                                .filter(Boolean)
+                                                .join(' - ')}
+                                        </option>
+                                    );
+                                })}
                             </select>
                         </div>
                         {selectedExamenUsesElements && (

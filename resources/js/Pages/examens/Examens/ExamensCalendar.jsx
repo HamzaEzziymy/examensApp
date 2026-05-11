@@ -46,10 +46,14 @@ const getPrimarySalleLabel = (examen) => {
 const formatModuleLabel = (module) =>
     [module?.code_module, module?.nom_module].filter(Boolean).join(' - ');
 
+const formatSectionLabel = (section) =>
+    [section?.nom_section, section?.langue].filter(Boolean).join(' - ');
+
 const formatExamLabel = (examen) => formatModuleLabel(examen?.module) || 'Module';
 
 const buildPayload = (source, overrides = {}) => ({
     id_session_examen: overrides.id_session_examen ?? source.id_session_examen ?? '',
+    section_id: overrides.section_id ?? source.section_id ?? source.offre_formation?.id_section ?? '',
     id_module: overrides.id_module ?? source.id_module ?? '',
     id_element: '',
     id_salle: overrides.id_salle ?? source.id_salle ?? '',
@@ -73,6 +77,7 @@ export default function ExamensCalendar({
     statuts,
     semestres = [],
     niveaux = [],
+    sections = [],
 }) {
     const [editorOpen, setEditorOpen] = useState(false);
     const [selectedExam, setSelectedExam] = useState(null);
@@ -87,6 +92,7 @@ export default function ExamensCalendar({
     const { data, setData, put, errors, processing, reset, transform } = useForm({
         id_examen: null,
         id_session_examen: '',
+        section_id: '',
         id_module: '',
         id_element: '',
         id_salle: '',
@@ -133,28 +139,54 @@ export default function ExamensCalendar({
         () => semestres.filter((sem) => !editSelectedNiveau || String(sem.id_niveau) === String(editSelectedNiveau)),
         [semestres, editSelectedNiveau],
     );
+    const selectedSession = useMemo(
+        () => sessions.find((session) => String(session.id_session_examen) === String(data.id_session_examen)),
+        [sessions, data.id_session_examen],
+    );
+    const selectedSessionFiliereId = selectedSession?.id_filiere ? String(selectedSession.id_filiere) : '';
+    const filteredEditSections = useMemo(
+        () =>
+            sections.filter(
+                (section) =>
+                    !selectedSessionFiliereId
+                    || String(section.id_filiere) === String(selectedSessionFiliereId),
+            ),
+        [sections, selectedSessionFiliereId],
+    );
     const filteredEditModules = useMemo(() => {
         return modules.filter((module) => {
             const sems = module.semestres || [];
+            const moduleSectionIds = module.section_ids || [];
+            const moduleFiliereIds = module.filiere_ids || [];
             const matchesNiveau =
                 !editSelectedNiveau || sems.some((sem) => String(sem.id_niveau) === String(editSelectedNiveau));
             const matchesSemestre =
                 !editSelectedSemestre || sems.some((sem) => String(sem.id_semestre) === String(editSelectedSemestre));
-            return matchesNiveau && matchesSemestre;
+            const matchesSection =
+                !data.section_id || moduleSectionIds.includes(Number(data.section_id));
+            const matchesSessionFiliere =
+                !selectedSessionFiliereId || moduleFiliereIds.includes(Number(selectedSessionFiliereId));
+            return matchesNiveau && matchesSemestre && matchesSection && matchesSessionFiliere;
         });
-    }, [modules, editSelectedNiveau, editSelectedSemestre]);
+    }, [data.section_id, editSelectedNiveau, editSelectedSemestre, modules, selectedSessionFiliereId]);
 
+    const sallesById = useMemo(
+        () =>
+            new Map(
+                salles.map((salle) => [String(salle.id_salle), salle]),
+            ),
+        [salles],
+    );
     const selectedSalles = useMemo(
-        () => salles.filter((salle) => data.salles.includes(String(salle.id_salle))),
-        [salles, data.salles],
+        () =>
+            data.salles
+                .map((id) => sallesById.get(String(id)))
+                .filter(Boolean),
+        [data.salles, sallesById],
     );
     const availableSalles = useMemo(
         () => salles.filter((salle) => !data.salles.includes(String(salle.id_salle))),
         [salles, data.salles],
-    );
-    const selectedSession = useMemo(
-        () => sessions.find((session) => String(session.id_session_examen) === String(data.id_session_examen)),
-        [sessions, data.id_session_examen],
     );
     const anonymatStartValue = Number.parseInt(data.anonymat_start, 10);
     const hasCustomAnonymatStart = Number.isInteger(anonymatStartValue) && anonymatStartValue > 0;
@@ -219,6 +251,15 @@ export default function ExamensCalendar({
     }, [filteredEditSemestres, editSelectedSemestre]);
 
     useEffect(() => {
+        const sectionExists = filteredEditSections.some(
+            (section) => String(section.id_section) === String(data.section_id),
+        );
+        if (!sectionExists && data.section_id) {
+            setData('section_id', '');
+        }
+    }, [data.section_id, filteredEditSections, setData]);
+
+    useEffect(() => {
         setAllocations((current) => {
             const next = {};
             data.salles.forEach((id) => {
@@ -257,7 +298,7 @@ export default function ExamensCalendar({
             return;
         }
 
-        const cacheKey = `${data.id_session_examen}:${data.id_module}`;
+        const cacheKey = `${data.id_session_examen}:${data.id_module}:${data.section_id || 'all'}`;
         if (studentCountCache[cacheKey] !== undefined) {
             setEligibleStudentCount(studentCountCache[cacheKey]);
             setStudentCountLoading(false);
@@ -273,6 +314,7 @@ export default function ExamensCalendar({
             route('examens.planning.student-count', {
                 id_session_examen: data.id_session_examen,
                 id_module: data.id_module,
+                ...(data.section_id ? { section_id: data.section_id } : {}),
             }),
             {
                 method: 'GET',
@@ -313,7 +355,7 @@ export default function ExamensCalendar({
             });
 
         return () => controller.abort();
-    }, [data.id_module, data.id_session_examen, studentCountCache]);
+    }, [data.id_module, data.id_session_examen, data.section_id, studentCountCache]);
 
     const openEditor = (examen) => {
         const moduleData = modules.find((module) => String(module.id_module) === String(examen.id_module));
@@ -323,6 +365,7 @@ export default function ExamensCalendar({
         setData({
             id_examen: examen.id_examen,
             id_session_examen: examen.id_session_examen ?? '',
+            section_id: examen.offre_formation?.id_section ? String(examen.offre_formation.id_section) : '',
             id_module: examen.id_module ?? '',
             id_element: '',
             id_salle: examen.id_salle ?? '',
@@ -620,7 +663,7 @@ export default function ExamensCalendar({
                                 )}
                                 <InputError message={errors.id_session_examen} className="mt-1" />
                             </div>
-                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                                 <div>
                                     <label className="text-sm font-medium text-gray-700 dark:text-gray-200">Niveau</label>
                                     <select
@@ -665,6 +708,22 @@ export default function ExamensCalendar({
                                             </option>
                                         ))}
                                     </select>
+                                </div>
+                                <div>
+                                    <label className="text-sm font-medium text-gray-700 dark:text-gray-200">Section</label>
+                                    <select
+                                        value={data.section_id}
+                                        onChange={(event) => setData('section_id', event.target.value)}
+                                        className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700"
+                                    >
+                                        <option value="">Toutes</option>
+                                        {filteredEditSections.map((section) => (
+                                            <option key={section.id_section} value={section.id_section}>
+                                                {formatSectionLabel(section)}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <InputError message={errors.section_id} className="mt-1" />
                                 </div>
                             </div>
                             <div>

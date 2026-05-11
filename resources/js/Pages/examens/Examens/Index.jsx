@@ -6,7 +6,7 @@ import ExamensCalendar from './ExamensCalendar';
 import PlanifierForm from './PlanifierForm';
 import ExamensTable from './ExamensTable';
 
-export default function ExamensIndex({ examens, sessions, modules, salles, statuts, semestres, niveaux }) {
+export default function ExamensIndex({ examens, sessions, modules, salles, statuts, semestres, niveaux, sections }) {
     const [view, setView] = useState('list');
     const [formOpen, setFormOpen] = useState(false);
 
@@ -65,6 +65,7 @@ export default function ExamensIndex({ examens, sessions, modules, salles, statu
                         statuts={statuts}
                         semestres={semestres}
                         niveaux={niveaux}
+                        sections={sections}
                     />
                 )}
                 {view === 'calendar' && (
@@ -76,6 +77,7 @@ export default function ExamensIndex({ examens, sessions, modules, salles, statu
                         statuts={statuts}
                         semestres={semestres}
                         niveaux={niveaux}
+                        sections={sections}
                     />
                 )}
             </div>
@@ -102,6 +104,7 @@ export default function ExamensIndex({ examens, sessions, modules, salles, statu
                                     statuts={statuts}
                                     semestres={semestres}
                                     niveaux={niveaux}
+                                    sections={sections}
                                     asCard={false}
                                     hideTitle
                                     onCancel={() => setFormOpen(false)}

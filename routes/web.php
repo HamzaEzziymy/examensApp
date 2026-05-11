@@ -222,6 +222,8 @@ Route::prefix('surveillance')->name('surveillance.')->group(function () {
         ->name('repartition-etudiants.export');
     Route::get('repartition-etudiants/{examen}/export-collective', [RepartitionEtudiantController::class, 'exportCollective'])
         ->name('repartition-etudiants.export-collective');
+    Route::get('repartition-etudiants/{examen}/export-collective-excel', [RepartitionEtudiantController::class, 'exportCollectiveExcel'])
+        ->name('repartition-etudiants.export-collective-excel');
     Route::get('repartition-etudiants/{examen}/export-pv-absence', [RepartitionEtudiantController::class, 'exportPvAbsence'])
         ->name('repartition-etudiants.export-pv-absence');
     Route::get('repartition-etudiants/{examen}/export-pv-absence-collective', [RepartitionEtudiantController::class, 'exportCollectivePvAbsence'])

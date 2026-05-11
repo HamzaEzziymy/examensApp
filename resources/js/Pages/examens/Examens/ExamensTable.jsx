@@ -32,6 +32,8 @@ const formatSessionLabel = (session) => {
 
 const formatModuleLabel = (module) =>
     [module?.code_module, module?.nom_module].filter(Boolean).join(' - ');
+const formatSectionLabel = (section) =>
+    [section?.nom_section, section?.langue].filter(Boolean).join(' - ');
 
 const formatExamLabel = (examen) => formatModuleLabel(examen?.module) || 'Module';
 
@@ -54,12 +56,13 @@ const normalizeText = (value) => {
         .replace(/[\u0300-\u036f]/g, '');
 };
 
-export default function ExamensTable({ examens, sessions, modules, salles, statuts, semestres = [], niveaux = [] }) {
+export default function ExamensTable({ examens, sessions, modules, salles, statuts, semestres = [], niveaux = [], sections = [] }) {
     const [modalOpen, setModalOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
     const [sessionFilter, setSessionFilter] = useState('');
     const [niveauFilter, setNiveauFilter] = useState('');
     const [semestreFilter, setSemestreFilter] = useState('');
+    const [sectionFilter, setSectionFilter] = useState('');
     const [moduleFilter, setModuleFilter] = useState('');
     const [editSelectedNiveau, setEditSelectedNiveau] = useState('');
     const [editSelectedSemestre, setEditSelectedSemestre] = useState('');
@@ -73,6 +76,7 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
     const { data, setData, put, delete: destroy, errors, processing, reset, transform } = useForm({
         id_examen: null,
         id_session_examen: '',
+        section_id: '',
         id_module: '',
         id_element: '',
         id_salle: '',
@@ -97,43 +101,89 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
         () => semestres.filter((sem) => !niveauFilter || String(sem.id_niveau) === String(niveauFilter)),
         [semestres, niveauFilter],
     );
+    const selectedListSession = useMemo(
+        () => sessions.find((session) => String(session.id_session_examen) === String(sessionFilter)),
+        [sessions, sessionFilter],
+    );
+    const selectedListSessionFiliereId = selectedListSession?.id_filiere ? String(selectedListSession.id_filiere) : '';
+    const filteredListSections = useMemo(
+        () =>
+            sections.filter(
+                (section) =>
+                    !selectedListSessionFiliereId
+                    || String(section.id_filiere) === String(selectedListSessionFiliereId),
+            ),
+        [sections, selectedListSessionFiliereId],
+    );
 
     const filteredListModules = useMemo(() => {
         return modules.filter((module) => {
             const sems = module.semestres || [];
+            const moduleSectionIds = module.section_ids || [];
+            const moduleFiliereIds = module.filiere_ids || [];
             const matchesNiveau =
                 !niveauFilter || sems.some((sem) => String(sem.id_niveau) === String(niveauFilter));
             const matchesSemestre =
                 !semestreFilter || sems.some((sem) => String(sem.id_semestre) === String(semestreFilter));
-            return matchesNiveau && matchesSemestre;
+            const matchesSection =
+                !sectionFilter || moduleSectionIds.includes(Number(sectionFilter));
+            const matchesSessionFiliere =
+                !selectedListSessionFiliereId || moduleFiliereIds.includes(Number(selectedListSessionFiliereId));
+            return matchesNiveau && matchesSemestre && matchesSection && matchesSessionFiliere;
         });
-    }, [modules, niveauFilter, semestreFilter]);
+    }, [modules, niveauFilter, sectionFilter, selectedListSessionFiliereId, semestreFilter]);
+    const selectedSession = useMemo(
+        () => sessions.find((session) => String(session.id_session_examen) === String(data.id_session_examen)),
+        [sessions, data.id_session_examen],
+    );
+    const selectedSessionFiliereId = selectedSession?.id_filiere ? String(selectedSession.id_filiere) : '';
+    const filteredEditSections = useMemo(
+        () =>
+            sections.filter(
+                (section) =>
+                    !selectedSessionFiliereId
+                    || String(section.id_filiere) === String(selectedSessionFiliereId),
+            ),
+        [sections, selectedSessionFiliereId],
+    );
 
     const filteredEditModules = useMemo(() => {
         return modules.filter((module) => {
             const sems = module.semestres || [];
+            const moduleSectionIds = module.section_ids || [];
+            const moduleFiliereIds = module.filiere_ids || [];
             const matchesNiveau =
                 !editSelectedNiveau || sems.some((sem) => String(sem.id_niveau) === String(editSelectedNiveau));
             const matchesSemestre =
                 !editSelectedSemestre || sems.some((sem) => String(sem.id_semestre) === String(editSelectedSemestre));
-            return matchesNiveau && matchesSemestre;
+            const matchesSection =
+                !data.section_id || moduleSectionIds.includes(Number(data.section_id));
+            const matchesSessionFiliere =
+                !selectedSessionFiliereId || moduleFiliereIds.includes(Number(selectedSessionFiliereId));
+            return matchesNiveau && matchesSemestre && matchesSection && matchesSessionFiliere;
         });
-    }, [modules, editSelectedNiveau, editSelectedSemestre]);
+    }, [data.section_id, editSelectedNiveau, editSelectedSemestre, modules, selectedSessionFiliereId]);
     const filteredEditSemestres = useMemo(
         () => semestres.filter((sem) => !editSelectedNiveau || String(sem.id_niveau) === String(editSelectedNiveau)),
         [semestres, editSelectedNiveau],
     );
+    const sallesById = useMemo(
+        () =>
+            new Map(
+                salles.map((salle) => [String(salle.id_salle), salle]),
+            ),
+        [salles],
+    );
     const selectedSalles = useMemo(
-        () => salles.filter((salle) => data.salles.includes(String(salle.id_salle))),
-        [salles, data.salles],
+        () =>
+            data.salles
+                .map((id) => sallesById.get(String(id)))
+                .filter(Boolean),
+        [data.salles, sallesById],
     );
     const availableSalles = useMemo(
         () => salles.filter((salle) => !data.salles.includes(String(salle.id_salle))),
         [salles, data.salles],
-    );
-    const selectedSession = useMemo(
-        () => sessions.find((session) => String(session.id_session_examen) === String(data.id_session_examen)),
-        [sessions, data.id_session_examen],
     );
     const anonymatStartValue = Number.parseInt(data.anonymat_start, 10);
     const hasCustomAnonymatStart = Number.isInteger(anonymatStartValue) && anonymatStartValue > 0;
@@ -198,11 +248,29 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
     }, [filteredEditSemestres, editSelectedSemestre]);
 
     useEffect(() => {
+        const sectionExists = filteredEditSections.some(
+            (section) => String(section.id_section) === String(data.section_id),
+        );
+        if (!sectionExists && data.section_id) {
+            setData('section_id', '');
+        }
+    }, [data.section_id, filteredEditSections, setData]);
+
+    useEffect(() => {
         const semestreExists = filteredListSemestres.some((sem) => String(sem.id_semestre) === String(semestreFilter));
         if (!semestreExists && semestreFilter) {
             setSemestreFilter('');
         }
     }, [filteredListSemestres, semestreFilter]);
+
+    useEffect(() => {
+        const sectionExists = filteredListSections.some(
+            (section) => String(section.id_section) === String(sectionFilter),
+        );
+        if (!sectionExists && sectionFilter) {
+            setSectionFilter('');
+        }
+    }, [filteredListSections, sectionFilter]);
 
     useEffect(() => {
         const moduleExists = filteredListModules.some((module) => String(module.id_module) === String(moduleFilter));
@@ -231,7 +299,7 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
             return;
         }
 
-        const cacheKey = `${data.id_session_examen}:${data.id_module}`;
+        const cacheKey = `${data.id_session_examen}:${data.id_module}:${data.section_id || 'all'}`;
         if (studentCountCache[cacheKey] !== undefined) {
             setEligibleStudentCount(studentCountCache[cacheKey]);
             setStudentCountLoading(false);
@@ -247,6 +315,7 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
             route('examens.planning.student-count', {
                 id_session_examen: data.id_session_examen,
                 id_module: data.id_module,
+                ...(data.section_id ? { section_id: data.section_id } : {}),
             }),
             {
                 method: 'GET',
@@ -287,7 +356,7 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
             });
 
         return () => controller.abort();
-    }, [data.id_module, data.id_session_examen, studentCountCache]);
+    }, [data.id_module, data.id_session_examen, data.section_id, studentCountCache]);
 
     useEffect(() => {
         transform((currentData) => ({
@@ -354,6 +423,7 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
         setData({
             id_examen: examen.id_examen,
             id_session_examen: examen.id_session_examen ?? '',
+            section_id: examen.offre_formation?.id_section ? String(examen.offre_formation.id_section) : '',
             id_module: examen.id_module ?? '',
             id_element: '',
             id_salle: examen.id_salle ?? '',
@@ -434,6 +504,8 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
                 examen.element?.code_element,
                 examen.session_examen?.nom_session,
                 examen.session_examen?.type_session,
+                examen.offre_formation?.section?.nom_section,
+                examen.offre_formation?.section?.langue,
                 examen.salle?.nom_salle,
                 examen.salle?.code_salle,
                 examen.statut,
@@ -451,18 +523,22 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
                 !niveauFilter || moduleSemestres.some((sem) => String(sem.id_niveau) === String(niveauFilter));
             const matchesSemestre =
                 !semestreFilter || moduleSemestres.some((sem) => String(sem.id_semestre) === String(semestreFilter));
+            const matchesSection =
+                !sectionFilter
+                || String(examen.offre_formation?.id_section ?? examen.offre_formation?.section?.id_section ?? '') === String(sectionFilter);
             const matchesModule =
                 !moduleFilter || String(examen.id_module) === String(moduleFilter);
 
-            return matchesSearch && matchesSession && matchesNiveau && matchesSemestre && matchesModule;
+            return matchesSearch && matchesSession && matchesNiveau && matchesSemestre && matchesSection && matchesModule;
         });
-    }, [examens, moduleFilter, modulesById, niveauFilter, searchTerm, semestreFilter, sessionFilter]);
+    }, [examens, moduleFilter, modulesById, niveauFilter, searchTerm, sectionFilter, semestreFilter, sessionFilter]);
 
     const hasActiveFilters =
         searchTerm.trim().length > 0 ||
         sessionFilter ||
         niveauFilter ||
         semestreFilter ||
+        sectionFilter ||
         moduleFilter;
 
     return (
@@ -495,7 +571,7 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
                 </div>
             </div>
 
-            <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
+            <div className="mb-4 grid gap-3 md:grid-cols-2 xl:grid-cols-6">
                 <div>
                     <label
                         htmlFor="examens-session-filter"
@@ -564,6 +640,28 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
 
                 <div>
                     <label
+                        htmlFor="examens-section-filter"
+                        className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400"
+                    >
+                        Section
+                    </label>
+                    <select
+                        id="examens-section-filter"
+                        value={sectionFilter}
+                        onChange={(event) => setSectionFilter(event.target.value)}
+                        className="w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
+                    >
+                        <option value="">Toutes les sections</option>
+                        {filteredListSections.map((section) => (
+                            <option key={section.id_section} value={section.id_section}>
+                                {formatSectionLabel(section)}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+
+                <div>
+                    <label
                         htmlFor="examens-module-filter"
                         className="mb-1 block text-xs font-medium uppercase tracking-wide text-gray-500 dark:text-gray-400"
                     >
@@ -592,6 +690,7 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
                             setSessionFilter('');
                             setNiveauFilter('');
                             setSemestreFilter('');
+                            setSectionFilter('');
                             setModuleFilter('');
                         }}
                         className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
@@ -739,7 +838,7 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
                                     )}
                                     <InputError message={errors.id_session_examen} className="mt-1" />
                                 </div>
-                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-100">Niveau</label>
                                         <select
@@ -784,6 +883,22 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
                                                 </option>
                                             ))}
                                         </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-100">Section</label>
+                                        <select
+                                            value={data.section_id}
+                                            onChange={(e) => setData('section_id', e.target.value)}
+                                            className="mt-1 w-full rounded-lg border border-gray-300 bg-transparent px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-indigo-500 dark:border-gray-700 dark:text-white"
+                                        >
+                                            <option value="">Toutes</option>
+                                            {filteredEditSections.map((section) => (
+                                                <option key={section.id_section} value={section.id_section}>
+                                                    {formatSectionLabel(section)}
+                                                </option>
+                                            ))}
+                                        </select>
+                                        <InputError message={errors.section_id} className="mt-1" />
                                     </div>
                                 </div>
                                 <div>

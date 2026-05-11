@@ -34,6 +34,8 @@
         $columnDefinitions = [
             'cne' => 'CNE',
             'etudiant' => 'Etudiant',
+            'nom' => 'Nom',
+            'prenom' => 'Prenom',
             'grille' => 'Grille',
             'place' => 'Place',
             'anonymat' => 'Anonymat',
@@ -122,6 +124,12 @@
                                     @case('etudiant')
                                         <td>{{ $rep->inscriptionPedagogique->etudiant->nom ?? '' }} {{ $rep->inscriptionPedagogique->etudiant->prenom ?? '' }}</td>
                                         @break
+                                    @case('nom')
+                                        <td>{{ $rep->inscriptionPedagogique->etudiant->nom ?? '' }}</td>
+                                        @break
+                                    @case('prenom')
+                                        <td>{{ $rep->inscriptionPedagogique->etudiant->prenom ?? '' }}</td>
+                                        @break
                                     @case('grille')
                                         <td class="text-center">{{ $rep->code_grille ?? '-' }}</td>
                                         @break
@@ -151,6 +159,12 @@
                                             @break
                                         @case('etudiant')
                                             <td>{{ $rep->inscriptionPedagogique->etudiant->nom ?? '' }} {{ $rep->inscriptionPedagogique->etudiant->prenom ?? '' }}</td>
+                                            @break
+                                        @case('nom')
+                                            <td>{{ $rep->inscriptionPedagogique->etudiant->nom ?? '' }}</td>
+                                            @break
+                                        @case('prenom')
+                                            <td>{{ $rep->inscriptionPedagogique->etudiant->prenom ?? '' }}</td>
                                             @break
                                         @case('grille')
                                             <td class="text-center">{{ $rep->code_grille ?? '-' }}</td>

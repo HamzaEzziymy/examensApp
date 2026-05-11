@@ -21,6 +21,14 @@
         .presence-table { table-layout: fixed; }
         th, td { border: 1px solid #000; padding: 4px 6px; font-size: 11px; text-align: left; }
         th { background: #FFD966; text-align: center; }
+        .module-label {
+            display: block;
+            font-size: 10px;
+            line-height: 1.15;
+            white-space: normal;
+            word-break: break-word;
+            overflow-wrap: anywhere;
+        }
         tbody tr:nth-child(odd) { background: #e5e5e5; }
         .text-center { text-align: center; }
         .student-cell { display: flex; align-items: baseline; gap: 6px; }
@@ -69,6 +77,100 @@
         $indexColumnWidthCss = $formatWidth($indexColumnWidth);
         $studentColumnWidthCss = $formatWidth($studentColumnWidth);
         $moduleColumnWidthCss = $formatWidth($moduleColumnWidth);
+        $moduleInlineLimit = match (true) {
+            $moduleCount === 1 => 26,
+            $moduleCount === 2 => 20,
+            $moduleCount === 3 => 15,
+            default => 12,
+        };
+        $modulePreviewLength = match (true) {
+            $moduleCount === 1 => 18,
+            $moduleCount === 2 => 14,
+            $moduleCount === 3 => 10,
+            default => 8,
+        };
+        $moduleWordAbbreviationLength = match (true) {
+            $moduleCount === 1 => 8,
+            $moduleCount === 2 => 6,
+            $moduleCount === 3 => 5,
+            default => 4,
+        };
+        $abbreviateModuleWord = function (string $word) use ($moduleWordAbbreviationLength): string {
+            $word = trim($word);
+
+            if ($word === '') {
+                return '';
+            }
+
+            preg_match('/[.,;:!?)]*$/u', $word, $suffixMatch);
+            $suffix = $suffixMatch[0] ?? '';
+            $core = $suffix !== '' ? mb_substr($word, 0, mb_strlen($word) - mb_strlen($suffix)) : $word;
+
+            if ($core === '' || mb_strlen($core) <= $moduleWordAbbreviationLength) {
+                return $word;
+            }
+
+            return mb_substr($core, 0, $moduleWordAbbreviationLength).'.'.$suffix;
+        };
+        $formatModuleLines = function (?string $label) use ($moduleInlineLimit, $modulePreviewLength, $abbreviateModuleWord) {
+            $label = trim((string) preg_replace('/\s+/', ' ', (string) $label));
+
+            if ($label === '') {
+                return ['-'];
+            }
+
+            $words = array_values(array_filter(preg_split('/\s+/', $label, -1, PREG_SPLIT_NO_EMPTY) ?: []));
+
+            if ($words === []) {
+                return ['-'];
+            }
+
+            if (mb_strlen($label) <= $moduleInlineLimit) {
+                return [$label];
+            }
+
+            $abbreviatedWords = array_map($abbreviateModuleWord, $words);
+            $abbreviatedLabel = implode(' ', $abbreviatedWords);
+
+            if (mb_strlen($abbreviatedLabel) <= $moduleInlineLimit) {
+                return [$abbreviatedLabel];
+            }
+
+            if (count($words) <= 1) {
+                return [\Illuminate\Support\Str::limit($abbreviatedLabel, $moduleInlineLimit, '...')];
+            }
+
+            if (count($words) === 2) {
+                return $abbreviatedWords;
+            }
+
+            return [
+                $abbreviatedWords[0],
+                $abbreviatedWords[1],
+                \Illuminate\Support\Str::limit(implode(' ', array_slice($abbreviatedWords, 2)), $modulePreviewLength, '...'),
+            ];
+        };
+        $formatStudentDisplayName = function (array $student): string {
+            $studentNom = trim((string) ($student['nom'] ?? ''));
+            $studentPrenom = trim((string) ($student['prenom'] ?? ''));
+            $fullName = trim($studentNom.' '.$studentPrenom);
+            $displayPrenom = $studentPrenom;
+            $maxNameLength = 28;
+
+            if ($studentPrenom !== '' && mb_strlen($fullName) > $maxNameLength) {
+                $prenomParts = preg_split('/\s+/', $studentPrenom, -1, PREG_SPLIT_NO_EMPTY) ?: [];
+                if (count($prenomParts) >= 3) {
+                    $first = array_shift($prenomParts);
+                    $last = array_pop($prenomParts);
+                    $middle = implode(' ', array_map(fn ($part) => mb_substr($part, 0, 1).'.', $prenomParts));
+                    $displayPrenom = trim($first.' '.($middle ? $middle.' ' : '').$last);
+                } elseif (count($prenomParts) === 2) {
+                    $displayPrenom = $prenomParts[0].' '.mb_substr($prenomParts[1], 0, 1).'.';
+                }
+            }
+
+            return trim($studentNom.' '.$displayPrenom) ?: '-';
+        };
     @endphp
 
     @foreach($groups as $groupIndex => $group)
@@ -131,13 +233,15 @@
                         <th>#</th>
                         <th>Nom et Prenom</th>
                         @foreach($modules as $module)
+                            @php
+                                $moduleLines = $formatModuleLines($module['name'] ?? '');
+                            @endphp
                             <th>
-                                @php
-                                    $abbr = strlen($module['name'] ?? '') > 18
-                                        ? substr($module['name'], 0, 18).'...'
-                                        : ($module['name'] ?? '');
-                                @endphp
-                                {{ $abbr }}
+                                <span class="module-label">
+                                    @foreach($moduleLines as $line)
+                                        {{ $line }}@if(! $loop->last)<br>@endif
+                                    @endforeach
+                                </span>
                             </th>
                         @endforeach
                     </tr>
@@ -148,25 +252,7 @@
                             <td class="text-center ">{{ $student['global_index'] ?? ($index + 1) }}</td>
                             <td>
                                 @php
-                                    $studentNom = trim($student['nom'] ?? '');
-                                    $studentPrenom = trim($student['prenom'] ?? '');
-                                    $fullName = trim($studentNom . ' ' . $studentPrenom);
-                                    $displayPrenom = $studentPrenom;
-                                    $maxNameLength = 28;
-
-                                    if ($studentPrenom !== '' && strlen($fullName) > $maxNameLength) {
-                                        $prenomParts = preg_split('/\s+/', $studentPrenom, -1, PREG_SPLIT_NO_EMPTY);
-                                        if (count($prenomParts) >= 3) {
-                                            $first = array_shift($prenomParts);
-                                            $last = array_pop($prenomParts);
-                                            $middle = implode(' ', array_map(fn ($part) => substr($part, 0, 1).'.', $prenomParts));
-                                            $displayPrenom = trim($first.' '.($middle ? $middle.' ' : '').$last);
-                                        } elseif (count($prenomParts) === 2) {
-                                            $displayPrenom = $prenomParts[0].' '.substr($prenomParts[1], 0, 1).'.';
-                                        }
-                                    }
-
-                                    $displayName = trim($studentNom . ' ' . $displayPrenom);
+                                    $displayName = $formatStudentDisplayName($student);
                                 @endphp
                                 <div class="student-cell">
                                     <span class="student-name">{{ $displayName }}</span>
@@ -199,25 +285,7 @@
                                 <td class="text-center ">{{ $student['global_index'] ?? ($normalRows->count() + $index + 1) }}</td>
                                 <td>
                                     @php
-                                        $studentNom = trim($student['nom'] ?? '');
-                                        $studentPrenom = trim($student['prenom'] ?? '');
-                                        $fullName = trim($studentNom . ' ' . $studentPrenom);
-                                        $displayPrenom = $studentPrenom;
-                                        $maxNameLength = 28;
-
-                                        if ($studentPrenom !== '' && strlen($fullName) > $maxNameLength) {
-                                            $prenomParts = preg_split('/\s+/', $studentPrenom, -1, PREG_SPLIT_NO_EMPTY);
-                                            if (count($prenomParts) >= 3) {
-                                                $first = array_shift($prenomParts);
-                                                $last = array_pop($prenomParts);
-                                                $middle = implode(' ', array_map(fn ($part) => substr($part, 0, 1).'.', $prenomParts));
-                                                $displayPrenom = trim($first.' '.($middle ? $middle.' ' : '').$last);
-                                            } elseif (count($prenomParts) === 2) {
-                                                $displayPrenom = $prenomParts[0].' '.substr($prenomParts[1], 0, 1).'.';
-                                            }
-                                        }
-
-                                        $displayName = trim($studentNom . ' ' . $displayPrenom);
+                                        $displayName = $formatStudentDisplayName($student);
                                     @endphp
                                     <div class="student-cell">
                                         <span class="student-name">{{ $displayName }}</span>
