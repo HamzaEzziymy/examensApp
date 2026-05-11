@@ -5,10 +5,37 @@ import Header from '../Header'
 import CreateForm from './CreateForm'
 import DisplayDocuments from './DisplayDocuments'
 
-function Index({documents, sessions, niveaux, salles, modules, filieres, sections}) {
+function Index({documents, sessions, niveaux, salles, modules, filieres, sections, examens = []}) {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showGenerateModal, setShowGenerateModal] = useState(false);
+  const [showExportStudentsModal, setShowExportStudentsModal] = useState(false);
+  const [exportFilterSession, setExportFilterSession] = useState('');
+  const [exportFilterFiliere, setExportFilterFiliere] = useState('');
+  const [exportFilterSection, setExportFilterSection] = useState('');
+  const [exportSelectedExamen, setExportSelectedExamen] = useState('');
   const generateForm = useForm({ id_session: '', id_filiere: '', id_section: '', nomDoc: 'PV Planification' });
+
+  // Cascading filter for exams
+  const filteredExamens = examens.filter(e => {
+    if (exportFilterSession && String(e.id_session) !== String(exportFilterSession)) return false;
+    if (exportFilterFiliere && String(e.id_filiere) !== String(exportFilterFiliere)) return false;
+    if (exportFilterSection && String(e.id_section) !== String(exportFilterSection)) return false;
+    return true;
+  });
+
+  const uniqueFilieres = [...new Map(examens.filter(e => e.filiere).map(e => [e.id_filiere, { id: e.id_filiere, nom: e.filiere }])).values()];
+  const uniqueSections = [...new Map(
+    examens.filter(e => !exportFilterFiliere || String(e.id_filiere) === String(exportFilterFiliere))
+      .filter(e => e.section)
+      .map(e => [e.id_section, { id: e.id_section, nom: e.section }])
+  ).values()];
+
+  const handleExportStudents = () => {
+    if (!exportSelectedExamen) return;
+    const url = route('surveillance.repartition-etudiants.export', exportSelectedExamen);
+    window.open(url, '_blank');
+    setShowExportStudentsModal(false);
+  };
 
   const handleGenerate = (e) => {
     e.preventDefault();
@@ -46,6 +73,13 @@ function Index({documents, sessions, niveaux, salles, modules, filieres, section
           className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-medium shadow transition-colors">
           {iconDoc}
           Générer PVs depuis la Planification
+        </button>
+        <button onClick={() => setShowExportStudentsModal(true)}
+          className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium shadow transition-colors">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+          </svg>
+          Exporter la Répartition
         </button>
       </div>
 
@@ -163,6 +197,92 @@ function Index({documents, sessions, niveaux, salles, modules, filieres, section
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* ── Export Students Modal ── */}
+      {showExportStudentsModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-emerald-100 dark:bg-emerald-900/30 rounded-lg flex items-center justify-center">
+                  <svg className="w-4 h-4 text-emerald-600 dark:text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-gray-900 dark:text-white">Exporter la Répartition</h2>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Sélectionnez un examen pour exporter la liste des étudiants</p>
+                </div>
+              </div>
+              <button onClick={() => setShowExportStudentsModal(false)}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700">
+                {iconX}
+              </button>
+            </div>
+
+            <div className="px-6 py-5 space-y-4">
+              {/* Session */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-2">Session</label>
+                <select value={exportFilterSession} onChange={e => { setExportFilterSession(e.target.value); setExportFilterFiliere(''); setExportFilterSection(''); setExportSelectedExamen(''); }}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500">
+                  <option value="">Toutes les sessions</option>
+                  {sessions.map(s => <option key={s.id_session_examen} value={s.id_session_examen}>{s.nom_session}</option>)}
+                </select>
+              </div>
+
+              {/* Filière */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-2">Filière</label>
+                <select value={exportFilterFiliere} onChange={e => { setExportFilterFiliere(e.target.value); setExportFilterSection(''); setExportSelectedExamen(''); }}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500">
+                  <option value="">Toutes les filières</option>
+                  {uniqueFilieres.map(f => <option key={f.id} value={f.id}>{f.nom}</option>)}
+                </select>
+              </div>
+
+              {/* Section */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-2">Section</label>
+                <select value={exportFilterSection} onChange={e => { setExportFilterSection(e.target.value); setExportSelectedExamen(''); }}
+                  disabled={!exportFilterFiliere}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500 disabled:opacity-40 disabled:cursor-not-allowed">
+                  <option value="">{exportFilterFiliere ? 'Toutes les sections' : '— Choisir filière —'}</option>
+                  {uniqueSections.map(s => <option key={s.id} value={s.id}>{s.nom}</option>)}
+                </select>
+              </div>
+
+              {/* Examen */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-2">Examen *</label>
+                <select value={exportSelectedExamen} onChange={e => setExportSelectedExamen(e.target.value)} required
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-emerald-500">
+                  <option value="">Sélectionner un examen</option>
+                  {filteredExamens.map(e => (
+                    <option key={e.id_examen} value={e.id_examen}>
+                      {e.module} — {e.niveau} — {e.date_examen}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-400 mt-1">{filteredExamens.length} examen(s) disponible(s)</p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between px-6 py-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800/50 rounded-b-2xl">
+              <button onClick={() => setShowExportStudentsModal(false)}
+                className="px-3 py-1.5 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-200 rounded-lg text-sm hover:bg-gray-100 dark:hover:bg-gray-700">
+                Annuler
+              </button>
+              <button onClick={handleExportStudents} disabled={!exportSelectedExamen}
+                className="flex items-center gap-2 px-5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-sm font-semibold disabled:opacity-50 transition-colors">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                Exporter
+              </button>
+            </div>
           </div>
         </div>
       )}

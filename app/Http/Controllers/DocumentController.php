@@ -23,6 +23,29 @@ class DocumentController extends Controller
         $filieres = \App\Models\Filiere::select('id_filiere', 'nom_filiere')->orderBy('nom_filiere')->get();
         $sections = \App\Models\Section::select('id_section', 'nom_section', 'id_filiere')->orderBy('nom_section')->get();
 
+        // Exams for the student export modal
+        $examens = \App\Models\Examen::with([
+            'offreFormation.module',
+            'offreFormation.section.filiere',
+            'offreFormation.semestre.niveau',
+            'sessionExamen',
+        ])
+        ->whereNotNull('id_offre')
+        ->orderBy('date_examen', 'desc')
+        ->get()
+        ->map(fn($e) => [
+            'id_examen'   => $e->id_examen,
+            'module'      => $e->offreFormation?->module?->nom_module ?? '—',
+            'session'     => $e->sessionExamen?->nom_session ?? '—',
+            'filiere'     => $e->offreFormation?->section?->filiere?->nom_filiere ?? '',
+            'section'     => $e->offreFormation?->section?->nom_section ?? '',
+            'niveau'      => $e->offreFormation?->semestre?->niveau?->nom_niveau ?? '',
+            'date_examen' => $e->date_examen?->format('d/m/Y') ?? '',
+            'id_session'  => $e->id_session_examen,
+            'id_filiere'  => $e->offreFormation?->section?->filiere?->id_filiere ?? null,
+            'id_section'  => $e->offreFormation?->id_section ?? null,
+        ]);
+
         return Inertia::render('Documents/Pvs/Index', [
             'documents' => $documents,
             'sessions'  => $sessions,
@@ -31,6 +54,7 @@ class DocumentController extends Controller
             'modules'   => $modules,
             'filieres'  => $filieres,
             'sections'  => $sections,
+            'examens'   => $examens,
         ]);
     }
 
