@@ -4,7 +4,7 @@ import React from 'react'
 import Header from '../Header'
 import Display from './Display';
 
-function Index({ offresFormation, sections, semestres, modules, coordinateurs, anneeUniversitaires, filters, totalCount }) {
+function Index({ offresFormation, allOffresFormation, sections, semestres, modules, coordinateurs, anneeUniversitaires, filters, totalCount }) {
 
   return (
     <AuthenticatedLayout
@@ -19,6 +19,7 @@ function Index({ offresFormation, sections, semestres, modules, coordinateurs, a
       <div className="p-4 rounded-lg">
         <Display
           offresFormation={offresFormation}
+          allOffresFormation={allOffresFormation}
           sections={sections}
           semestres={semestres}
           modules={modules}

@@ -194,7 +194,7 @@
             <td class="label">Épreuve</td>
             <td class="value">{{ $pv['module'] }}</td>
             <td class="label">Début de l'épreuve :</td>
-            <td class="value" style="font-size:14px;">{{ $pv['heure_debut'] }}</td>
+            <td class="value"></td>
         </tr>
         <tr class="attendance-row">
             <td colspan="2">
