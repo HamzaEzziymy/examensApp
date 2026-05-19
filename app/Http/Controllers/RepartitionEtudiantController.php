@@ -10,6 +10,7 @@ use App\Models\InscriptionPedagogique;
 use App\Models\OffreFormation;
 use App\Models\RepartitionEtudiant;
 use App\Models\Salle;
+use App\Support\CodeGrille;
 use App\Services\PvAbsenceDatasetService;
 use App\Services\PvAbsenceFormOptionsService;
 use App\Services\PvAbsencePdfService;
@@ -241,12 +242,7 @@ class RepartitionEtudiantController extends Controller
         }
 
         $url = str_replace('{id_examen}', (string) $examen->id_examen, $externalUrl);
-        $payload = [
-            'data' => $payloadBuilder->build(
-                $examen,
-                config('pointage.push_include', ['exam', 'students'])
-            ),
-        ];
+        $payload = $payloadBuilder->buildExternalPushPayload($examen);
 
         $request = Http::acceptJson()
             ->asJson()
@@ -279,8 +275,9 @@ class RepartitionEtudiantController extends Controller
             'external_status' => $response->status(),
             'sent' => [
                 'id_examen' => $examen->id_examen,
-                'students' => count($payload['data']['students'] ?? []),
-                'repartitions' => count($payload['data']['repartitions'] ?? []),
+                'examens' => count($payload['examens'] ?? []),
+                'students' => collect($payload['examens'] ?? [])
+                    ->sum(fn (array $entry) => count($entry['etudiants'] ?? [])),
             ],
         ]);
     }
@@ -405,25 +402,7 @@ class RepartitionEtudiantController extends Controller
             $salles = collect([$examen->salle]);
         }
 
-        $orderedSalleGroups = $this->buildSalleGroupsWithCollectiveOrder($examen, $repartitions, $salles);
-        if ($orderedSalleGroups && $orderedSalleGroups->isNotEmpty()) {
-            $salleGroups = $orderedSalleGroups;
-        } else {
-            $salleGroups = $repartitions
-                ->groupBy(fn ($rep) => $this->salleIndexFromGrille($rep->code_grille))
-                ->map(function ($rows, $salleIndex) use ($salles) {
-                    $salle = $salles[$salleIndex - 1] ?? null;
-                    return [
-                        'salle'       => $salle,
-                        'rows'        => $rows,
-                        'present'     => $rows->where('present', true)->count(),
-                        'total'       => $rows->count(),
-                        'absent'      => $rows->count() - $rows->where('present', true)->count(),
-                        'salle_index' => (int) $salleIndex,
-                    ];
-                })
-                ->values();
-        }
+        $salleGroups = $this->buildSalleGroupsFromSavedRepartition($repartitions, $salles);
 
         $footerSalleLabel = $salles->pluck('nom_salle')->filter()->unique()->implode(' | ');
         if (empty($footerSalleLabel) && $examen->salle) {
@@ -1542,10 +1521,7 @@ class RepartitionEtudiantController extends Controller
 
     private function salleIndexFromGrille($codeGrille): int
     {
-        $str = str_pad((string) ($codeGrille ?? ''), 7, '0', STR_PAD_LEFT);
-        $digit = (int) ($str[3] ?? 1);
-
-        return $digit >= 1 ? $digit : 1;
+        return CodeGrille::salleIndex($codeGrille);
     }
 
     private function salleCountsByIndex(Collection $repartitions): Collection
@@ -1554,6 +1530,27 @@ class RepartitionEtudiantController extends Controller
             ->map(fn ($rep) => $this->salleIndexFromGrille($rep->code_grille))
             ->countBy()
             ->sortKeys();
+    }
+
+    private function buildSalleGroupsFromSavedRepartition(Collection $repartitions, Collection $salles): Collection
+    {
+        return $repartitions
+            ->groupBy(fn ($rep) => $this->salleIndexFromGrille($rep->code_grille))
+            ->sortKeys()
+            ->map(function ($rows, $salleIndex) use ($salles) {
+                $rows = $rows->values();
+                $salle = $salles[$salleIndex - 1] ?? null;
+
+                return [
+                    'salle'       => $salle,
+                    'rows'        => $rows,
+                    'present'     => $rows->where('present', true)->count(),
+                    'total'       => $rows->count(),
+                    'absent'      => $rows->count() - $rows->where('present', true)->count(),
+                    'salle_index' => (int) $salleIndex,
+                ];
+            })
+            ->values();
     }
 
     private function assignStudentsToSalleIndices(Collection $students, Collection $salleCounts): Collection
@@ -2457,7 +2454,7 @@ class RepartitionEtudiantController extends Controller
         $seatNumber = $this->placementSeatNumber($numeroPlace, $codeGrille);
 
         if ($seatNumber !== null) {
-            return sprintf('%s|seat:%03d', $scope, $seatNumber);
+            return sprintf('%s|seat:%04d', $scope, $seatNumber);
         }
 
         $placeValue = strtoupper(trim((string) ($numeroPlace ?? '')));
@@ -2498,9 +2495,7 @@ class RepartitionEtudiantController extends Controller
             return null;
         }
 
-        $grilleValue = str_pad(preg_replace('/\D+/', '', $grille), 7, '0', STR_PAD_LEFT);
-
-        return (int) substr($grilleValue, -3);
+        return CodeGrille::seatNumber($grille);
     }
 
     private function requestedRepartitionIds(Request $request): Collection

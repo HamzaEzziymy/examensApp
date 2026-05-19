@@ -151,8 +151,6 @@ class PointageApiTest extends TestCase
 
         Config::set('pointage.external_url', "https://pointage.example/api/examens/{id_examen}/repartitions");
         Config::set('pointage.external_token', 'external-secret');
-        Config::set('pointage.push_include', ['exam', 'students']);
-
         $expectedUrl = "https://pointage.example/api/examens/{$exam->id_examen}/repartitions";
 
         Http::fake([
@@ -164,8 +162,8 @@ class PointageApiTest extends TestCase
             ->assertJsonPath('message', 'Repartition envoyee au pointage.')
             ->assertJsonPath('external_status', 201)
             ->assertJsonPath('sent.id_examen', $exam->id_examen)
-            ->assertJsonPath('sent.students', 1)
-            ->assertJsonPath('sent.repartitions', 0);
+            ->assertJsonPath('sent.examens', 1)
+            ->assertJsonPath('sent.students', 1);
 
         Http::assertSent(function (HttpRequest $request) use ($expectedUrl, $exam, $student) {
             $payload = $request->data();
@@ -175,10 +173,16 @@ class PointageApiTest extends TestCase
             return strtoupper($request->method()) === 'POST'
                 && $request->url() === $expectedUrl
                 && in_array('Bearer external-secret', $authorization, true)
-                && data_get($payload, 'data.exam.id_examen') === $exam->id_examen
-                && data_get($payload, 'data.exam.module.nom_module') === 'Anatomie'
-                && data_get($payload, 'data.students.0.cne') === $student->cne
-                && ! array_key_exists('repartitions', data_get($payload, 'data', []));
+                && data_get($payload, 'source') === 'app_repartition_examens'
+                && preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', (string) data_get($payload, 'generated_at')) === 1
+                && data_get($payload, 'examens.0.examen_code') === 'EXAM-'.$exam->offreFormation->module->code_module.'-'.$exam->offreFormation->semestre->code_semestre
+                && data_get($payload, 'examens.0.examen_libelle') === 'Examen Anatomie '.$exam->offreFormation->semestre->code_semestre
+                && data_get($payload, 'examens.0.session') === 'Normale'
+                && data_get($payload, 'examens.0.salle_code') === $exam->salle->code_salle
+                && data_get($payload, 'examens.0.salle_nom') === $exam->salle->nom_salle
+                && data_get($payload, 'examens.0.etudiants.0.cne') === $student->cne
+                && data_get($payload, 'examens.0.etudiants.0.device_user_id') === (string) $student->id_etudiant
+                && data_get($payload, 'examens.0.etudiants.0.autorise') === true;
         });
     }
 
@@ -205,9 +209,13 @@ class PointageApiTest extends TestCase
         $niveau = Niveau::factory()->create(['nom_niveau' => 'Licence 1']);
         $semestre = Semestre::factory()->create([
             'id_niveau' => $niveau->id_niveau,
+            'code_semestre' => 'S'.fake()->unique()->numberBetween(1, 99),
             'nom_semestre' => 'S1',
         ]);
-        $module = Module::factory()->create(['nom_module' => 'Anatomie']);
+        $module = Module::factory()->create([
+            'code_module' => 'ANA-'.fake()->unique()->numberBetween(1, 999),
+            'nom_module' => 'Anatomie',
+        ]);
         $offre = OffreFormation::factory()->create([
             'id_module' => $module->id_module,
             'id_semestre' => $semestre->id_semestre,
@@ -222,7 +230,10 @@ class PointageApiTest extends TestCase
             'type_session' => 'Normale',
             'date_session_examen' => '2026-06-01',
         ]);
-        $salle = Salle::factory()->create(['nom_salle' => 'Salle A101']);
+        $salle = Salle::factory()->create([
+            'code_salle' => 'AMPHI-'.fake()->unique()->numberBetween(1, 999),
+            'nom_salle' => 'Amphi A1',
+        ]);
         $exam = Examen::factory()->create([
             'id_session_examen' => $session->id_session_examen,
             'id_offre' => $offre->id_offre,
@@ -261,7 +272,7 @@ class PointageApiTest extends TestCase
         ], $repartitionOverrides));
 
         return [
-            'exam' => $exam->fresh(['module']),
+            'exam' => $exam->fresh(['module', 'offreFormation.module', 'offreFormation.semestre', 'salle']),
             'annee' => $annee,
             'filiere' => $filiere,
             'niveau' => $niveau,

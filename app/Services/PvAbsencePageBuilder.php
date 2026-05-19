@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Examen;
+use App\Support\CodeGrille;
 use Illuminate\Support\Collection;
 
 class PvAbsencePageBuilder
@@ -176,10 +177,7 @@ class PvAbsencePageBuilder
 
     private function salleIndexFromGrille($codeGrille): int
     {
-        $str = str_pad((string) ($codeGrille ?? ''), 7, '0', STR_PAD_LEFT);
-        $digit = (int) ($str[3] ?? 1);
-
-        return $digit >= 1 ? $digit : 1;
+        return CodeGrille::salleIndex($codeGrille);
     }
 
     private function formatDuration(Examen $examen): string

@@ -419,6 +419,15 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
         const firstSem = moduleData?.semestres?.[0];
         setEditSelectedNiveau(firstSem?.id_niveau ? String(firstSem.id_niveau) : '');
         setEditSelectedSemestre(firstSem?.id_semestre ? String(firstSem.id_semestre) : '');
+        const savedAllocations = (examen.salles || []).reduce((carry, salle) => {
+            const value = Number(salle?.pivot?.nombre_affecte ?? 0);
+
+            if (value > 0) {
+                carry[String(salle.id_salle)] = value;
+            }
+
+            return carry;
+        }, {});
 
         setData({
             id_examen: examen.id_examen,
@@ -437,7 +446,7 @@ export default function ExamensTable({ examens, sessions, modules, salles, statu
             statut: examen.statut,
             description: examen.description ?? '',
         });
-        setAllocations({});
+        setAllocations(savedAllocations);
         setPendingSalleId('');
         setModalOpen(true);
     };

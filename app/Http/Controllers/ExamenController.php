@@ -13,7 +13,9 @@ use App\Models\OffreFormation;
 use App\Models\RepartitionEtudiant;
 use App\Models\Salle;
 use App\Models\Section;
+use App\Models\Semestre;
 use App\Models\SessionExamen;
+use App\Support\CodeGrille;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -131,7 +133,7 @@ class ExamenController extends Controller
                 'offreFormation:id_offre,id_module,id_semestre,id_section,id_annee',
                 'offreFormation.section:id_section,id_filiere',
                 'offreFormation.section.filiere:id_filiere,nom_filiere',
-                'offreFormation.semestre:id_semestre,nom_semestre,id_niveau',
+                'offreFormation.semestre:id_semestre,code_semestre,nom_semestre,id_niveau,ordre',
                 'offreFormation.semestre.niveau:id_niveau,nom_niveau',
                 'module' => fn ($query) => $query->select('modules.id_module', 'modules.nom_module', 'modules.code_module'),
                 'element:id_element,id_module,code_element,nom_element',
@@ -515,7 +517,7 @@ class ExamenController extends Controller
                 unset($attributes['plan_all_filtered_modules'], $attributes['module_ids'], $attributes['module_plannings'], $attributes['section_id']);
 
                 $examen = Examen::create($attributes);
-                $this->syncOrderedSalles($examen, $allSalleIds);
+                $this->syncOrderedSalles($examen, $allSalleIds, $plan['manualSplit']);
                 $examen->load('salles:id_salle,code_salle,capacite_examens,capacite');
 
                 $createdSyncReferences[] = [
@@ -665,10 +667,10 @@ class ExamenController extends Controller
                 ->withInput();
         }
 
-        DB::transaction(function () use ($validated, $examen, $allSalleIds) {
+        DB::transaction(function () use ($validated, $examen, $allSalleIds, $manualSplit) {
             unset($validated['section_id']);
             $examen->update($validated);
-            $this->syncOrderedSalles($examen, $allSalleIds);
+            $this->syncOrderedSalles($examen, $allSalleIds, $manualSplit);
 
             $syncReference = $examen->fresh();
             $syncReference->anonymat_start = isset($validated['anonymat_start']) && $validated['anonymat_start'] !== ''
@@ -676,7 +678,11 @@ class ExamenController extends Controller
                 : null;
             $syncReference->student_order = $validated['student_order'] ?? $syncReference->student_order;
 
-            $this->synchronizeSemesterExamLists($syncReference, true);
+            $this->synchronizeSemesterExamLists(
+                $syncReference,
+                true,
+                collect([(int) $examen->id_examen => $manualSplit])
+            );
         });
 
         return redirect()
@@ -861,7 +867,7 @@ class ExamenController extends Controller
             'offreFormation:id_offre,id_module,id_semestre,id_section,id_annee',
             'offreFormation.section:id_section,id_filiere',
             'offreFormation.section.filiere:id_filiere,nom_filiere',
-            'offreFormation.semestre:id_semestre,id_niveau',
+            'offreFormation.semestre:id_semestre,code_semestre,nom_semestre,id_niveau,ordre',
             'offreFormation.semestre.niveau:id_niveau,nom_niveau,ordre',
         ]);
 
@@ -984,7 +990,7 @@ class ExamenController extends Controller
             $seat = 1;
             $filiereCode = $this->filiereCode($examen);
             $niveauCode = $this->niveauCode($examen);
-            $sessionCode = $this->sessionCode($examen);
+            $semestreCode = $this->semestreCode($examen);
             $salleCode = $roomPositions->has((int) $salle->id_salle)
                 ? ((int) $roomPositions->get((int) $salle->id_salle) + 1)
                 : ($index + 1);
@@ -994,11 +1000,10 @@ class ExamenController extends Controller
                 if ($codeAnonymat === '') {
                     $codeAnonymat = (string) $seat;
                 }
-                $grilleCode = (int) sprintf(
-                    '%d%d%d%d%03d',
+                $grilleCode = CodeGrille::build(
                     $filiereCode,
                     $niveauCode,
-                    $sessionCode,
+                    $semestreCode,
                     $salleCode,
                     $seat
                 );
@@ -1398,7 +1403,11 @@ class ExamenController extends Controller
         AnonymatSemestre::insert($rows);
     }
 
-    private function synchronizeSemesterExamLists(?Examen $referenceExamen, bool $forceRebuildReservations = false): void
+    private function synchronizeSemesterExamLists(
+        ?Examen $referenceExamen,
+        bool $forceRebuildReservations = false,
+        ?Collection $manualSplitsByExam = null
+    ): void
     {
         if (! $referenceExamen) {
             return;
@@ -1451,11 +1460,16 @@ class ExamenController extends Controller
                 continue;
             }
 
+            $manualSplit = $manualSplitsByExam?->get((int) $examen->id_examen);
+            if (! $manualSplit instanceof Collection) {
+                $manualSplit = $this->manualSplitFromOrderedSalles($orderedSalles);
+            }
+
             $this->generateInitialRepartition(
                 $examen->fresh(),
                 $registrations,
                 $registrations->count(),
-                collect(),
+                $manualSplit,
                 $orderedSalles
             );
         }
@@ -1474,7 +1488,7 @@ class ExamenController extends Controller
                 'offreFormation:id_offre,id_module,id_semestre,id_section,id_annee',
                 'offreFormation.section:id_section,id_filiere',
                 'offreFormation.section.filiere:id_filiere,nom_filiere',
-                'offreFormation.semestre:id_semestre,id_niveau',
+                'offreFormation.semestre:id_semestre,code_semestre,nom_semestre,id_niveau,ordre',
                 'offreFormation.semestre.niveau:id_niveau,nom_niveau,ordre',
                 'salles:id_salle,code_salle,nom_salle,capacite_examens,capacite',
             ])
@@ -1750,8 +1764,20 @@ class ExamenController extends Controller
 
     private function filiereCode(Examen $examen): int
     {
-        $filiere = $this->referenceOffre($examen)?->section?->filiere;
+        $offre = $this->referenceOffre($examen);
+        $filiere = $offre?->section?->filiere;
+
+        if (! $filiere && $offre?->id_section) {
+            $filiere = Section::query()
+                ->with('filiere:id_filiere,nom_filiere')
+                ->find($offre->id_section, ['id_section', 'id_filiere'])
+                ?->filiere;
+        }
+
         $name = strtolower($filiere->nom_filiere ?? '');
+        $filiereId = $filiere->id_filiere
+            ?? $offre?->section?->id_filiere
+            ?? $this->preferredExamFiliereId($examen);
 
         $byName = match (true) {
             str_contains($name, 'med')  => 1,
@@ -1764,7 +1790,7 @@ class ExamenController extends Controller
             return $byName;
         }
 
-        return match ($filiere->id_filiere ?? null) {
+        return match ($filiereId) {
             1 => 1,
             2 => 2,
             3 => 3,
@@ -1795,7 +1821,7 @@ class ExamenController extends Controller
             'offreFormation:id_offre,id_module,id_semestre,id_section,id_annee',
             'offreFormation.section:id_section,id_filiere',
             'offreFormation.section.filiere:id_filiere,nom_filiere',
-            'offreFormation.semestre:id_semestre,nom_semestre,id_niveau',
+            'offreFormation.semestre:id_semestre,code_semestre,nom_semestre,id_niveau,ordre',
             'offreFormation.semestre.niveau:id_niveau,nom_niveau,ordre',
         ]);
 
@@ -1913,16 +1939,43 @@ class ExamenController extends Controller
             ->values();
     }
 
-    private function syncOrderedSalles(Examen $examen, Collection $salleIds): void
+    private function syncOrderedSalles(Examen $examen, Collection $salleIds, ?Collection $manualSplit = null): void
     {
+        $manualTargets = $manualSplit instanceof Collection
+            ? $manualSplit
+                ->filter(fn ($row) => isset($row['id_salle']))
+                ->keyBy(fn ($row) => (int) $row['id_salle'])
+            : collect();
+
         $payload = $salleIds
             ->values()
             ->mapWithKeys(fn ($id, $index) => [
-                (int) $id => ['ordre' => $index + 1],
+                (int) $id => [
+                    'ordre' => $index + 1,
+                    'nombre_affecte' => $manualTargets->get((int) $id)['nombre'] ?? null,
+                ],
             ])
             ->all();
 
         $examen->salles()->sync($payload);
+    }
+
+    private function manualSplitFromOrderedSalles(Collection $orderedSalles): Collection
+    {
+        return $orderedSalles
+            ->map(function ($salle) {
+                $nombre = $salle->pivot?->nombre_affecte;
+                if ($nombre === null || (int) $nombre < 1) {
+                    return null;
+                }
+
+                return [
+                    'id_salle' => (int) $salle->id_salle,
+                    'nombre' => (int) $nombre,
+                ];
+            })
+            ->filter()
+            ->keyBy('id_salle');
     }
 
     private function orderRegistrationsForRepartition(
@@ -2016,12 +2069,36 @@ class ExamenController extends Controller
             : null;
     }
 
-    private function sessionCode(Examen $examen): int
+    private function semestreCode(Examen $examen): int
     {
-        if ($this->isRattrapageSession($examen->sessionExamen)) {
-            return 2;
+        $offre = $this->referenceOffre($examen);
+        $semestre = $offre?->semestre;
+
+        if (! $semestre && $offre?->id_semestre) {
+            $semestre = Semestre::query()->find(
+                $offre->id_semestre,
+                ['id_semestre', 'code_semestre', 'nom_semestre', 'ordre']
+            );
         }
 
-        return 1;
+        foreach ([$semestre?->code_semestre, $semestre?->nom_semestre] as $value) {
+            if (preg_match('/(\d+)/', (string) $value, $matches) === 1) {
+                $digit = (int) $matches[1];
+
+                if ($digit >= 1 && $digit <= 9) {
+                    return $digit;
+                }
+            }
+        }
+
+        if (is_numeric($semestre?->ordre)) {
+            $digit = (int) $semestre->ordre;
+
+            if ($digit >= 1 && $digit <= 9) {
+                return $digit;
+            }
+        }
+
+        return 0;
     }
 }

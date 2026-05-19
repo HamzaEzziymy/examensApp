@@ -21,6 +21,7 @@ use App\Models\Semestre;
 use App\Models\SessionExamen;
 use App\Models\User;
 use App\Models\UserFiliereAnnee;
+use App\Support\CodeGrille;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -1171,12 +1172,12 @@ class ExamenControllerTest extends TestCase
         $normalInscriptions = $inscriptions->where('type_inscription', 'Normal')->values();
 
         foreach ($normalInscriptions as $inscription) {
-            $code = str_pad((string) $repartitions[$inscription->id_inscription_pedagogique]->code_grille, 7, '0', STR_PAD_LEFT);
+            $code = CodeGrille::normalize($repartitions[$inscription->id_inscription_pedagogique]->code_grille);
             $this->assertSame('1', $code[3]);
         }
 
         $creditRepartition = $repartitions[$creditInscription->id_inscription_pedagogique];
-        $creditCode = str_pad((string) $creditRepartition->code_grille, 7, '0', STR_PAD_LEFT);
+        $creditCode = CodeGrille::normalize($creditRepartition->code_grille);
 
         $this->assertSame(
             [$premiereSalle->id_salle, $derniereSalle->id_salle],
@@ -1194,6 +1195,62 @@ class ExamenControllerTest extends TestCase
         ]);
         $this->assertSame('2', $creditCode[3]);
         $this->assertSame('1', (string) $creditRepartition->numero_place);
+    }
+
+    public function test_store_builds_code_grille_with_filiere_niveau_semestre_salle_and_four_digit_place(): void
+    {
+        [
+            'user' => $user,
+            'annee' => $annee,
+            'section' => $section,
+            'niveau' => $niveau,
+            'semestre' => $semestre,
+            'offre' => $offre,
+            'module' => $module,
+            'salle' => $salle,
+            'session' => $session,
+        ] = $this->createSharedSessionPlanningContext();
+
+        $niveau->update(['ordre' => 4]);
+        $semestre->update([
+            'code_semestre' => 'S3',
+            'nom_semestre' => 'S3',
+            'ordre' => 3,
+        ]);
+
+        $inscription = $this->createPedagogicalRegistration(
+            $section,
+            $annee,
+            $niveau->fresh(),
+            $offre->fresh(),
+            'Alpha',
+            'Premier'
+        );
+
+        $response = $this
+            ->actingAs($user)
+            ->post(route('examens.examens.store'), [
+                'id_session_examen' => $session->id_session_examen,
+                'id_module' => $module->id_module,
+                'salles' => [$salle->id_salle],
+                'date_examen' => '2026-06-20',
+                'date_debut' => '2026-06-20 08:00:00',
+                'date_fin' => '2026-06-20 10:00:00',
+                'statut' => 'Planifiee',
+                'description' => 'Structure code grille',
+            ]);
+
+        $response
+            ->assertRedirect(route('examens.examens.index'))
+            ->assertSessionHasNoErrors();
+
+        $examen = Examen::query()->latest('id_examen')->firstOrFail();
+        $repartition = RepartitionEtudiant::query()
+            ->where('id_examen', $examen->id_examen)
+            ->where('id_inscription_pedagogique', $inscription->id_inscription_pedagogique)
+            ->firstOrFail();
+
+        $this->assertSame('14310001', CodeGrille::normalize($repartition->code_grille));
     }
 
     public function test_store_can_generate_a_stable_random_student_order_for_repartition(): void
@@ -1283,6 +1340,95 @@ class ExamenControllerTest extends TestCase
             $inscriptions->firstWhere('type_inscription', 'Credit')?->id_inscription_pedagogique,
             end($orderedRegistrationIds)
         );
+    }
+
+    public function test_update_applies_manual_room_split_to_repartition(): void
+    {
+        [
+            'user' => $user,
+            'annee' => $annee,
+            'section' => $section,
+            'niveau' => $niveau,
+            'offre' => $offre,
+            'module' => $module,
+            'salle' => $firstSalle,
+            'session' => $session,
+        ] = $this->createSharedSessionPlanningContext();
+
+        $secondSalle = Salle::factory()->create([
+            'capacite' => 10,
+            'capacite_examens' => 10,
+        ]);
+
+        foreach ([
+            ['Alpha', 'One'],
+            ['Beta', 'Two'],
+            ['Gamma', 'Three'],
+            ['Delta', 'Four'],
+        ] as [$nom, $prenom]) {
+            $this->createPedagogicalRegistration($section, $annee, $niveau, $offre, $nom, $prenom);
+        }
+
+        $examen = Examen::create([
+            'id_session_examen' => $session->id_session_examen,
+            'id_offre' => $offre->id_offre,
+            'id_module' => $module->id_module,
+            'id_salle' => $firstSalle->id_salle,
+            'date_examen' => '2026-06-20',
+            'date_debut' => '2026-06-20 08:00:00',
+            'date_fin' => '2026-06-20 10:00:00',
+            'statut' => 'Planifiee',
+            'description' => 'Examen repartition manuelle',
+        ]);
+        $examen->salles()->sync([
+            $firstSalle->id_salle => ['ordre' => 1],
+            $secondSalle->id_salle => ['ordre' => 2],
+        ]);
+
+        $response = $this
+            ->actingAs($user)
+            ->put(route('examens.examens.update', $examen), [
+                'id_session_examen' => $session->id_session_examen,
+                'id_module' => $module->id_module,
+                'salles' => [$firstSalle->id_salle, $secondSalle->id_salle],
+                'repartition_salles' => [
+                    ['id_salle' => $firstSalle->id_salle, 'nombre' => 3],
+                    ['id_salle' => $secondSalle->id_salle, 'nombre' => 1],
+                ],
+                'date_examen' => '2026-06-20',
+                'date_debut' => '2026-06-20 08:00:00',
+                'date_fin' => '2026-06-20 10:00:00',
+                'statut' => 'Planifiee',
+                'description' => 'Examen repartition manuelle',
+            ]);
+
+        $response
+            ->assertRedirect(route('examens.examens.index'))
+            ->assertSessionHasNoErrors();
+
+        $this->assertDatabaseHas('exam_salle', [
+            'id_examen' => $examen->id_examen,
+            'id_salle' => $firstSalle->id_salle,
+            'ordre' => 1,
+            'nombre_affecte' => 3,
+        ]);
+        $this->assertDatabaseHas('exam_salle', [
+            'id_examen' => $examen->id_examen,
+            'id_salle' => $secondSalle->id_salle,
+            'ordre' => 2,
+            'nombre_affecte' => 1,
+        ]);
+
+        $countsBySalleIndex = RepartitionEtudiant::query()
+            ->where('id_examen', $examen->id_examen)
+            ->get()
+            ->map(function (RepartitionEtudiant $repartition) {
+                return (int) (CodeGrille::normalize($repartition->code_grille)[3] ?? 0);
+            })
+            ->countBy();
+
+        $this->assertSame(3, (int) ($countsBySalleIndex->get(1) ?? 0));
+        $this->assertSame(1, (int) ($countsBySalleIndex->get(2) ?? 0));
     }
 
     public function test_store_assigns_anonymats_in_real_alphabetical_student_order(): void

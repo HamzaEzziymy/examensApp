@@ -5,13 +5,12 @@ The pointage integration uses a shared token configured with `POINTAGE_API_TOKEN
 For the button inside the repartition page, configure the external pointage app endpoint:
 
 ```env
-POINTAGE_EXTERNAL_URL=https://pointage.example/api/examens/{id_examen}/repartitions
+POINTAGE_EXTERNAL_URL=http://10.6.4.58:8000/api/integrations/import-exam-affectations/
 POINTAGE_EXTERNAL_TOKEN=external-app-token
 POINTAGE_EXTERNAL_TIMEOUT=15
-POINTAGE_PUSH_INCLUDE=exam,students
 ```
 
-`POINTAGE_EXTERNAL_URL` may contain `{id_examen}`. The app replaces it with the selected exam id before sending the request.
+This endpoint is the Django integration route reachable on the local network. If the host, port, or path changes later, update `POINTAGE_EXTERNAL_URL` accordingly.
 
 Send the token with either header:
 
@@ -33,18 +32,37 @@ It sends a `POST` request with JSON:
 
 ```json
 {
-  "data": {
-    "exam": {},
-    "students": []
-  }
+  "source": "app_repartition_examens",
+  "generated_at": "2026-06-15T07:30:00Z",
+  "examens": [
+    {
+      "examen_code": "EXAM-ANA-S1",
+      "examen_libelle": "Examen Anatomie S1",
+      "session": "Normale",
+      "date_examen": "2026-06-15",
+      "heure_debut": "08:30:00",
+      "heure_fin": "10:30:00",
+      "salle_code": "AMPHI-A1",
+      "salle_nom": "Amphi A1",
+      "etudiants": [
+        {
+          "cne": "D123456789",
+          "nom": "BEN BRAHIM",
+          "prenom": "Rabia",
+          "device_user_id": "2023",
+          "autorise": true,
+          "numero_place": "A12"
+        }
+      ]
+    }
+  ]
 }
 ```
 
-By default `POINTAGE_PUSH_INCLUDE=exam,students`, so the external app receives the exam context and the student seat assignments. If the external app also needs the detailed attendance fields during the push, set:
+Notes:
 
-```env
-POINTAGE_PUSH_INCLUDE=exam,students,repartitions
-```
+- The push payload is room-oriented. For a multi-room exam, `examens` contains one entry per room with only that room's students.
+- `device_user_id` currently maps to the local `id_etudiant` as a string because the app does not store a dedicated pointage-device identifier.
 
 If `POINTAGE_EXTERNAL_TOKEN` is set, the request includes:
 
