@@ -8,14 +8,12 @@ use App\Models\Module;
 use App\Models\AnneeUniversitaire;
 use App\Models\InscriptionPedagogique;
 use App\Models\Anonymat;
+use App\Models\AnonymatSemestre;
 use App\Models\OffreFormation;
 use App\Models\RepartitionEtudiant;
 use App\Models\Salle;
-<<<<<<< HEAD
-=======
 use App\Models\Section;
 use App\Models\Semestre;
->>>>>>> 3062ae46740a3e7162e3aa04d093c1fe3e2ade5b
 use App\Models\SessionExamen;
 use App\Support\CodeGrille;
 use Illuminate\Http\Request;
@@ -479,11 +477,7 @@ class ExamenController extends Controller
                 unset($attributes['plan_all_filtered_modules'], $attributes['module_ids'], $attributes['module_plannings']);
 
                 $examen = Examen::create($attributes);
-<<<<<<< HEAD
-                $examen->salles()->sync($allSalleIds);
-=======
                 $this->syncOrderedSalles($examen, $allSalleIds, $plan['manualSplit']);
->>>>>>> 3062ae46740a3e7162e3aa04d093c1fe3e2ade5b
                 $examen->load('salles:id_salle,code_salle,capacite_examens,capacite');
 
                 $this->generateInitialRepartition(
@@ -608,29 +602,16 @@ class ExamenController extends Controller
                 ->withInput();
         }
 
-<<<<<<< HEAD
-        $examen->update($validated);
-        $examen->salles()->sync($allSalleIds);
-=======
-        DB::transaction(function () use ($validated, $examen, $allSalleIds, $manualSplit) {
+        DB::transaction(function () use ($validated, $examen, $allSalleIds, $manualSplit, $registrations, $expectedCount, $salleModels) {
             unset($validated['section_id']);
             $examen->update($validated);
             $this->syncOrderedSalles($examen, $allSalleIds, $manualSplit);
->>>>>>> 3062ae46740a3e7162e3aa04d093c1fe3e2ade5b
 
-        RepartitionEtudiant::where('id_examen', $examen->id_examen)->delete();
-        Anonymat::where('id_examen', $examen->id_examen)->delete();
+            RepartitionEtudiant::where('id_examen', $examen->id_examen)->delete();
+            Anonymat::where('id_examen', $examen->id_examen)->delete();
 
-<<<<<<< HEAD
-        $this->generateInitialRepartition($examen, $registrations, $expectedCount, $manualSplit, $salleModels);
-=======
-            $this->synchronizeSemesterExamLists(
-                $syncReference,
-                true,
-                collect([(int) $examen->id_examen => $manualSplit])
-            );
+            $this->generateInitialRepartition($examen, $registrations, $expectedCount, $manualSplit, $salleModels);
         });
->>>>>>> 3062ae46740a3e7162e3aa04d093c1fe3e2ade5b
 
         return redirect()
             ->route('examens.examens.index')
@@ -800,11 +781,10 @@ class ExamenController extends Controller
         }
 
         $now = now();
-        $anonymatCodes = $this->anonymatSequence(
-            $examen->anonymat_start ? (int) $examen->anonymat_start : null,
-            $totalStudents
+        $anonymatCodes = $this->resolvedAnonymatCodesForRegistrations(
+            $examen,
+            $normalRegistrations->concat($creditRegistrations)
         );
-        $anonymatIndex = 0;
         $anonRows = [];
         $repartitionRows = [];
 
@@ -942,17 +922,11 @@ class ExamenController extends Controller
                 : ($index + 1);
 
             foreach ($slice as $ip) {
-<<<<<<< HEAD
-                $codeAnonymat = (string) ($anonymatCodes[$anonymatIndex] ?? ($anonymatIndex + 1));
-                $grilleCode = (int) sprintf(
-                    '%d%d%d%d%03d',
-=======
                 $codeAnonymat = (string) ($anonymatCodes->get((int) $ip->id_inscription_pedagogique) ?? '');
                 if ($codeAnonymat === '') {
                     $codeAnonymat = (string) $seat;
                 }
                 $grilleCode = CodeGrille::build(
->>>>>>> 3062ae46740a3e7162e3aa04d093c1fe3e2ade5b
                     $filiereCode,
                     $niveauCode,
                     $semestreCode,
@@ -979,7 +953,6 @@ class ExamenController extends Controller
                     'updated_at'                 => $now,
                 ];
 
-                $anonymatIndex++;
                 $seat++;
             }
         }
@@ -1096,8 +1069,6 @@ class ExamenController extends Controller
             ->all();
     }
 
-<<<<<<< HEAD
-=======
     private function resolvedAnonymatCodesForRegistrations(Examen $examen, Collection $registrations): Collection
     {
         $orderedRegistrations = $registrations->values();
@@ -1541,7 +1512,6 @@ class ExamenController extends Controller
         );
     }
 
->>>>>>> 3062ae46740a3e7162e3aa04d093c1fe3e2ade5b
     private function normalizeManualSplit(Collection $manualSplit, Collection $allowedSalleIds): Collection
     {
         return $manualSplit
@@ -1880,8 +1850,6 @@ class ExamenController extends Controller
             ->values();
     }
 
-<<<<<<< HEAD
-=======
     private function syncOrderedSalles(Examen $examen, Collection $salleIds, ?Collection $manualSplit = null): void
     {
         $manualTargets = $manualSplit instanceof Collection
@@ -1921,7 +1889,6 @@ class ExamenController extends Controller
             ->keyBy('id_salle');
     }
 
->>>>>>> 3062ae46740a3e7162e3aa04d093c1fe3e2ade5b
     private function orderRegistrationsForRepartition(
         Collection $registrations,
         string $studentOrder = 'alphabetic',

@@ -328,8 +328,6 @@ class RepartitionEtudiantControllerTest extends TestCase
         $this->assertSame('Salle B202', $salleBPdf->viewData['groups']->first()['salle']->nom_salle);
     }
 
-<<<<<<< HEAD
-=======
     public function test_collective_excel_export_streams_a_workbook_with_module_columns(): void
     {
         $user = User::factory()->create();
@@ -421,7 +419,6 @@ class RepartitionEtudiantControllerTest extends TestCase
         $this->assertSame('PK', substr($content, 0, 2));
     }
 
->>>>>>> 3062ae46740a3e7162e3aa04d093c1fe3e2ade5b
     public function test_collective_export_per_salle_keeps_students_split_across_multi_room_exam(): void
     {
         $user = User::factory()->create();
@@ -586,8 +583,6 @@ class RepartitionEtudiantControllerTest extends TestCase
             collect($pdf->viewData['rows'])->pluck('nom')->all()
         );
         $this->assertCount(1, $pdf->viewData['groups']);
-<<<<<<< HEAD
-=======
 
         $html = view($pdf->viewName, $pdf->viewData)->render();
         $this->assertStringContainsString('<h1>Plan de salle</h1>', $html);
@@ -595,7 +590,6 @@ class RepartitionEtudiantControllerTest extends TestCase
         $this->assertStringContainsString('<th>Nom et Prenom</th>', $html);
         $this->assertStringNotContainsString('<th>CNE</th>', $html);
         $this->assertStringNotContainsString('<th>Place</th>', $html);
->>>>>>> 3062ae46740a3e7162e3aa04d093c1fe3e2ade5b
     }
 
     public function test_salles_places_export_keeps_students_in_their_code_grille_salle(): void
@@ -652,15 +646,8 @@ class RepartitionEtudiantControllerTest extends TestCase
         $zuluRegistration = $this->createPedagogicalRegistration($annee, $niveau, $section, $offre, 'Zulu', 'Bravo');
         $alphaRegistration = $this->createPedagogicalRegistration($annee, $niveau, $section, $offre, 'Alpha', 'Alpha');
 
-<<<<<<< HEAD
-        $this->createRepartition($exam, $zuluRegistration, '0001001', 'A101-001');
-        $this->createRepartition($exam, $alphaRegistration, '0002001', 'B202-001');
-=======
         $this->createRepartition($exam, $zuluRegistration, '00010001', 'A101-001');
         $this->createRepartition($exam, $alphaRegistration, '00020001', 'B202-001');
-        $this->createRepartition($otherExam, $zuluOtherRegistration, '00010001', 'A101-001');
-        $this->createRepartition($otherExam, $alphaOtherRegistration, '00020001', 'B202-001');
->>>>>>> 3062ae46740a3e7162e3aa04d093c1fe3e2ade5b
 
         $controller = app(RepartitionEtudiantController::class);
         $request = Request::create(
@@ -684,8 +671,6 @@ class RepartitionEtudiantControllerTest extends TestCase
         );
     }
 
-<<<<<<< HEAD
-=======
     public function test_salles_places_export_includes_capitalisation_students_with_full_place_numbers(): void
     {
         $annee = AnneeUniversitaire::factory()->active()->create();
@@ -1003,7 +988,6 @@ class RepartitionEtudiantControllerTest extends TestCase
         $this->assertCount(2, array_unique(array_values($grilles)));
     }
 
->>>>>>> 3062ae46740a3e7162e3aa04d093c1fe3e2ade5b
     public function test_collective_export_uses_element_name_when_dentaire_exam_targets_a_module_element(): void
     {
         $user = User::factory()->create();
@@ -1452,8 +1436,6 @@ class RepartitionEtudiantControllerTest extends TestCase
             ->where('examens.0.module.elements.1.nom_element', 'Travaux pratiques de BCMG'));
     }
 
-<<<<<<< HEAD
-=======
     public function test_index_returns_exam_salles_in_the_saved_planning_order(): void
     {
         $user = User::factory()->create();
@@ -1610,7 +1592,6 @@ class RepartitionEtudiantControllerTest extends TestCase
             ->where('examens.0.salles.1.id_salle', $smallSalle->id_salle));
     }
 
->>>>>>> 3062ae46740a3e7162e3aa04d093c1fe3e2ade5b
     public function test_index_lists_only_students_with_matching_rattrapage_result_status_aliases(): void
     {
         $user = User::factory()->create();

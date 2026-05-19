@@ -1818,8 +1818,6 @@ class RepartitionEtudiantController extends Controller
             ->values();
     }
 
-<<<<<<< HEAD
-=======
     private function buildCollectiveSemesterSeatGroups(
         Collection $moduleExamens,
         Collection $modules,
@@ -2582,7 +2580,6 @@ class RepartitionEtudiantController extends Controller
         return CodeGrille::seatNumber($grille);
     }
 
->>>>>>> 3062ae46740a3e7162e3aa04d093c1fe3e2ade5b
     private function requestedRepartitionIds(Request $request): Collection
     {
         return collect($request->input('ids', []))
