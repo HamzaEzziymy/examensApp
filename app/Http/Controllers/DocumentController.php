@@ -86,6 +86,101 @@ class DocumentController extends Controller
         return redirect()->back()->with('success', 'Proces-verbal genere avec succes.');
     }
 
+    public function indexListe(): Response
+    {
+        $niveaux  = \App\Models\Niveau::select('id_niveau', 'nom_niveau')->orderBy('ordre')->get();
+        $filieres = \App\Models\Filiere::select('id_filiere', 'nom_filiere')->orderBy('nom_filiere')->get();
+        $sections = \App\Models\Section::select('id_section', 'nom_section', 'id_filiere')->orderBy('nom_section')->get();
+        $annees   = \App\Models\AnneeUniversitaire::select('id_annee', 'annee_univ')->orderByDesc('date_debut')->get();
+        $semestres = \App\Models\Semestre::with('niveau')
+            ->join('niveaux', 'semestres.id_niveau', '=', 'niveaux.id_niveau')
+            ->orderBy('niveaux.ordre')
+            ->orderBy('semestres.ordre')
+            ->select('semestres.*')
+            ->get();
+        $salles = \App\Models\Salle::select('id_salle', 'nom_salle', 'code_salle', 'capacite_examens', 'capacite')
+            ->where('est_disponible', true)
+            ->orderBy('nom_salle')
+            ->get();
+
+        return Inertia::render('Documents/Liste/Index', [
+            'niveaux'   => $niveaux,
+            'filieres'  => $filieres,
+            'sections'  => $sections,
+            'annees'    => $annees,
+            'semestres' => $semestres,
+            'salles'    => $salles,
+        ]);
+    }
+
+    public function getListeData(Request $request)
+    {
+        $request->validate([
+            'id_niveau'   => 'required|exists:niveaux,id_niveau',
+            'id_annee'    => 'nullable|exists:annees_universitaires,id_annee',
+            'id_section'  => 'nullable|exists:sections,id_section',
+            'id_semestre' => 'nullable|exists:semestres,id_semestre',
+        ]);
+
+        $inscriptions = \App\Models\InscriptionAdministrative::where('id_niveau', $request->id_niveau)
+            ->when($request->id_annee,   fn($q) => $q->where('id_annee',   $request->id_annee))
+            ->when($request->id_section, fn($q) => $q->where('id_section', $request->id_section))
+            ->with([
+                'etudiant',
+                'section.filiere',
+                'inscriptionsPedagogiques.offreFormation.module',
+                'inscriptionsPedagogiques.offreFormation.semestre',
+            ])
+            ->get();
+
+        // Filter pedagogical inscriptions by semestre if provided
+        $semestreId = $request->id_semestre;
+
+        // Collect all unique modules (filtered by semestre if needed, sorted by nom_module)
+        $allModules = $inscriptions
+            ->flatMap(fn($ia) => $ia->inscriptionsPedagogiques
+                ->when($semestreId, fn($col) => $col->filter(fn($ip) => (string)($ip->offreFormation?->id_semestre) === (string)$semestreId))
+                ->map(fn($ip) => [
+                    'id'  => $ip->offreFormation?->module?->id_module,
+                    'nom' => $ip->offreFormation?->module?->nom_module ?? '—',
+                ])
+            )
+            ->filter(fn($m) => $m['id'])
+            ->unique('id')
+            ->sortBy('nom')
+            ->values();
+
+        // Build one row per student, one column per module
+        $rows = $inscriptions->map(function ($ia) use ($allModules, $semestreId) {
+            $row = [
+                'cne'     => $ia->etudiant?->cne ?? '',
+                'nom'     => $ia->etudiant?->nom ?? '',
+                'prenom'  => $ia->etudiant?->prenom ?? '',
+                'section' => $ia->section?->nom_section ?? '',
+                'filiere' => $ia->section?->filiere?->nom_filiere ?? '',
+            ];
+
+            $filteredIps = $semestreId
+                ? $ia->inscriptionsPedagogiques->filter(fn($ip) => (string)($ip->offreFormation?->id_semestre) === (string)$semestreId)
+                : $ia->inscriptionsPedagogiques;
+
+            $moduleTypes = $filteredIps
+                ->keyBy(fn($ip) => $ip->offreFormation?->module?->id_module)
+                ->map(fn($ip) => $ip->type_inscription ?? '');
+
+            foreach ($allModules as $module) {
+                $row['module_' . $module['id']] = $moduleTypes->get($module['id'], '');
+            }
+
+            return $row;
+        })->sortBy(['nom', 'prenom'])->values();
+
+        return response()->json([
+            'modules' => $allModules,
+            'rows'    => $rows,
+        ]);
+    }
+
     public function destroyPv(Document $document): RedirectResponse
     {
         $filePath = public_path($document->url);

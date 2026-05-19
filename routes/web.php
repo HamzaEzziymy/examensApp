@@ -86,6 +86,9 @@ Route::middleware('auth')->group(function () {
     Route::get('/documents/proces-v', [DocumentController::class, 'indexPv'])->name('proces-v');
     Route::post('/documents/proces-v', [DocumentController::class, 'storePv'])->name('proces-v.store');
     Route::post('/documents/proces-v/generate', [DocumentController::class, 'generateFromPlanification'])->name('proces-v.generate');
+    Route::get('/documents/proces-v/students', [DocumentController::class, 'getStudentsByNiveau'])->name('proces-v.students');
+    Route::get('/documents/liste', [DocumentController::class, 'indexListe'])->name('documents.liste');
+    Route::get('/documents/liste/data', [DocumentController::class, 'getListeData'])->name('documents.liste.data');
     Route::post('/documents/{document}', [DocumentController::class, 'destroyPv'])->name('documents.destroy');
 });
 

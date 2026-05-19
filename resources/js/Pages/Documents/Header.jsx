@@ -5,13 +5,8 @@ import { IoDocumentsSharp } from 'react-icons/io5';
 export default function Header() {
 
     const docs_navigation = [
-        { name: 'PV ABSENCE',icon:<FaFileAlt size={20}/> , href: route('proces-v'), current: route().current('proces-v') },
-        // { name: 'Documents',icon:<IoDocumentsSharp size={20}/>, href: route('documents'), current: route().current('documents') },
-        // { name: 'Projects',icon:<FaProjectDiagram size={20}/>, href: '#', current: false },
-        // { name: 'Tasks',icon:<FaTasks size={20}/>, href: '#', current: false },
-        // { name: 'Reports',icon:<FaPaperclip size={20}/>, href: '#', current: false },
-        // { name: 'Settings',icon:<CiSettings size={20}/>, href: '#', current: false },
-        // { name: 'Profile',icon:<FaUser size={20}/>, href: route('profile.edit'), current: route().current('profile.edit') },
+        { name: 'PV ABSENCE', icon: <FaFileAlt size={20}/>, href: route('proces-v'), current: route().current('proces-v') },
+        { name: 'LISTE', icon: <IoDocumentsSharp size={20}/>, href: route('documents.liste'), current: route().current('documents.liste') },
     ];
 
 
