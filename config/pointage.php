@@ -26,7 +26,4 @@ return [
     'external_url' => env('POINTAGE_EXTERNAL_URL'),
     'external_token' => env('POINTAGE_EXTERNAL_TOKEN'),
     'external_timeout' => (int) env('POINTAGE_EXTERNAL_TIMEOUT', 15),
-    'push_include' => array_filter(
-        array_map('trim', explode(',', env('POINTAGE_PUSH_INCLUDE', 'exam,students')))
-    ),
 ];

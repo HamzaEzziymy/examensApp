@@ -150,8 +150,15 @@ const downloadBlob = (blob, filename) => {
     window.URL.revokeObjectURL(blobUrl);
 };
 
+const CODE_GRILLE_LENGTH = 8;
+
+const formatCodeGrille = (value) => {
+    const digits = String(value ?? '').replace(/\D/g, '');
+    return digits ? digits.padStart(CODE_GRILLE_LENGTH, '0') : '-';
+};
+
 const salleIndexFromGrille = (value) => {
-    const str = String(value ?? '').padStart(7, '0');
+    const str = formatCodeGrille(value).replace('-', '').padStart(CODE_GRILLE_LENGTH, '0');
     const digit = Number(str.charAt(3));
     return Number.isNaN(digit) || digit < 1 ? 1 : digit;
 };
@@ -840,7 +847,7 @@ function RepartitionExportModal({
                                                     {repartitionStudentName(repartition)}
                                                 </td>
                                                 <td className="px-4 py-2 text-gray-500 dark:text-gray-400">
-                                                    {repartition.code_grille ?? '-'}
+                                                    {formatCodeGrille(repartition.code_grille)}
                                                 </td>
                                                 <td className="px-4 py-2 text-gray-500 dark:text-gray-400">
                                                     {repartition.numero_place ?? '-'}
@@ -1011,7 +1018,7 @@ export default function RepartitionIndex({
         if (!selectedExamen) return [];
         const salleFromGrille = (code) => {
             if (code === null || code === undefined) return null;
-            const str = String(code).padStart(7, '0'); // f n s salle + seat(3)
+            const str = String(code).replace(/\D/g, '').padStart(CODE_GRILLE_LENGTH, '0');
             const digit = Number(str.charAt(3));
             return Number.isNaN(digit) ? null : digit;
         };
@@ -1777,7 +1784,7 @@ export default function RepartitionIndex({
             }
 
             if (selectedColumns.includes('grille')) {
-                row.Grille = repartition.code_grille ?? '';
+                row.Grille = formatCodeGrille(repartition.code_grille).replace('-', '');
             }
 
             if (selectedColumns.includes('place')) {
@@ -1874,7 +1881,7 @@ export default function RepartitionIndex({
                 .filter(Boolean)
                 .join(' - ');
             const noteScale = 20;
-            const anonymatList = exportRows.map((rep) => rep.code_anonymat ?? rep.code_grille ?? '');
+            const anonymatList = exportRows.map((rep) => rep.code_anonymat ?? formatCodeGrille(rep.code_grille).replace('-', ''));
 
             const baseName =
                 sanitizeFileName((options.filename || '').replace(/\.xlsx$/i, '')) ||
@@ -2374,7 +2381,7 @@ export default function RepartitionIndex({
                                                 </div>
                                             </td>
                                             <td className="px-4 py-3">
-                                                <div>Grille #{repartition.code_grille}</div>
+                                                <div>Grille #{formatCodeGrille(repartition.code_grille)}</div>
                                                 <div className="text-xs text-gray-500 dark:text-gray-400">Place {repartition.numero_place ?? '-'}</div>
                                             </td>
                                             <td className="px-4 py-3">

@@ -21,6 +21,7 @@ use App\Models\Semestre;
 use App\Models\SessionExamen;
 use App\Models\User;
 use App\Models\UserFiliereAnnee;
+use App\Support\CodeGrille;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Inertia\Testing\AssertableInertia as Assert;
@@ -144,10 +145,10 @@ class RepartitionEtudiantControllerTest extends TestCase
         $otherSemesterRegistration = $this->createPedagogicalRegistration($annee, $niveauLicence1, $sectionMedecine, $otherSemesterOffre, 'Gamma', 'Semestre');
         $otherLevelRegistration = $this->createPedagogicalRegistration($annee, $niveauLicence2, $sectionMedecine, $otherLevelOffre, 'Delta', 'Niveau');
 
-        $this->createRepartition($selectedExam, $selectedRegistration, '0001001', 'A101-001');
-        $this->createRepartition($otherFiliereExam, $otherFiliereRegistration, '0001002', 'A101-002');
-        $this->createRepartition($otherSemesterExam, $otherSemesterRegistration, '0001003', 'A101-003');
-        $this->createRepartition($otherLevelExam, $otherLevelRegistration, '0001004', 'A101-004');
+        $this->createRepartition($selectedExam, $selectedRegistration, '00010001', 'A101-001');
+        $this->createRepartition($otherFiliereExam, $otherFiliereRegistration, '00010002', 'A101-002');
+        $this->createRepartition($otherSemesterExam, $otherSemesterRegistration, '00010003', 'A101-003');
+        $this->createRepartition($otherLevelExam, $otherLevelRegistration, '00010004', 'A101-004');
 
         $this->actingAs($user);
 
@@ -287,10 +288,10 @@ class RepartitionEtudiantControllerTest extends TestCase
             'credits_acquis' => 0,
         ]);
 
-        $this->createRepartition($selectedExam, $alphaRegistration, '0001001', '1');
-        $this->createRepartition($selectedExam, $betaRegistration, '0001002', '2');
-        $this->createRepartition($sharedSalleAExam, $alphaSalleARegistration, '0001001', '1');
-        $this->createRepartition($sharedSalleBExam, $betaSalleBRegistration, '0001001', '1');
+        $this->createRepartition($selectedExam, $alphaRegistration, '00010001', '1');
+        $this->createRepartition($selectedExam, $betaRegistration, '00010002', '2');
+        $this->createRepartition($sharedSalleAExam, $alphaSalleARegistration, '00010001', '1');
+        $this->createRepartition($sharedSalleBExam, $betaSalleBRegistration, '00010001', '1');
 
         $this->actingAs($user);
 
@@ -327,6 +328,100 @@ class RepartitionEtudiantControllerTest extends TestCase
         $this->assertSame('Salle B202', $salleBPdf->viewData['groups']->first()['salle']->nom_salle);
     }
 
+<<<<<<< HEAD
+=======
+    public function test_collective_excel_export_streams_a_workbook_with_module_columns(): void
+    {
+        $user = User::factory()->create();
+        $annee = AnneeUniversitaire::factory()->active()->create();
+        $filiere = Filiere::factory()->create(['nom_filiere' => 'Medecine']);
+        $section = Section::factory()->create([
+            'id_filiere' => $filiere->id_filiere,
+            'nom_section' => 'Section Medecine',
+        ]);
+        $niveau = Niveau::factory()->create(['nom_niveau' => 'Licence 1']);
+        $semestre = Semestre::factory()->create([
+            'id_niveau' => $niveau->id_niveau,
+            'nom_semestre' => 'S1',
+            'ordre' => 1,
+        ]);
+        $salle = Salle::factory()->create([
+            'code_salle' => 'A101',
+            'nom_salle' => 'Salle A101',
+            'capacite' => 40,
+            'capacite_examens' => 40,
+        ]);
+
+        UserFiliereAnnee::create([
+            'user_id' => $user->id,
+            'id_filiere' => $filiere->id_filiere,
+            'id_annee' => $annee->id_annee,
+        ]);
+
+        $moduleA = Module::factory()->create([
+            'code_module' => 'MED-S1-001',
+            'nom_module' => 'Anatomie Generale',
+        ]);
+        $moduleB = Module::factory()->create([
+            'code_module' => 'MED-S1-002',
+            'nom_module' => 'Histologie',
+        ]);
+
+        $offreA = OffreFormation::create([
+            'id_module' => $moduleA->id_module,
+            'id_semestre' => $semestre->id_semestre,
+            'id_section' => $section->id_section,
+            'id_annee' => $annee->id_annee,
+            'id_coordinateur' => null,
+            'nom_affiche' => 'Anatomie Generale',
+        ]);
+        $offreB = OffreFormation::create([
+            'id_module' => $moduleB->id_module,
+            'id_semestre' => $semestre->id_semestre,
+            'id_section' => $section->id_section,
+            'id_annee' => $annee->id_annee,
+            'id_coordinateur' => null,
+            'nom_affiche' => 'Histologie',
+        ]);
+
+        $session = SessionExamen::create([
+            'id_filiere' => null,
+            'id_annee' => $annee->id_annee,
+            'nom_session' => 'Session Commune',
+            'type_session' => 'Normale',
+            'date_session_examen' => '2026-06-01',
+            'quadrimestre' => 2,
+        ]);
+
+        $examA = $this->createExam($session, $moduleA, $salle, '2026-06-10');
+        $examB = $this->createExam($session, $moduleB, $salle, '2026-06-11');
+
+        $registrationA = $this->createPedagogicalRegistration($annee, $niveau, $section, $offreA, 'Alpha', 'One');
+        $registrationB = $this->createPedagogicalRegistration($annee, $niveau, $section, $offreB, 'Beta', 'Two');
+
+        $this->createRepartition($examA, $registrationA, '00010001', 'A101-001');
+        $this->createRepartition($examB, $registrationB, '00010002', 'A101-002');
+
+        $response = $this
+            ->actingAs($user)
+            ->get(route('surveillance.repartition-etudiants.export-collective-excel', $examA));
+
+        $response->assertOk();
+        $this->assertStringContainsString(
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            (string) $response->headers->get('content-type')
+        );
+        $this->assertStringContainsString(
+            '.xlsx',
+            (string) $response->headers->get('content-disposition')
+        );
+
+        $content = $response->streamedContent();
+        $this->assertGreaterThan(1000, strlen($content));
+        $this->assertSame('PK', substr($content, 0, 2));
+    }
+
+>>>>>>> 3062ae46740a3e7162e3aa04d093c1fe3e2ade5b
     public function test_collective_export_per_salle_keeps_students_split_across_multi_room_exam(): void
     {
         $user = User::factory()->create();
@@ -390,8 +485,8 @@ class RepartitionEtudiantControllerTest extends TestCase
         $alphaRegistration = $this->createPedagogicalRegistration($annee, $niveau, $section, $offre, 'Alpha', 'Alpha');
         $betaRegistration = $this->createPedagogicalRegistration($annee, $niveau, $section, $offre, 'Beta', 'Beta');
 
-        $this->createRepartition($exam, $alphaRegistration, '0001001', 'A101-001');
-        $this->createRepartition($exam, $betaRegistration, '0002001', 'B202-001');
+        $this->createRepartition($exam, $alphaRegistration, '00010001', 'A101-001');
+        $this->createRepartition($exam, $betaRegistration, '00020001', 'B202-001');
 
         $this->actingAs($user);
 
@@ -470,9 +565,9 @@ class RepartitionEtudiantControllerTest extends TestCase
         $alphaRegistration = $this->createPedagogicalRegistration($annee, $niveau, $section, $offre, 'Alpha', 'Bravo');
         $betaRegistration = $this->createPedagogicalRegistration($annee, $niveau, $section, $offre, 'Beta', 'Alpha');
 
-        $this->createRepartition($exam, $alphaRegistration, '0001001', 'A101-001');
-        $this->createRepartition($exam, $betaRegistration, '0001002', 'A101-002');
-        $this->createRepartition($exam, $zuluRegistration, '0001003', 'A101-003');
+        $this->createRepartition($exam, $alphaRegistration, '00010001', 'A101-001');
+        $this->createRepartition($exam, $betaRegistration, '00010002', 'A101-002');
+        $this->createRepartition($exam, $zuluRegistration, '00010003', 'A101-003');
 
         $controller = app(RepartitionEtudiantController::class);
         $request = Request::create(
@@ -491,6 +586,16 @@ class RepartitionEtudiantControllerTest extends TestCase
             collect($pdf->viewData['rows'])->pluck('nom')->all()
         );
         $this->assertCount(1, $pdf->viewData['groups']);
+<<<<<<< HEAD
+=======
+
+        $html = view($pdf->viewName, $pdf->viewData)->render();
+        $this->assertStringContainsString('<h1>Plan de salle</h1>', $html);
+        $this->assertStringContainsString('<th>N place</th>', $html);
+        $this->assertStringContainsString('<th>Nom et Prenom</th>', $html);
+        $this->assertStringNotContainsString('<th>CNE</th>', $html);
+        $this->assertStringNotContainsString('<th>Place</th>', $html);
+>>>>>>> 3062ae46740a3e7162e3aa04d093c1fe3e2ade5b
     }
 
     public function test_salles_places_export_keeps_students_in_their_code_grille_salle(): void
@@ -547,8 +652,15 @@ class RepartitionEtudiantControllerTest extends TestCase
         $zuluRegistration = $this->createPedagogicalRegistration($annee, $niveau, $section, $offre, 'Zulu', 'Bravo');
         $alphaRegistration = $this->createPedagogicalRegistration($annee, $niveau, $section, $offre, 'Alpha', 'Alpha');
 
+<<<<<<< HEAD
         $this->createRepartition($exam, $zuluRegistration, '0001001', 'A101-001');
         $this->createRepartition($exam, $alphaRegistration, '0002001', 'B202-001');
+=======
+        $this->createRepartition($exam, $zuluRegistration, '00010001', 'A101-001');
+        $this->createRepartition($exam, $alphaRegistration, '00020001', 'B202-001');
+        $this->createRepartition($otherExam, $zuluOtherRegistration, '00010001', 'A101-001');
+        $this->createRepartition($otherExam, $alphaOtherRegistration, '00020001', 'B202-001');
+>>>>>>> 3062ae46740a3e7162e3aa04d093c1fe3e2ade5b
 
         $controller = app(RepartitionEtudiantController::class);
         $request = Request::create(
@@ -572,6 +684,326 @@ class RepartitionEtudiantControllerTest extends TestCase
         );
     }
 
+<<<<<<< HEAD
+=======
+    public function test_salles_places_export_includes_capitalisation_students_with_full_place_numbers(): void
+    {
+        $annee = AnneeUniversitaire::factory()->active()->create();
+        $filiere = Filiere::factory()->create(['nom_filiere' => 'Medecine']);
+        $section = Section::factory()->create([
+            'id_filiere' => $filiere->id_filiere,
+            'nom_section' => 'Section Medecine',
+        ]);
+        $niveau = Niveau::factory()->create(['nom_niveau' => 'Licence 1']);
+        $semestre = Semestre::factory()->create([
+            'id_niveau' => $niveau->id_niveau,
+            'nom_semestre' => 'S1',
+        ]);
+        $module = Module::factory()->create([
+            'code_module' => 'MED-S1-001',
+            'nom_module' => 'Anatomie Generale',
+        ]);
+        $otherModule = Module::factory()->create([
+            'code_module' => 'MED-S1-002',
+            'nom_module' => 'Histologie',
+        ]);
+        $salle = Salle::factory()->create([
+            'code_salle' => 'A101',
+            'nom_salle' => 'Salle A101',
+            'capacite' => 40,
+            'capacite_examens' => 40,
+        ]);
+
+        $offre = OffreFormation::create([
+            'id_module' => $module->id_module,
+            'id_semestre' => $semestre->id_semestre,
+            'id_section' => $section->id_section,
+            'id_annee' => $annee->id_annee,
+            'id_coordinateur' => null,
+            'nom_affiche' => 'Anatomie Generale',
+        ]);
+        $otherOffre = OffreFormation::create([
+            'id_module' => $otherModule->id_module,
+            'id_semestre' => $semestre->id_semestre,
+            'id_section' => $section->id_section,
+            'id_annee' => $annee->id_annee,
+            'id_coordinateur' => null,
+            'nom_affiche' => 'Histologie',
+        ]);
+
+        $session = SessionExamen::create([
+            'id_filiere' => null,
+            'id_annee' => $annee->id_annee,
+            'nom_session' => 'Session Commune',
+            'type_session' => 'Normale',
+            'date_session_examen' => '2026-06-01',
+            'quadrimestre' => 2,
+        ]);
+
+        $exam = $this->createExam($session, $module, $salle, '2026-06-10');
+        $otherExam = $this->createExam($session, $otherModule, $salle, '2026-06-11');
+
+        $normalRegistration = $this->createPedagogicalRegistration($annee, $niveau, $section, $offre, 'Alpha', 'Normal');
+        $capitalisationRegistration = $this->createPedagogicalRegistration($annee, $niveau, $section, $offre, 'Beta', 'Capitalisation');
+        $capitalisationRegistration->update(['type_inscription' => 'Capitalisation']);
+        $capitalisationOtherRegistration = InscriptionPedagogique::create([
+            'id_inscription_admin' => $capitalisationRegistration->id_inscription_admin,
+            'id_offre' => $otherOffre->id_offre,
+            'type_inscription' => 'Capitalisation',
+            'credits_acquis' => 0,
+        ]);
+
+        $this->createRepartition($exam, $normalRegistration, '00010001', 'A101-001');
+        $this->createRepartition($otherExam, $capitalisationOtherRegistration, '00010002', 'A101-002');
+
+        $controller = app(RepartitionEtudiantController::class);
+        $request = Request::create(
+            route('surveillance.repartition-etudiants.export-salles-places', $exam),
+            'GET'
+        );
+
+        $pdf = $controller->exportSallesPlaces($request, $exam->fresh());
+
+        $this->assertInstanceOf(PdfBuilder::class, $pdf);
+        $this->assertSame(
+            ['Alpha', 'Beta'],
+            collect($pdf->viewData['rows'])->pluck('nom')->all()
+        );
+
+        $html = view($pdf->viewName, $pdf->viewData)->render();
+        $this->assertStringContainsString('<th>N place</th>', $html);
+        $this->assertStringContainsString('<th>Nom et Prenom</th>', $html);
+        $this->assertStringContainsString('Alpha Normal', $html);
+        $this->assertStringContainsString('Beta Capitalisation', $html);
+        $this->assertStringNotContainsString('<th>Place</th>', $html);
+    }
+
+    public function test_salles_places_export_keeps_the_same_semester_place_for_a_student_across_modules(): void
+    {
+        $annee = AnneeUniversitaire::factory()->active()->create();
+        $filiere = Filiere::factory()->create(['nom_filiere' => 'Medecine']);
+        $section = Section::factory()->create([
+            'id_filiere' => $filiere->id_filiere,
+            'nom_section' => 'Section Medecine',
+        ]);
+        $niveau = Niveau::factory()->create(['nom_niveau' => 'Licence 1']);
+        $semestre = Semestre::factory()->create([
+            'id_niveau' => $niveau->id_niveau,
+            'nom_semestre' => 'S1',
+        ]);
+        $module = Module::factory()->create([
+            'code_module' => 'MED-S1-001',
+            'nom_module' => 'Anatomie Generale',
+        ]);
+        $otherModule = Module::factory()->create([
+            'code_module' => 'MED-S1-002',
+            'nom_module' => 'Histologie',
+        ]);
+        $salle = Salle::factory()->create([
+            'code_salle' => 'A101',
+            'nom_salle' => 'Salle A101',
+            'capacite' => 40,
+            'capacite_examens' => 40,
+        ]);
+
+        $offre = OffreFormation::create([
+            'id_module' => $module->id_module,
+            'id_semestre' => $semestre->id_semestre,
+            'id_section' => $section->id_section,
+            'id_annee' => $annee->id_annee,
+            'id_coordinateur' => null,
+            'nom_affiche' => 'Anatomie Generale',
+        ]);
+        $otherOffre = OffreFormation::create([
+            'id_module' => $otherModule->id_module,
+            'id_semestre' => $semestre->id_semestre,
+            'id_section' => $section->id_section,
+            'id_annee' => $annee->id_annee,
+            'id_coordinateur' => null,
+            'nom_affiche' => 'Histologie',
+        ]);
+
+        $session = SessionExamen::create([
+            'id_filiere' => null,
+            'id_annee' => $annee->id_annee,
+            'nom_session' => 'Session Commune',
+            'type_session' => 'Normale',
+            'date_session_examen' => '2026-06-01',
+            'quadrimestre' => 2,
+        ]);
+
+        $exam = $this->createExam($session, $module, $salle, '2026-06-10');
+        $otherExam = $this->createExam($session, $otherModule, $salle, '2026-06-11');
+
+        $alphaRegistration = $this->createPedagogicalRegistration($annee, $niveau, $section, $offre, 'Alpha', 'Stable');
+        $gammaRegistration = $this->createPedagogicalRegistration($annee, $niveau, $section, $otherOffre, 'Gamma', 'Autre');
+        $alphaCapitalisationRegistration = InscriptionPedagogique::create([
+            'id_inscription_admin' => $alphaRegistration->id_inscription_admin,
+            'id_offre' => $otherOffre->id_offre,
+            'type_inscription' => 'Capitalisation',
+            'credits_acquis' => 0,
+        ]);
+
+        $this->createRepartition($exam, $alphaRegistration, '00010001', 'A101-001');
+        $this->createRepartition($otherExam, $alphaCapitalisationRegistration, '00010009', 'A101-009');
+        $this->createRepartition($otherExam, $gammaRegistration, '00010002', 'A101-002');
+
+        $controller = app(RepartitionEtudiantController::class);
+        $firstPdf = $controller->exportSallesPlaces(
+            Request::create(route('surveillance.repartition-etudiants.export-salles-places', $exam), 'GET'),
+            $exam->fresh()
+        );
+        $secondPdf = $controller->exportSallesPlaces(
+            Request::create(route('surveillance.repartition-etudiants.export-salles-places', $otherExam), 'GET'),
+            $otherExam->fresh()
+        );
+
+        $firstSeats = collect($firstPdf->viewData['rows'])
+            ->mapWithKeys(fn ($row) => [$row['nom'] => $row['numero_place']])
+            ->all();
+        $secondSeats = collect($secondPdf->viewData['rows'])
+            ->mapWithKeys(fn ($row) => [$row['nom'] => $row['numero_place']])
+            ->all();
+        $firstGrilles = collect($firstPdf->viewData['rows'])
+            ->mapWithKeys(fn ($row) => [$row['nom'] => CodeGrille::normalize($row['code_grille'])])
+            ->all();
+        $secondGrilles = collect($secondPdf->viewData['rows'])
+            ->mapWithKeys(fn ($row) => [$row['nom'] => CodeGrille::normalize($row['code_grille'])])
+            ->all();
+
+        $this->assertSame(
+            [
+                'Alpha' => 'A101-001',
+                'Gamma' => 'A101-002',
+            ],
+            $firstSeats
+        );
+        $this->assertSame($firstSeats, $secondSeats);
+        $this->assertSame(
+            [
+                'Alpha' => '00010001',
+                'Gamma' => '00010002',
+            ],
+            $firstGrilles
+        );
+        $this->assertSame($firstGrilles, $secondGrilles);
+        $this->assertCount(2, array_unique(array_values($secondSeats)));
+    }
+
+    public function test_salles_places_export_uses_code_grille_suffix_to_avoid_duplicate_semester_places(): void
+    {
+        $annee = AnneeUniversitaire::factory()->active()->create();
+        $filiere = Filiere::factory()->create(['nom_filiere' => 'Medecine']);
+        $section = Section::factory()->create([
+            'id_filiere' => $filiere->id_filiere,
+            'nom_section' => 'Section Medecine',
+        ]);
+        $niveau = Niveau::factory()->create(['nom_niveau' => 'Licence 1']);
+        $semestre = Semestre::factory()->create([
+            'id_niveau' => $niveau->id_niveau,
+            'nom_semestre' => 'S1',
+        ]);
+        $moduleA = Module::factory()->create([
+            'code_module' => 'MED-S1-001',
+            'nom_module' => 'Anatomie Generale',
+        ]);
+        $moduleB = Module::factory()->create([
+            'code_module' => 'MED-S1-002',
+            'nom_module' => 'Histologie',
+        ]);
+        $moduleC = Module::factory()->create([
+            'code_module' => 'MED-S1-003',
+            'nom_module' => 'Biophysique',
+        ]);
+        $salle = Salle::factory()->create([
+            'code_salle' => 'A101',
+            'nom_salle' => 'Salle A101',
+            'capacite' => 40,
+            'capacite_examens' => 40,
+        ]);
+
+        $offreA = OffreFormation::create([
+            'id_module' => $moduleA->id_module,
+            'id_semestre' => $semestre->id_semestre,
+            'id_section' => $section->id_section,
+            'id_annee' => $annee->id_annee,
+            'id_coordinateur' => null,
+            'nom_affiche' => 'Anatomie Generale',
+        ]);
+        $offreB = OffreFormation::create([
+            'id_module' => $moduleB->id_module,
+            'id_semestre' => $semestre->id_semestre,
+            'id_section' => $section->id_section,
+            'id_annee' => $annee->id_annee,
+            'id_coordinateur' => null,
+            'nom_affiche' => 'Histologie',
+        ]);
+        $offreC = OffreFormation::create([
+            'id_module' => $moduleC->id_module,
+            'id_semestre' => $semestre->id_semestre,
+            'id_section' => $section->id_section,
+            'id_annee' => $annee->id_annee,
+            'id_coordinateur' => null,
+            'nom_affiche' => 'Biophysique',
+        ]);
+
+        $session = SessionExamen::create([
+            'id_filiere' => null,
+            'id_annee' => $annee->id_annee,
+            'nom_session' => 'Session Commune',
+            'type_session' => 'Normale',
+            'date_session_examen' => '2026-06-01',
+            'quadrimestre' => 2,
+        ]);
+
+        $examA = $this->createExam($session, $moduleA, $salle, '2026-06-10');
+        $examB = $this->createExam($session, $moduleB, $salle, '2026-06-11');
+        $examC = $this->createExam($session, $moduleC, $salle, '2026-06-12');
+
+        $alphaRegistration = $this->createPedagogicalRegistration($annee, $niveau, $section, $offreA, 'Alpha', 'Stable');
+        $betaRegistration = $this->createPedagogicalRegistration($annee, $niveau, $section, $offreB, 'Beta', 'Mixed');
+        $betaAlternativeRegistration = InscriptionPedagogique::create([
+            'id_inscription_admin' => $betaRegistration->id_inscription_admin,
+            'id_offre' => $offreC->id_offre,
+            'type_inscription' => 'Capitalisation',
+            'credits_acquis' => 0,
+        ]);
+
+        $this->createRepartition($examA, $alphaRegistration, '00010001', '1');
+        $this->createRepartition($examB, $betaRegistration, '00010001', 'A101-001');
+        $this->createRepartition($examC, $betaAlternativeRegistration, '00010002', 'A101-002');
+
+        $controller = app(RepartitionEtudiantController::class);
+        $pdf = $controller->exportSallesPlaces(
+            Request::create(route('surveillance.repartition-etudiants.export-salles-places', $examA), 'GET'),
+            $examA->fresh()
+        );
+
+        $seats = collect($pdf->viewData['rows'])
+            ->mapWithKeys(fn ($row) => [$row['nom'] => $row['numero_place']])
+            ->all();
+        $grilles = collect($pdf->viewData['rows'])
+            ->mapWithKeys(fn ($row) => [$row['nom'] => CodeGrille::normalize($row['code_grille'])])
+            ->all();
+
+        $this->assertSame(
+            [
+                'Alpha' => '1',
+                'Beta' => 'A101-002',
+            ],
+            $seats
+        );
+        $this->assertSame(
+            [
+                'Alpha' => '00010001',
+                'Beta' => '00010002',
+            ],
+            $grilles
+        );
+        $this->assertCount(2, array_unique(array_values($grilles)));
+    }
+
+>>>>>>> 3062ae46740a3e7162e3aa04d093c1fe3e2ade5b
     public function test_collective_export_uses_element_name_when_dentaire_exam_targets_a_module_element(): void
     {
         $user = User::factory()->create();
@@ -628,7 +1060,7 @@ class RepartitionEtudiantControllerTest extends TestCase
 
         $exam = $this->createExam($session, $module, $salle, '2026-06-10', $element->id_element);
         $registration = $this->createPedagogicalRegistration($annee, $niveau, $section, $offre, 'Alpha', 'Element');
-        $this->createRepartition($exam, $registration, '0001001', 'A101-001');
+        $this->createRepartition($exam, $registration, '00010001', 'A101-001');
 
         $this->actingAs($user);
 
@@ -696,7 +1128,7 @@ class RepartitionEtudiantControllerTest extends TestCase
 
         $exam = $this->createExam($session, $module, $salle, '2026-06-10', $element->id_element);
         $registration = $this->createPedagogicalRegistration($annee, $niveau, $section, $offre, 'Alpha', 'Element');
-        $this->createRepartition($exam, $registration, '0001001', 'A101-001');
+        $this->createRepartition($exam, $registration, '00010001', 'A101-001');
 
         $controller = app(RepartitionEtudiantController::class);
         $request = Request::create(
@@ -766,8 +1198,8 @@ class RepartitionEtudiantControllerTest extends TestCase
         $firstRegistration = $this->createPedagogicalRegistration($annee, $niveau, $section, $offre, 'Alpha', 'Premier');
         $secondRegistration = $this->createPedagogicalRegistration($annee, $niveau, $section, $offre, 'Beta', 'Second');
 
-        $this->createRepartition($exam, $firstRegistration, '0001001', 'A101-001');
-        $secondRepartition = $this->createRepartition($exam, $secondRegistration, '0001002', 'A101-002');
+        $this->createRepartition($exam, $firstRegistration, '00010001', 'A101-001');
+        $secondRepartition = $this->createRepartition($exam, $secondRegistration, '00010002', 'A101-002');
 
         $controller = app(RepartitionEtudiantController::class);
         $request = Request::create(
@@ -795,6 +1227,160 @@ class RepartitionEtudiantControllerTest extends TestCase
         $this->assertTrue(strpos($html, '<th>Place</th>') < strpos($html, '<th>CNE</th>'));
         $this->assertStringContainsString('A101-002', $html);
         $this->assertStringNotContainsString('A101-001', $html);
+    }
+
+    public function test_pdf_export_renders_code_grille_with_eight_digits(): void
+    {
+        $annee = AnneeUniversitaire::factory()->active()->create();
+        $filiere = Filiere::factory()->create(['nom_filiere' => 'Medecine']);
+        $section = Section::factory()->create([
+            'id_filiere' => $filiere->id_filiere,
+            'nom_section' => 'Section Medecine',
+        ]);
+        $niveau = Niveau::factory()->create(['nom_niveau' => 'Licence 1']);
+        $semestre = Semestre::factory()->create([
+            'id_niveau' => $niveau->id_niveau,
+            'nom_semestre' => 'S1',
+        ]);
+        $module = Module::factory()->create([
+            'code_module' => 'MED-S1-GRID',
+            'nom_module' => 'Anatomie Generale',
+        ]);
+        $salle = Salle::factory()->create([
+            'code_salle' => 'A101',
+            'nom_salle' => 'Salle A101',
+            'capacite' => 40,
+            'capacite_examens' => 40,
+        ]);
+
+        $offre = OffreFormation::create([
+            'id_module' => $module->id_module,
+            'id_semestre' => $semestre->id_semestre,
+            'id_section' => $section->id_section,
+            'id_annee' => $annee->id_annee,
+            'id_coordinateur' => null,
+            'nom_affiche' => 'Anatomie Generale',
+        ]);
+
+        $session = SessionExamen::create([
+            'id_filiere' => null,
+            'id_annee' => $annee->id_annee,
+            'nom_session' => 'Session Commune',
+            'type_session' => 'Normale',
+            'date_session_examen' => '2026-06-01',
+            'quadrimestre' => 2,
+        ]);
+
+        $exam = $this->createExam($session, $module, $salle, '2026-06-10');
+        $registration = $this->createPedagogicalRegistration($annee, $niveau, $section, $offre, 'Alpha', 'Premier');
+        $repartition = $this->createRepartition($exam, $registration, '1002', '2');
+
+        $controller = app(RepartitionEtudiantController::class);
+        $request = Request::create(
+            route('surveillance.repartition-etudiants.export', $exam),
+            'GET',
+            [
+                'columns' => ['grille', 'nom'],
+                'ids' => [$repartition->id_repartition],
+            ]
+        );
+
+        $pdf = $controller->export($request, $exam->fresh());
+
+        $html = view($pdf->viewName, $pdf->viewData)->render();
+
+        $this->assertStringContainsString('00001002', $html);
+    }
+
+    public function test_pdf_export_per_salle_uses_saved_repartition_room_counts_not_collective_order(): void
+    {
+        $annee = AnneeUniversitaire::factory()->active()->create();
+        $filiere = Filiere::factory()->create(['nom_filiere' => 'Medecine']);
+        $section = Section::factory()->create([
+            'id_filiere' => $filiere->id_filiere,
+            'nom_section' => 'Section Medecine',
+        ]);
+        $niveau = Niveau::factory()->create(['nom_niveau' => 'Licence 1']);
+        $semestre = Semestre::factory()->create([
+            'id_niveau' => $niveau->id_niveau,
+            'nom_semestre' => 'S1',
+        ]);
+        $module = Module::factory()->create([
+            'code_module' => 'MED-S1-ROOMS',
+            'nom_module' => 'Anatomie Generale',
+        ]);
+        $salleA = Salle::factory()->create([
+            'code_salle' => 'A101',
+            'nom_salle' => 'Salle A101',
+            'capacite' => 40,
+            'capacite_examens' => 40,
+        ]);
+        $salleB = Salle::factory()->create([
+            'code_salle' => 'B202',
+            'nom_salle' => 'Salle B202',
+            'capacite' => 40,
+            'capacite_examens' => 40,
+        ]);
+
+        $offre = OffreFormation::create([
+            'id_module' => $module->id_module,
+            'id_semestre' => $semestre->id_semestre,
+            'id_section' => $section->id_section,
+            'id_annee' => $annee->id_annee,
+            'id_coordinateur' => null,
+            'nom_affiche' => 'Anatomie Generale',
+        ]);
+
+        $session = SessionExamen::create([
+            'id_filiere' => null,
+            'id_annee' => $annee->id_annee,
+            'nom_session' => 'Session Commune',
+            'type_session' => 'Normale',
+            'date_session_examen' => '2026-06-01',
+            'quadrimestre' => 2,
+        ]);
+
+        $exam = $this->createExam($session, $module, $salleA, '2026-06-10');
+        $exam->salles()->sync([
+            $salleA->id_salle => ['ordre' => 1],
+            $salleB->id_salle => ['ordre' => 2],
+        ]);
+
+        $zuluRegistration = $this->createPedagogicalRegistration($annee, $niveau, $section, $offre, 'Zulu', 'First room');
+        $alphaRegistration = $this->createPedagogicalRegistration($annee, $niveau, $section, $offre, 'Alpha', 'Second room');
+
+        $this->createRepartition($exam, $zuluRegistration, '00010001', 'A101-001');
+        $this->createRepartition($exam, $alphaRegistration, '00020001', 'B202-001');
+
+        $controller = app(RepartitionEtudiantController::class);
+
+        $salleAPdf = $controller->export(
+            Request::create(
+                route('surveillance.repartition-etudiants.export', $exam),
+                'GET',
+                ['salle_index' => 1]
+            ),
+            $exam->fresh()
+        );
+
+        $this->assertInstanceOf(PdfBuilder::class, $salleAPdf);
+        $this->assertSame(1, $salleAPdf->viewData['total']);
+        $this->assertSame('Salle A101', $salleAPdf->viewData['salleGroups']->first()['salle']->nom_salle);
+        $this->assertSame(['Zulu'], $salleAPdf->viewData['repartitions']->pluck('inscriptionPedagogique.inscriptionAdministrative.etudiant.nom')->all());
+
+        $salleBPdf = $controller->export(
+            Request::create(
+                route('surveillance.repartition-etudiants.export', $exam),
+                'GET',
+                ['salle_index' => 2]
+            ),
+            $exam->fresh()
+        );
+
+        $this->assertInstanceOf(PdfBuilder::class, $salleBPdf);
+        $this->assertSame(1, $salleBPdf->viewData['total']);
+        $this->assertSame('Salle B202', $salleBPdf->viewData['salleGroups']->first()['salle']->nom_salle);
+        $this->assertSame(['Alpha'], $salleBPdf->viewData['repartitions']->pluck('inscriptionPedagogique.inscriptionAdministrative.etudiant.nom')->all());
     }
 
     public function test_repartition_index_exposes_related_elements_for_biologie_cellulaire_moleculaire_et_genetique(): void
@@ -866,6 +1452,165 @@ class RepartitionEtudiantControllerTest extends TestCase
             ->where('examens.0.module.elements.1.nom_element', 'Travaux pratiques de BCMG'));
     }
 
+<<<<<<< HEAD
+=======
+    public function test_index_returns_exam_salles_in_the_saved_planning_order(): void
+    {
+        $user = User::factory()->create();
+        $annee = AnneeUniversitaire::factory()->active()->create();
+        $filiere = Filiere::factory()->create(['nom_filiere' => 'Medecine']);
+        $section = Section::factory()->create([
+            'id_filiere' => $filiere->id_filiere,
+            'nom_section' => 'Section Medecine',
+        ]);
+        $niveau = Niveau::factory()->create(['nom_niveau' => 'Licence 1']);
+        $semestre = Semestre::factory()->create([
+            'id_niveau' => $niveau->id_niveau,
+            'nom_semestre' => 'S1',
+        ]);
+        $module = Module::factory()->create([
+            'code_module' => 'MED-ORD-001',
+            'nom_module' => 'Anatomie Generale',
+        ]);
+        $secondSelectedSalle = Salle::factory()->create([
+            'code_salle' => 'A101',
+            'nom_salle' => 'Salle A101',
+            'capacite' => 30,
+            'capacite_examens' => 30,
+        ]);
+        $firstSelectedSalle = Salle::factory()->create([
+            'code_salle' => 'B202',
+            'nom_salle' => 'Salle B202',
+            'capacite' => 45,
+            'capacite_examens' => 45,
+        ]);
+
+        UserFiliereAnnee::create([
+            'user_id' => $user->id,
+            'id_filiere' => $filiere->id_filiere,
+            'id_annee' => $annee->id_annee,
+        ]);
+
+        OffreFormation::create([
+            'id_module' => $module->id_module,
+            'id_semestre' => $semestre->id_semestre,
+            'id_section' => $section->id_section,
+            'id_annee' => $annee->id_annee,
+            'id_coordinateur' => null,
+            'nom_affiche' => 'Anatomie Generale',
+        ]);
+
+        $session = SessionExamen::create([
+            'id_filiere' => null,
+            'id_annee' => $annee->id_annee,
+            'nom_session' => 'Session Commune',
+            'type_session' => 'Normale',
+            'date_session_examen' => '2026-06-01',
+            'quadrimestre' => 2,
+        ]);
+
+        $exam = $this->createExam($session, $module, $firstSelectedSalle, '2026-06-10');
+        $exam->salles()->sync([
+            $firstSelectedSalle->id_salle => ['ordre' => 1],
+            $secondSelectedSalle->id_salle => ['ordre' => 2],
+        ]);
+
+        $response = $this
+            ->actingAs($user)
+            ->get(route('surveillance.repartition-etudiants.index', ['examen' => $exam->id_examen]));
+
+        $response->assertInertia(fn (Assert $page) => $page
+            ->component('examens/Repartition/Index')
+            ->where('selectedExamenId', $exam->id_examen)
+            ->where('salles.0.id_salle', $firstSelectedSalle->id_salle)
+            ->where('salles.1.id_salle', $secondSelectedSalle->id_salle)
+            ->where('examens.0.salles.0.id_salle', $firstSelectedSalle->id_salle)
+            ->where('examens.0.salles.1.id_salle', $secondSelectedSalle->id_salle));
+    }
+
+    public function test_index_repairs_legacy_salle_order_when_current_mapping_overflows_capacity(): void
+    {
+        $user = User::factory()->create();
+        $annee = AnneeUniversitaire::factory()->active()->create();
+        $filiere = Filiere::factory()->create(['nom_filiere' => 'Medecine']);
+        $section = Section::factory()->create([
+            'id_filiere' => $filiere->id_filiere,
+            'nom_section' => 'Section Medecine',
+        ]);
+        $niveau = Niveau::factory()->create(['nom_niveau' => 'Licence 1']);
+        $semestre = Semestre::factory()->create([
+            'id_niveau' => $niveau->id_niveau,
+            'nom_semestre' => 'S1',
+        ]);
+        $module = Module::factory()->create([
+            'code_module' => 'MED-LEG-001',
+            'nom_module' => 'Physiologie',
+        ]);
+        $smallSalle = Salle::factory()->create([
+            'code_salle' => 'DEN',
+            'nom_salle' => 'Salle dentaire',
+            'capacite' => 1,
+            'capacite_examens' => 1,
+        ]);
+        $largeSalle = Salle::factory()->create([
+            'code_salle' => 'SSOL',
+            'nom_salle' => 'Salle s.sol',
+            'capacite' => 10,
+            'capacite_examens' => 10,
+        ]);
+
+        UserFiliereAnnee::create([
+            'user_id' => $user->id,
+            'id_filiere' => $filiere->id_filiere,
+            'id_annee' => $annee->id_annee,
+        ]);
+
+        $offre = OffreFormation::create([
+            'id_module' => $module->id_module,
+            'id_semestre' => $semestre->id_semestre,
+            'id_section' => $section->id_section,
+            'id_annee' => $annee->id_annee,
+            'id_coordinateur' => null,
+            'nom_affiche' => 'Physiologie',
+        ]);
+
+        $session = SessionExamen::create([
+            'id_filiere' => null,
+            'id_annee' => $annee->id_annee,
+            'nom_session' => 'Session Commune',
+            'type_session' => 'Normale',
+            'date_session_examen' => '2026-06-01',
+            'quadrimestre' => 2,
+        ]);
+
+        $exam = $this->createExam($session, $module, $smallSalle, '2026-06-10');
+        $exam->salles()->sync([
+            $smallSalle->id_salle => ['ordre' => 1],
+            $largeSalle->id_salle => ['ordre' => 2],
+        ]);
+
+        $alpha = $this->createPedagogicalRegistration($annee, $niveau, $section, $offre, 'Alpha', 'One');
+        $beta = $this->createPedagogicalRegistration($annee, $niveau, $section, $offre, 'Beta', 'Two');
+        $gamma = $this->createPedagogicalRegistration($annee, $niveau, $section, $offre, 'Gamma', 'Three');
+
+        $this->createRepartition($exam, $alpha, '00010001', '1');
+        $this->createRepartition($exam, $beta, '00010002', '2');
+        $this->createRepartition($exam, $gamma, '00020001', '1');
+
+        $response = $this
+            ->actingAs($user)
+            ->get(route('surveillance.repartition-etudiants.index', ['examen' => $exam->id_examen]));
+
+        $response->assertInertia(fn (Assert $page) => $page
+            ->component('examens/Repartition/Index')
+            ->where('selectedExamenId', $exam->id_examen)
+            ->where('salles.0.id_salle', $largeSalle->id_salle)
+            ->where('salles.1.id_salle', $smallSalle->id_salle)
+            ->where('examens.0.salles.0.id_salle', $largeSalle->id_salle)
+            ->where('examens.0.salles.1.id_salle', $smallSalle->id_salle));
+    }
+
+>>>>>>> 3062ae46740a3e7162e3aa04d093c1fe3e2ade5b
     public function test_index_lists_only_students_with_matching_rattrapage_result_status_aliases(): void
     {
         $user = User::factory()->create();

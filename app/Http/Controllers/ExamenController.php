@@ -11,7 +11,13 @@ use App\Models\Anonymat;
 use App\Models\OffreFormation;
 use App\Models\RepartitionEtudiant;
 use App\Models\Salle;
+<<<<<<< HEAD
+=======
+use App\Models\Section;
+use App\Models\Semestre;
+>>>>>>> 3062ae46740a3e7162e3aa04d093c1fe3e2ade5b
 use App\Models\SessionExamen;
+use App\Support\CodeGrille;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
@@ -127,7 +133,7 @@ class ExamenController extends Controller
                 'offreFormation:id_offre,id_module,id_semestre,id_section,id_annee',
                 'offreFormation.section:id_section,id_filiere',
                 'offreFormation.section.filiere:id_filiere,nom_filiere',
-                'offreFormation.semestre:id_semestre,nom_semestre,id_niveau',
+                'offreFormation.semestre:id_semestre,code_semestre,nom_semestre,id_niveau,ordre',
                 'offreFormation.semestre.niveau:id_niveau,nom_niveau',
                 'module' => fn ($query) => $query->select('modules.id_module', 'modules.nom_module', 'modules.code_module'),
                 'element:id_element,id_module,code_element,nom_element',
@@ -473,7 +479,11 @@ class ExamenController extends Controller
                 unset($attributes['plan_all_filtered_modules'], $attributes['module_ids'], $attributes['module_plannings']);
 
                 $examen = Examen::create($attributes);
+<<<<<<< HEAD
                 $examen->salles()->sync($allSalleIds);
+=======
+                $this->syncOrderedSalles($examen, $allSalleIds, $plan['manualSplit']);
+>>>>>>> 3062ae46740a3e7162e3aa04d093c1fe3e2ade5b
                 $examen->load('salles:id_salle,code_salle,capacite_examens,capacite');
 
                 $this->generateInitialRepartition(
@@ -598,13 +608,29 @@ class ExamenController extends Controller
                 ->withInput();
         }
 
+<<<<<<< HEAD
         $examen->update($validated);
         $examen->salles()->sync($allSalleIds);
+=======
+        DB::transaction(function () use ($validated, $examen, $allSalleIds, $manualSplit) {
+            unset($validated['section_id']);
+            $examen->update($validated);
+            $this->syncOrderedSalles($examen, $allSalleIds, $manualSplit);
+>>>>>>> 3062ae46740a3e7162e3aa04d093c1fe3e2ade5b
 
         RepartitionEtudiant::where('id_examen', $examen->id_examen)->delete();
         Anonymat::where('id_examen', $examen->id_examen)->delete();
 
+<<<<<<< HEAD
         $this->generateInitialRepartition($examen, $registrations, $expectedCount, $manualSplit, $salleModels);
+=======
+            $this->synchronizeSemesterExamLists(
+                $syncReference,
+                true,
+                collect([(int) $examen->id_examen => $manualSplit])
+            );
+        });
+>>>>>>> 3062ae46740a3e7162e3aa04d093c1fe3e2ade5b
 
         return redirect()
             ->route('examens.examens.index')
@@ -787,7 +813,7 @@ class ExamenController extends Controller
             'offreFormation:id_offre,id_module,id_semestre,id_section,id_annee',
             'offreFormation.section:id_section,id_filiere',
             'offreFormation.section.filiere:id_filiere,nom_filiere',
-            'offreFormation.semestre:id_semestre,id_niveau',
+            'offreFormation.semestre:id_semestre,code_semestre,nom_semestre,id_niveau,ordre',
             'offreFormation.semestre.niveau:id_niveau,nom_niveau,ordre',
         ]);
 
@@ -910,18 +936,26 @@ class ExamenController extends Controller
             $seat = 1;
             $filiereCode = $this->filiereCode($examen);
             $niveauCode = $this->niveauCode($examen);
-            $sessionCode = $this->sessionCode($examen);
+            $semestreCode = $this->semestreCode($examen);
             $salleCode = $roomPositions->has((int) $salle->id_salle)
                 ? ((int) $roomPositions->get((int) $salle->id_salle) + 1)
                 : ($index + 1);
 
             foreach ($slice as $ip) {
+<<<<<<< HEAD
                 $codeAnonymat = (string) ($anonymatCodes[$anonymatIndex] ?? ($anonymatIndex + 1));
                 $grilleCode = (int) sprintf(
                     '%d%d%d%d%03d',
+=======
+                $codeAnonymat = (string) ($anonymatCodes->get((int) $ip->id_inscription_pedagogique) ?? '');
+                if ($codeAnonymat === '') {
+                    $codeAnonymat = (string) $seat;
+                }
+                $grilleCode = CodeGrille::build(
+>>>>>>> 3062ae46740a3e7162e3aa04d093c1fe3e2ade5b
                     $filiereCode,
                     $niveauCode,
-                    $sessionCode,
+                    $semestreCode,
                     $salleCode,
                     $seat
                 );
@@ -1062,6 +1096,452 @@ class ExamenController extends Controller
             ->all();
     }
 
+<<<<<<< HEAD
+=======
+    private function resolvedAnonymatCodesForRegistrations(Examen $examen, Collection $registrations): Collection
+    {
+        $orderedRegistrations = $registrations->values();
+        if ($orderedRegistrations->isEmpty()) {
+            return collect();
+        }
+
+        $fallbackCodes = collect($this->anonymatSequence(
+            $examen->anonymat_start ? (int) $examen->anonymat_start : null,
+            $orderedRegistrations->count()
+        ))->values();
+
+        $fallbackMap = $orderedRegistrations
+            ->values()
+            ->mapWithKeys(function ($registration, int $index) use ($fallbackCodes) {
+                return [
+                    (int) $registration->id_inscription_pedagogique => (string) ($fallbackCodes[$index] ?? ($index + 1)),
+                ];
+            });
+
+        $reservationMap = $this->ensureSemesterAnonymatReservations($examen);
+        if ($reservationMap->isEmpty()) {
+            return $fallbackMap;
+        }
+
+        $ephemeralNextCode = $this->maxNumericAnonymatCode($reservationMap->values()) + 1;
+
+        return $orderedRegistrations
+            ->mapWithKeys(function ($registration) use ($reservationMap, $fallbackMap, &$ephemeralNextCode) {
+                $pedagogiqueId = (int) $registration->id_inscription_pedagogique;
+                $adminId = $this->registrationAdministrativeId($registration);
+
+                if ($adminId && $reservationMap->has($adminId)) {
+                    return [$pedagogiqueId => (string) $reservationMap->get($adminId)];
+                }
+
+                if ($fallbackMap->has($pedagogiqueId)) {
+                    return [$pedagogiqueId => (string) $fallbackMap->get($pedagogiqueId)];
+                }
+
+                return [$pedagogiqueId => (string) $ephemeralNextCode++];
+            });
+    }
+
+    private function semesterAnonymatContext(Examen $examen): array
+    {
+        $examen->loadMissing([
+            'sessionExamen:id_session_examen,id_annee',
+            'offreFormation:id_offre,id_semestre,id_annee',
+        ]);
+
+        $semestreId = $examen->offreFormation?->id_semestre
+            ? (int) $examen->offreFormation->id_semestre
+            : null;
+        $anneeId = $examen->sessionExamen?->id_annee
+            ? (int) $examen->sessionExamen->id_annee
+            : ($examen->offreFormation?->id_annee ? (int) $examen->offreFormation->id_annee : null);
+
+        return [$semestreId, $anneeId];
+    }
+
+    private function ensureSemesterAnonymatReservations(Examen $examen, bool $forceRebuild = false): Collection
+    {
+        [$semestreId, $anneeId] = $this->semesterAnonymatContext($examen);
+        if (! $semestreId || ! $anneeId) {
+            return collect();
+        }
+
+        $cohort = $this->semesterCohortRegistrations($examen);
+        if ($cohort->isEmpty()) {
+            return collect();
+        }
+
+        $existingReservations = AnonymatSemestre::query()
+            ->where('id_annee', $anneeId)
+            ->where('id_semestre', $semestreId)
+            ->get(['id_anonymat_semestre', 'id_inscription_admin', 'code_anonymat']);
+
+        if ($forceRebuild || $existingReservations->isEmpty()) {
+            AnonymatSemestre::query()
+                ->where('id_annee', $anneeId)
+                ->where('id_semestre', $semestreId)
+                ->delete();
+
+            $this->insertSemesterAnonymatReservations($cohort, $examen, $semestreId, $anneeId);
+        } else {
+            $existingAdminIds = $existingReservations
+                ->pluck('id_inscription_admin')
+                ->map(fn ($id) => (int) $id)
+                ->all();
+
+            $missingCohort = $cohort
+                ->filter(fn ($registration) => ! in_array($this->registrationAdministrativeId($registration), $existingAdminIds, true))
+                ->values();
+
+            if ($missingCohort->isNotEmpty()) {
+                $this->appendSemesterAnonymatReservations($missingCohort, $semestreId, $anneeId, $existingReservations);
+            }
+        }
+
+        return collect(
+            AnonymatSemestre::query()
+                ->where('id_annee', $anneeId)
+                ->where('id_semestre', $semestreId)
+                ->get(['id_inscription_admin', 'code_anonymat'])
+                ->mapWithKeys(fn ($reservation) => [(int) $reservation->id_inscription_admin => (string) $reservation->code_anonymat])
+                ->all()
+        );
+    }
+
+    private function semesterCohortRegistrations(Examen $examen): Collection
+    {
+        [$semestreId, $anneeId] = $this->semesterAnonymatContext($examen);
+        if (! $semestreId || ! $anneeId) {
+            return collect();
+        }
+
+        $registrations = InscriptionPedagogique::query()
+            ->with([
+                'inscriptionAdministrative:id_inscription_admin,id_etudiant',
+                'inscriptionAdministrative.etudiant:id_etudiant,nom,prenom,cne',
+                'offreFormation:id_offre,id_module,id_semestre,id_section,id_annee',
+            ])
+            ->where('type_inscription', '!=', 'Capitalisation')
+            ->whereHas('offreFormation', function ($query) use ($semestreId, $anneeId) {
+                $query
+                    ->where('id_semestre', $semestreId)
+                    ->where('id_annee', $anneeId);
+            })
+            ->orderBy('id_inscription_admin')
+            ->orderBy('id_inscription_pedagogique')
+            ->get([
+                'id_inscription_pedagogique',
+                'id_inscription_admin',
+                'id_offre',
+                'type_inscription',
+            ]);
+
+        if ($registrations->isEmpty()) {
+            return collect();
+        }
+
+        $representatives = $registrations
+            ->groupBy('id_inscription_admin')
+            ->map(function (Collection $group) {
+                $representative = $group
+                    ->first(fn ($registration) => ! $this->isCreditRegistration($registration))
+                    ?? $group->first();
+
+                if ($representative) {
+                    $representative->setAttribute(
+                        '_semester_credit_only',
+                        $group->every(fn ($registration) => $this->isCreditRegistration($registration))
+                    );
+                }
+
+                return $representative;
+            })
+            ->filter()
+            ->values();
+
+        return $this->orderSemesterCohortRegistrations($representatives, $examen);
+    }
+
+    private function orderSemesterCohortRegistrations(Collection $registrations, Examen $examen): Collection
+    {
+        $studentOrder = $this->normalizedStudentOrder($examen->student_order ?? null);
+
+        $normalRegistrations = $registrations
+            ->reject(fn ($registration) => (bool) $registration->getAttribute('_semester_credit_only'))
+            ->values();
+        $creditRegistrations = $registrations
+            ->filter(fn ($registration) => (bool) $registration->getAttribute('_semester_credit_only'))
+            ->values();
+
+        if ($studentOrder === 'random') {
+            $normalRegistrations = $normalRegistrations
+                ->sortBy(fn ($registration) => $this->randomSemesterStudentOrderKey($registration, $examen))
+                ->values();
+            $creditRegistrations = $creditRegistrations
+                ->sortBy(fn ($registration) => $this->randomSemesterStudentOrderKey($registration, $examen))
+                ->values();
+        } else {
+            $normalRegistrations = $normalRegistrations
+                ->sortBy(fn ($registration) => $this->alphabeticStudentOrderKey($registration))
+                ->values();
+            $creditRegistrations = $creditRegistrations
+                ->sortBy(fn ($registration) => $this->alphabeticStudentOrderKey($registration))
+                ->values();
+        }
+
+        return $normalRegistrations->concat($creditRegistrations)->values();
+    }
+
+    private function insertSemesterAnonymatReservations(
+        Collection $cohort,
+        Examen $examen,
+        int $semestreId,
+        int $anneeId
+    ): void {
+        if ($cohort->isEmpty()) {
+            return;
+        }
+
+        $codes = collect($this->anonymatSequence(
+            $examen->anonymat_start ? (int) $examen->anonymat_start : null,
+            $cohort->count()
+        ))->map(fn ($code) => (string) $code)->values();
+        $now = now();
+
+        $rows = $cohort
+            ->values()
+            ->map(function ($registration, int $index) use ($codes, $anneeId, $semestreId, $now) {
+                return [
+                    'id_inscription_admin' => $this->registrationAdministrativeId($registration),
+                    'id_semestre' => $semestreId,
+                    'id_annee' => $anneeId,
+                    'code_anonymat' => (string) ($codes[$index] ?? ($index + 1)),
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+            })
+            ->all();
+
+        AnonymatSemestre::insert($rows);
+    }
+
+    private function appendSemesterAnonymatReservations(
+        Collection $cohort,
+        int $semestreId,
+        int $anneeId,
+        Collection $existingReservations
+    ): void {
+        if ($cohort->isEmpty()) {
+            return;
+        }
+
+        $nextCode = $this->maxNumericAnonymatCode($existingReservations->pluck('code_anonymat')) + 1;
+        $codes = collect(range($nextCode, $nextCode + $cohort->count() - 1))
+            ->map(fn ($code) => (string) $code)
+            ->values();
+        $now = now();
+
+        $rows = $cohort
+            ->values()
+            ->map(function ($registration, int $index) use ($codes, $anneeId, $semestreId, $now) {
+                return [
+                    'id_inscription_admin' => $this->registrationAdministrativeId($registration),
+                    'id_semestre' => $semestreId,
+                    'id_annee' => $anneeId,
+                    'code_anonymat' => (string) ($codes[$index] ?? ($index + 1)),
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ];
+            })
+            ->all();
+
+        AnonymatSemestre::insert($rows);
+    }
+
+    private function synchronizeSemesterExamLists(
+        ?Examen $referenceExamen,
+        bool $forceRebuildReservations = false,
+        ?Collection $manualSplitsByExam = null
+    ): void
+    {
+        if (! $referenceExamen) {
+            return;
+        }
+
+        if ($this->ensureSemesterAnonymatReservations($referenceExamen, $forceRebuildReservations)->isEmpty()) {
+            return;
+        }
+
+        $semesterExamens = $this->semesterPeerExamens($referenceExamen);
+        foreach ($semesterExamens as $examen) {
+            $preferredFiliereId = $this->preferredExamFiliereId($examen);
+            $session = $examen->sessionExamen;
+            $resolvedOffre = $this->referenceOffre($examen);
+
+            if (! $session || ! $resolvedOffre?->id_module || ! $resolvedOffre?->id_offre) {
+                continue;
+            }
+
+            $registrations = $this->registrationsForModule(
+                (int) $resolvedOffre->id_module,
+                $session->id_annee,
+                $preferredFiliereId,
+                $session,
+                (int) $resolvedOffre->id_offre
+            );
+
+            $orderedSalles = $examen->salles()
+                ->select('salles.id_salle', 'salles.code_salle', 'salles.nom_salle', 'salles.capacite_examens', 'salles.capacite')
+                ->get();
+
+            if ($orderedSalles->isEmpty() && $examen->id_salle) {
+                $fallbackSalle = Salle::query()
+                    ->whereKey($examen->id_salle)
+                    ->first(['id_salle', 'code_salle', 'nom_salle', 'capacite_examens', 'capacite']);
+
+                if ($fallbackSalle) {
+                    $orderedSalles = collect([$fallbackSalle]);
+                }
+            }
+
+            RepartitionEtudiant::where('id_examen', $examen->id_examen)->delete();
+            Anonymat::where('id_examen', $examen->id_examen)->delete();
+
+            if ($registrations->isEmpty() || $orderedSalles->isEmpty()) {
+                $examen->forceFill([
+                    'anonymat_start' => null,
+                    'anonymat_end' => null,
+                ])->saveQuietly();
+                continue;
+            }
+
+            $manualSplit = $manualSplitsByExam?->get((int) $examen->id_examen);
+            if (! $manualSplit instanceof Collection) {
+                $manualSplit = $this->manualSplitFromOrderedSalles($orderedSalles);
+            }
+
+            $this->generateInitialRepartition(
+                $examen->fresh(),
+                $registrations,
+                $registrations->count(),
+                $manualSplit,
+                $orderedSalles
+            );
+        }
+    }
+
+    private function semesterPeerExamens(Examen $referenceExamen): Collection
+    {
+        [$semestreId, $anneeId] = $this->semesterAnonymatContext($referenceExamen);
+        if (! $semestreId || ! $anneeId) {
+            return collect();
+        }
+
+        return Examen::query()
+            ->with([
+                'sessionExamen:id_session_examen,id_annee,id_filiere,type_session,nom_session',
+                'offreFormation:id_offre,id_module,id_semestre,id_section,id_annee',
+                'offreFormation.section:id_section,id_filiere',
+                'offreFormation.section.filiere:id_filiere,nom_filiere',
+                'offreFormation.semestre:id_semestre,code_semestre,nom_semestre,id_niveau,ordre',
+                'offreFormation.semestre.niveau:id_niveau,nom_niveau,ordre',
+                'salles:id_salle,code_salle,nom_salle,capacite_examens,capacite',
+            ])
+            ->whereHas('offreFormation', function ($query) use ($semestreId, $anneeId) {
+                $query
+                    ->where('id_semestre', $semestreId)
+                    ->where('id_annee', $anneeId);
+            })
+            ->orderBy('date_examen')
+            ->orderBy('id_examen')
+            ->get([
+                'id_examen',
+                'id_session_examen',
+                'id_offre',
+                'id_module',
+                'id_salle',
+                'anonymat_start',
+                'anonymat_end',
+                'student_order',
+                'date_examen',
+            ]);
+    }
+
+    private function semesterScopeKey(Examen $examen): string
+    {
+        [$semestreId, $anneeId] = $this->semesterAnonymatContext($examen);
+
+        return sprintf('%d:%d', (int) ($anneeId ?? 0), (int) ($semestreId ?? 0));
+    }
+
+    private function registrationAdministrativeId($registration): ?int
+    {
+        $adminId = $registration->id_inscription_admin ?? $registration->inscriptionAdministrative?->id_inscription_admin;
+
+        return $adminId ? (int) $adminId : null;
+    }
+
+    private function syncExamAnonymatRange(Examen $examen, Collection $registrations, Collection $anonymatCodes): void
+    {
+        $orderedRegistrations = $registrations->values();
+        if ($orderedRegistrations->isEmpty()) {
+            return;
+        }
+
+        $firstCode = $anonymatCodes->get((int) $orderedRegistrations->first()->id_inscription_pedagogique);
+        $lastCode = $anonymatCodes->get((int) $orderedRegistrations->last()->id_inscription_pedagogique);
+
+        $resolvedStart = $this->normalizedAnonymatCodeForExam($firstCode);
+        $resolvedEnd = $this->normalizedAnonymatCodeForExam($lastCode);
+
+        if ($examen->anonymat_start === $resolvedStart && $examen->anonymat_end === $resolvedEnd) {
+            return;
+        }
+
+        $examen->forceFill([
+            'anonymat_start' => $resolvedStart,
+            'anonymat_end' => $resolvedEnd,
+        ])->saveQuietly();
+    }
+
+    private function normalizedAnonymatCodeForExam($code): ?int
+    {
+        $normalized = trim((string) $code);
+
+        if ($normalized === '' || ! ctype_digit($normalized)) {
+            return null;
+        }
+
+        return (int) $normalized;
+    }
+
+    private function maxNumericAnonymatCode(Collection $codes): int
+    {
+        return (int) ($codes
+            ->map(function ($code) {
+                $normalized = trim((string) $code);
+
+                return ctype_digit($normalized) ? (int) $normalized : 0;
+            })
+            ->max() ?? 0);
+    }
+
+    private function randomSemesterStudentOrderKey($registration, Examen $examen): string
+    {
+        [$semestreId, $anneeId] = $this->semesterAnonymatContext($examen);
+
+        return hash(
+            'sha256',
+            sprintf(
+                '%d|%d|%d',
+                (int) ($anneeId ?? 0),
+                (int) ($semestreId ?? 0),
+                (int) ($this->registrationAdministrativeId($registration) ?? 0)
+            )
+        );
+    }
+
+>>>>>>> 3062ae46740a3e7162e3aa04d093c1fe3e2ade5b
     private function normalizeManualSplit(Collection $manualSplit, Collection $allowedSalleIds): Collection
     {
         return $manualSplit
@@ -1240,8 +1720,20 @@ class ExamenController extends Controller
 
     private function filiereCode(Examen $examen): int
     {
-        $filiere = $this->referenceOffre($examen)?->section?->filiere;
+        $offre = $this->referenceOffre($examen);
+        $filiere = $offre?->section?->filiere;
+
+        if (! $filiere && $offre?->id_section) {
+            $filiere = Section::query()
+                ->with('filiere:id_filiere,nom_filiere')
+                ->find($offre->id_section, ['id_section', 'id_filiere'])
+                ?->filiere;
+        }
+
         $name = strtolower($filiere->nom_filiere ?? '');
+        $filiereId = $filiere->id_filiere
+            ?? $offre?->section?->id_filiere
+            ?? $this->preferredExamFiliereId($examen);
 
         $byName = match (true) {
             str_contains($name, 'med')  => 1,
@@ -1254,7 +1746,7 @@ class ExamenController extends Controller
             return $byName;
         }
 
-        return match ($filiere->id_filiere ?? null) {
+        return match ($filiereId) {
             1 => 1,
             2 => 2,
             3 => 3,
@@ -1285,7 +1777,7 @@ class ExamenController extends Controller
             'offreFormation:id_offre,id_module,id_semestre,id_section,id_annee',
             'offreFormation.section:id_section,id_filiere',
             'offreFormation.section.filiere:id_filiere,nom_filiere',
-            'offreFormation.semestre:id_semestre,nom_semestre,id_niveau',
+            'offreFormation.semestre:id_semestre,code_semestre,nom_semestre,id_niveau,ordre',
             'offreFormation.semestre.niveau:id_niveau,nom_niveau,ordre',
         ]);
 
@@ -1388,6 +1880,48 @@ class ExamenController extends Controller
             ->values();
     }
 
+<<<<<<< HEAD
+=======
+    private function syncOrderedSalles(Examen $examen, Collection $salleIds, ?Collection $manualSplit = null): void
+    {
+        $manualTargets = $manualSplit instanceof Collection
+            ? $manualSplit
+                ->filter(fn ($row) => isset($row['id_salle']))
+                ->keyBy(fn ($row) => (int) $row['id_salle'])
+            : collect();
+
+        $payload = $salleIds
+            ->values()
+            ->mapWithKeys(fn ($id, $index) => [
+                (int) $id => [
+                    'ordre' => $index + 1,
+                    'nombre_affecte' => $manualTargets->get((int) $id)['nombre'] ?? null,
+                ],
+            ])
+            ->all();
+
+        $examen->salles()->sync($payload);
+    }
+
+    private function manualSplitFromOrderedSalles(Collection $orderedSalles): Collection
+    {
+        return $orderedSalles
+            ->map(function ($salle) {
+                $nombre = $salle->pivot?->nombre_affecte;
+                if ($nombre === null || (int) $nombre < 1) {
+                    return null;
+                }
+
+                return [
+                    'id_salle' => (int) $salle->id_salle,
+                    'nombre' => (int) $nombre,
+                ];
+            })
+            ->filter()
+            ->keyBy('id_salle');
+    }
+
+>>>>>>> 3062ae46740a3e7162e3aa04d093c1fe3e2ade5b
     private function orderRegistrationsForRepartition(
         Collection $registrations,
         string $studentOrder = 'alphabetic',
@@ -1479,12 +2013,36 @@ class ExamenController extends Controller
             : null;
     }
 
-    private function sessionCode(Examen $examen): int
+    private function semestreCode(Examen $examen): int
     {
-        if ($this->isRattrapageSession($examen->sessionExamen)) {
-            return 2;
+        $offre = $this->referenceOffre($examen);
+        $semestre = $offre?->semestre;
+
+        if (! $semestre && $offre?->id_semestre) {
+            $semestre = Semestre::query()->find(
+                $offre->id_semestre,
+                ['id_semestre', 'code_semestre', 'nom_semestre', 'ordre']
+            );
         }
 
-        return 1;
+        foreach ([$semestre?->code_semestre, $semestre?->nom_semestre] as $value) {
+            if (preg_match('/(\d+)/', (string) $value, $matches) === 1) {
+                $digit = (int) $matches[1];
+
+                if ($digit >= 1 && $digit <= 9) {
+                    return $digit;
+                }
+            }
+        }
+
+        if (is_numeric($semestre?->ordre)) {
+            $digit = (int) $semestre->ordre;
+
+            if ($digit >= 1 && $digit <= 9) {
+                return $digit;
+            }
+        }
+
+        return 0;
     }
 }

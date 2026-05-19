@@ -105,6 +105,14 @@ class Examen extends Model
     public function salles(): BelongsToMany
     {
         return $this->belongsToMany(Salle::class, 'exam_salle', 'id_examen', 'id_salle')
+<<<<<<< HEAD
+=======
+            ->withPivot('ordre', 'nombre_affecte')
+            ->orderByRaw('case when exam_salle.ordre is null then 1 else 0 end')
+            ->orderBy('exam_salle.ordre')
+            ->orderBy('exam_salle.created_at')
+            ->orderBy('salles.id_salle')
+>>>>>>> 3062ae46740a3e7162e3aa04d093c1fe3e2ade5b
             ->withTimestamps();
     }
 

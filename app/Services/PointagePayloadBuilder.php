@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Examen;
 use App\Models\RepartitionEtudiant;
+use App\Support\CodeGrille;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 
@@ -39,6 +40,39 @@ class PointagePayloadBuilder
         }
 
         return $data;
+    }
+
+    public function buildExternalPushPayload(Examen $examen): array
+    {
+        $this->loadPointageRelations($examen);
+
+        $repartitions = $examen->repartitions
+            ->sortBy([
+                ['code_grille', 'asc'],
+                ['numero_place', 'asc'],
+            ])
+            ->values()
+            ->map(fn (RepartitionEtudiant $repartition) => $this->formatRepartition($examen, $repartition));
+
+        $examens = $repartitions
+            ->groupBy(function (array $repartition) {
+                $salleId = data_get($repartition, 'salle.id_salle');
+
+                if ($salleId !== null) {
+                    return 'salle:'.$salleId;
+                }
+
+                return 'index:'.($repartition['salle_index'] ?? 1);
+            })
+            ->map(fn (Collection $rows) => $this->formatExternalExamEntry($examen, $rows->values()))
+            ->values()
+            ->all();
+
+        return [
+            'source' => 'app_repartition_examens',
+            'generated_at' => now()->utc()->format('Y-m-d\TH:i:s\Z'),
+            'examens' => $examens,
+        ];
     }
 
     public function parseIncludes(?string $include): Collection
@@ -184,6 +218,20 @@ class PointagePayloadBuilder
         ];
     }
 
+    public function formatExternalStudent(array $repartition): array
+    {
+        return [
+            'cne' => $repartition['student']['cne'],
+            'nom' => $repartition['student']['nom'],
+            'prenom' => $repartition['student']['prenom'],
+            'device_user_id' => $repartition['student']['id_etudiant'] !== null
+                ? (string) $repartition['student']['id_etudiant']
+                : null,
+            'autorise' => true,
+            'numero_place' => $repartition['numero_place'],
+        ];
+    }
+
     public function formatRepartition(Examen $examen, RepartitionEtudiant $repartition): array
     {
         $student = $repartition->inscriptionPedagogique?->inscriptionAdministrative?->etudiant;
@@ -220,6 +268,60 @@ class PointagePayloadBuilder
         ];
     }
 
+    private function formatExternalExamEntry(Examen $examen, Collection $repartitions): array
+    {
+        $firstRepartition = $repartitions->first();
+        $salle = data_get($firstRepartition, 'salle');
+        $semestreCode = trim((string) $examen->offreFormation?->semestre?->code_semestre);
+        $moduleName = trim((string) ($examen->element?->nom_element ?: $examen->module?->nom_module));
+        $examenLibelle = 'Examen';
+
+        if ($moduleName !== '') {
+            $examenLibelle .= ' '.$moduleName;
+        }
+
+        if ($semestreCode !== '') {
+            $examenLibelle .= ' '.$semestreCode;
+        }
+
+        return [
+            'examen_code' => $this->externalExamCode($examen),
+            'examen_libelle' => trim($examenLibelle),
+            'session' => $examen->sessionExamen?->type_session ?: $examen->sessionExamen?->nom_session,
+            'date_examen' => $examen->date_examen?->format('Y-m-d'),
+            'heure_debut' => $examen->date_debut?->format('H:i:s'),
+            'heure_fin' => $examen->date_fin?->format('H:i:s'),
+            'salle_code' => data_get($salle, 'code_salle') ?: $examen->salle?->code_salle,
+            'salle_nom' => data_get($salle, 'nom_salle') ?: $examen->salle?->nom_salle,
+            'etudiants' => $repartitions
+                ->map(fn (array $repartition) => $this->formatExternalStudent($repartition))
+                ->values()
+                ->all(),
+        ];
+    }
+
+    private function externalExamCode(Examen $examen): string
+    {
+        $codeSource = trim((string) ($examen->element?->code_element ?: $examen->module?->code_module));
+        $semestreCode = trim((string) $examen->offreFormation?->semestre?->code_semestre);
+
+        $segments = collect(['EXAM', $codeSource, $semestreCode])
+            ->filter(fn ($value) => trim((string) $value) !== '')
+            ->map(function ($value) {
+                $value = strtoupper(trim((string) $value));
+                $value = preg_replace('/[^A-Z0-9]+/', '-', $value) ?? '';
+
+                return trim($value, '-');
+            })
+            ->filter();
+
+        if ($segments->isEmpty()) {
+            return 'EXAM-'.(string) $examen->id_examen;
+        }
+
+        return $segments->implode('-');
+    }
+
     private function dateTimeFromExamDate(Examen $examen, ?string $time): ?string
     {
         if ($time === null || trim((string) $time) === '') {
@@ -233,9 +335,6 @@ class PointagePayloadBuilder
 
     private function salleIndexFromGrille($codeGrille): int
     {
-        $str = str_pad((string) ($codeGrille ?? ''), 7, '0', STR_PAD_LEFT);
-        $digit = (int) ($str[3] ?? 1);
-
-        return $digit >= 1 ? $digit : 1;
+        return CodeGrille::salleIndex($codeGrille);
     }
 }
